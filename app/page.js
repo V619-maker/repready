@@ -140,12 +140,17 @@ function LandingPage({ onGetStarted }) {
             </div>
             <span className="text-xl font-bold">RepReady</span>
           </div>
-          <Button 
-            onClick={onGetStarted}
-            className="bg-[#6366F1] hover:bg-[#6366F1]/90 text-white"
-          >
-            Start Practicing
-          </Button>
+          <div className="flex items-center gap-6">
+            <a href="/pricing" className="text-sm text-muted-foreground hover:text-[#00FF88] transition-colors">
+              Pricing
+            </a>
+            <Button 
+              onClick={onGetStarted}
+              className="bg-[#6366F1] hover:bg-[#6366F1]/90 text-white"
+            >
+              Start Practicing
+            </Button>
+          </div>
         </div>
       </nav>
 
