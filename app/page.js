@@ -1248,7 +1248,10 @@ export default function App() {
       const response = await fetch('/api/user/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: user.email })
+        body: JSON.stringify({ 
+          email: user.email,
+          currentSessionsUsed: user.sessionsUsed || 0
+        })
       })
       const data = await response.json()
       const updatedUser = { ...user, sessionsUsed: data.sessionsUsed }
@@ -1256,6 +1259,10 @@ export default function App() {
       localStorage.setItem('repready_user', JSON.stringify(updatedUser))
     } catch (error) {
       console.error('Error updating session count:', error)
+      // Update locally even if API fails
+      const updatedUser = { ...user, sessionsUsed: (user.sessionsUsed || 0) + 1 }
+      setUser(updatedUser)
+      localStorage.setItem('repready_user', JSON.stringify(updatedUser))
     }
   }
 

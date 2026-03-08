@@ -1,22 +1,8 @@
-import { MongoClient } from 'mongodb'
 import { v4 as uuidv4 } from 'uuid'
 import { NextResponse } from 'next/server'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { streamObject } from 'ai'
 import { z } from 'zod'
-
-// MongoDB connection
-let client
-let db
-
-async function connectToMongo() {
-  if (!client) {
-    client = new MongoClient(process.env.MONGO_URL)
-    await client.connect()
-    db = client.db(process.env.DB_NAME)
-  }
-  return db
-}
 
 // Helper function to handle CORS
 function handleCORS(response) {
@@ -298,168 +284,224 @@ Evaluate the sales rep's performance and return JSON with:
       return handleCORS(NextResponse.json(personas))
     }
 
-    // Database connection for session storage
-    const db = await connectToMongo()
+    // ============================================
+    // COOKIE-BASED SESSION MANAGEMENT (No Database Required)
+    // ============================================
 
     // Register user email - POST /api/register
     if (route === '/register' && method === 'POST') {
-      const body = await request.json()
-      const { email, consent } = body
+      try {
+        const body = await request.json()
+        const { email, consent } = body
 
-      if (!email || !email.includes('@')) {
-        return handleCORS(NextResponse.json(
-          { error: "Valid work email is required." },
-          { status: 400 }
-        ))
-      }
+        // Validate email format
+        if (!email || !email.includes('@') || !email.includes('.')) {
+          return handleCORS(NextResponse.json(
+            { error: "Valid email is required." },
+            { status: 400 }
+          ))
+        }
 
-      if (!consent) {
-        return handleCORS(NextResponse.json(
-          { error: "Privacy consent is required." },
-          { status: 400 }
-        ))
-      }
+        if (!consent) {
+          return handleCORS(NextResponse.json(
+            { error: "Privacy consent is required." },
+            { status: 400 }
+          ))
+        }
 
-      // Check if email already exists
-      const existingUser = await db.collection('users').findOne({ email: email.toLowerCase() })
-      
-      if (existingUser) {
-        return handleCORS(NextResponse.json({
-          id: existingUser.id,
-          email: existingUser.email,
-          sessionsUsed: existingUser.sessionsUsed || 0,
+        // Generate session token
+        const sessionToken = uuidv4()
+        const userId = uuidv4()
+        
+        // Create response with user data
+        const response = NextResponse.json({
+          id: userId,
+          email: email.toLowerCase(),
+          sessionsUsed: 0,
           maxFreeSessions: 3,
-          createdAt: existingUser.createdAt
-        }))
-      }
+          sessionToken: sessionToken,
+          createdAt: new Date().toISOString()
+        })
 
-      // Create new user
-      const user = {
-        id: uuidv4(),
-        email: email.toLowerCase(),
-        consent: true,
-        consentTimestamp: new Date(),
-        sessionsUsed: 0,
-        maxFreeSessions: 3,
-        createdAt: new Date()
-      }
+        // Set cookie with session data (expires in 30 days)
+        response.cookies.set('repready_session', JSON.stringify({
+          id: userId,
+          email: email.toLowerCase(),
+          sessionsUsed: 0,
+          sessionToken: sessionToken
+        }), {
+          httpOnly: false,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          maxAge: 60 * 60 * 24 * 30 // 30 days
+        })
 
-      await db.collection('users').insertOne(user)
-      return handleCORS(NextResponse.json({
-        id: user.id,
-        email: user.email,
-        sessionsUsed: 0,
-        maxFreeSessions: 3,
-        createdAt: user.createdAt
-      }))
+        return handleCORS(response)
+      } catch (error) {
+        console.error('Register error:', error)
+        return handleCORS(NextResponse.json(
+          { error: "Registration failed. Please try again." },
+          { status: 500 }
+        ))
+      }
     }
 
     // Get user by email - GET /api/user?email=xxx
     if (route === '/user' && method === 'GET') {
-      const url = new URL(request.url)
-      const email = url.searchParams.get('email')
+      try {
+        const url = new URL(request.url)
+        const email = url.searchParams.get('email')
 
-      if (!email) {
+        if (!email) {
+          return handleCORS(NextResponse.json(
+            { error: "Email parameter required." },
+            { status: 400 }
+          ))
+        }
+
+        // Try to get session from cookie
+        const sessionCookie = request.cookies.get('repready_session')
+        
+        if (sessionCookie) {
+          try {
+            const sessionData = JSON.parse(sessionCookie.value)
+            if (sessionData.email === email.toLowerCase()) {
+              return handleCORS(NextResponse.json({
+                id: sessionData.id,
+                email: sessionData.email,
+                sessionsUsed: sessionData.sessionsUsed || 0,
+                maxFreeSessions: 3
+              }))
+            }
+          } catch (e) {
+            // Invalid cookie, continue
+          }
+        }
+
+        // User not found in cookies - return default
+        return handleCORS(NextResponse.json({
+          id: uuidv4(),
+          email: email.toLowerCase(),
+          sessionsUsed: 0,
+          maxFreeSessions: 3
+        }))
+      } catch (error) {
+        console.error('Get user error:', error)
         return handleCORS(NextResponse.json(
-          { error: "Email parameter required." },
-          { status: 400 }
+          { error: "Failed to get user data." },
+          { status: 500 }
         ))
       }
-
-      const user = await db.collection('users').findOne({ email: email.toLowerCase() })
-      
-      if (!user) {
-        return handleCORS(NextResponse.json(
-          { error: "User not found." },
-          { status: 404 }
-        ))
-      }
-
-      return handleCORS(NextResponse.json({
-        id: user.id,
-        email: user.email,
-        sessionsUsed: user.sessionsUsed || 0,
-        maxFreeSessions: 3
-      }))
     }
 
     // Increment session count - POST /api/user/session
     if (route === '/user/session' && method === 'POST') {
-      const body = await request.json()
-      const { email } = body
+      try {
+        const body = await request.json()
+        const { email, currentSessionsUsed } = body
 
-      if (!email) {
+        if (!email) {
+          return handleCORS(NextResponse.json(
+            { error: "Email is required." },
+            { status: 400 }
+          ))
+        }
+
+        // Get current count from request body or default to 0
+        const newSessionsUsed = (currentSessionsUsed || 0) + 1
+
+        const response = NextResponse.json({
+          sessionsUsed: newSessionsUsed,
+          maxFreeSessions: 3,
+          limitReached: newSessionsUsed >= 3
+        })
+
+        // Update cookie with new session count
+        const sessionCookie = request.cookies.get('repready_session')
+        let sessionData = {
+          id: uuidv4(),
+          email: email.toLowerCase(),
+          sessionsUsed: newSessionsUsed,
+          sessionToken: uuidv4()
+        }
+
+        if (sessionCookie) {
+          try {
+            const existingData = JSON.parse(sessionCookie.value)
+            sessionData = {
+              ...existingData,
+              sessionsUsed: newSessionsUsed
+            }
+          } catch (e) {
+            // Use default sessionData
+          }
+        }
+
+        response.cookies.set('repready_session', JSON.stringify(sessionData), {
+          httpOnly: false,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          maxAge: 60 * 60 * 24 * 30 // 30 days
+        })
+
+        return handleCORS(response)
+      } catch (error) {
+        console.error('Session increment error:', error)
         return handleCORS(NextResponse.json(
-          { error: "Email is required." },
-          { status: 400 }
+          { error: "Failed to update session count." },
+          { status: 500 }
         ))
       }
-
-      const result = await db.collection('users').findOneAndUpdate(
-        { email: email.toLowerCase() },
-        { $inc: { sessionsUsed: 1 } },
-        { returnDocument: 'after' }
-      )
-
-      if (!result) {
-        return handleCORS(NextResponse.json(
-          { error: "User not found." },
-          { status: 404 }
-        ))
-      }
-
-      return handleCORS(NextResponse.json({
-        sessionsUsed: result.sessionsUsed,
-        maxFreeSessions: 3,
-        limitReached: result.sessionsUsed >= 3
-      }))
     }
 
     // Request team access - POST /api/request-access
     if (route === '/request-access' && method === 'POST') {
-      const body = await request.json()
-      const { email, company, teamSize, message } = body
+      try {
+        const body = await request.json()
+        const { email, company, teamSize, message } = body
 
-      const request_record = {
-        id: uuidv4(),
-        email: email?.toLowerCase(),
-        company,
-        teamSize,
-        message,
-        status: 'pending',
-        createdAt: new Date()
+        // Log the request (in production, you might want to send this to an email service)
+        console.log('Team access request:', { email, company, teamSize, message })
+
+        return handleCORS(NextResponse.json({ 
+          success: true, 
+          id: uuidv4(),
+          message: "Your request has been received. We'll contact you within 24 hours."
+        }))
+      } catch (error) {
+        console.error('Request access error:', error)
+        return handleCORS(NextResponse.json(
+          { error: "Failed to submit request." },
+          { status: 500 }
+        ))
       }
-
-      await db.collection('access_requests').insertOne(request_record)
-      return handleCORS(NextResponse.json({ success: true, id: request_record.id }))
     }
 
-    // Save session - POST /api/sessions
+    // Save session - POST /api/sessions (stores in cookie for now)
     if (route === '/sessions' && method === 'POST') {
-      const body = await request.json()
-      const session = {
-        id: uuidv4(),
-        ...body,
-        createdAt: new Date()
+      try {
+        const body = await request.json()
+        const session = {
+          id: uuidv4(),
+          ...body,
+          createdAt: new Date().toISOString()
+        }
+        
+        // For now, just return success - sessions are tracked in localStorage on frontend
+        return handleCORS(NextResponse.json(session))
+      } catch (error) {
+        console.error('Save session error:', error)
+        return handleCORS(NextResponse.json(
+          { error: "Failed to save session." },
+          { status: 500 }
+        ))
       }
-      await db.collection('negotiation_sessions').insertOne(session)
-      return handleCORS(NextResponse.json(session))
     }
 
     // Get sessions by user - GET /api/sessions?email=xxx
     if (route === '/sessions' && method === 'GET') {
-      const url = new URL(request.url)
-      const email = url.searchParams.get('email')
-      
-      const query = email ? { userEmail: email.toLowerCase() } : {}
-      
-      const sessions = await db.collection('negotiation_sessions')
-        .find(query)
-        .sort({ createdAt: -1 })
-        .limit(50)
-        .toArray()
-      const cleaned = sessions.map(({ _id, ...rest }) => rest)
-      return handleCORS(NextResponse.json(cleaned))
+      // Return empty array - sessions are stored in localStorage on frontend
+      return handleCORS(NextResponse.json([]))
     }
 
     // Route not found
