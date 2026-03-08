@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid'
 import { NextResponse } from 'next/server'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
-import { streamObject } from 'ai'
+import { generateObject } from 'ai'
 import { z } from 'zod'
 
 // Helper function to handle CORS
@@ -17,6 +17,12 @@ function handleCORS(response) {
 export async function OPTIONS() {
   return handleCORS(new NextResponse(null, { status: 200 }))
 }
+
+// Simple test schema
+const TestResponseSchema = z.object({
+  greeting: z.string().describe("A simple hello greeting"),
+  status: z.string().describe("Status message")
+})
 
 // Zod schema for negotiation response
 const NegotiationResponseSchema = z.object({
@@ -118,7 +124,77 @@ async function handleRoute(request, { params }) {
   try {
     // Root endpoint
     if ((route === '/root' || route === '/') && method === 'GET') {
-      return handleCORS(NextResponse.json({ message: "SalesFloor AI API" }))
+      return handleCORS(NextResponse.json({ message: "RepReady API" }))
+    }
+
+    // ============================================
+    // DIAGNOSTIC TEST ENDPOINT - GET /api/test
+    // ============================================
+    if (route === '/test' && method === 'GET') {
+      const diagnostics = {
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV || 'unknown',
+        apiKeyPresent: !!process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+        apiKeyLength: process.env.GOOGLE_GENERATIVE_AI_API_KEY?.length || 0,
+        apiKeyPrefix: process.env.GOOGLE_GENERATIVE_AI_API_KEY?.substring(0, 10) || 'NOT_SET',
+        modelName: 'gemini-2.0-flash',
+        testStatus: 'pending'
+      }
+
+      // Check if API key is set
+      if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+        return handleCORS(NextResponse.json({
+          ...diagnostics,
+          testStatus: 'failed',
+          error: 'GOOGLE_GENERATIVE_AI_API_KEY environment variable is not set'
+        }))
+      }
+
+      try {
+        console.log('[TEST] Starting Gemini API test...')
+        console.log('[TEST] API Key present:', !!process.env.GOOGLE_GENERATIVE_AI_API_KEY)
+        console.log('[TEST] API Key length:', process.env.GOOGLE_GENERATIVE_AI_API_KEY?.length)
+
+        const google = createGoogleGenerativeAI({
+          apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+        })
+
+        console.log('[TEST] Google AI client created, calling generateObject...')
+
+        const result = await generateObject({
+          model: google('gemini-2.0-flash'),
+          schema: TestResponseSchema,
+          prompt: 'Say hello in JSON format with a greeting field and a status field.',
+        })
+
+        console.log('[TEST] generateObject succeeded:', result.object)
+
+        return handleCORS(NextResponse.json({
+          ...diagnostics,
+          testStatus: 'success',
+          response: result.object,
+          usage: result.usage
+        }))
+
+      } catch (testError) {
+        console.error('[TEST] Gemini API test failed:', testError)
+        console.error('[TEST] Error name:', testError.name)
+        console.error('[TEST] Error message:', testError.message)
+        console.error('[TEST] Error cause:', testError.cause)
+        console.error('[TEST] Full error:', JSON.stringify(testError, Object.getOwnPropertyNames(testError), 2))
+
+        return handleCORS(NextResponse.json({
+          ...diagnostics,
+          testStatus: 'failed',
+          error: {
+            name: testError.name || 'UnknownError',
+            message: testError.message || 'No error message',
+            cause: testError.cause ? String(testError.cause) : null,
+            stack: testError.stack || null,
+            fullError: JSON.stringify(testError, Object.getOwnPropertyNames(testError), 2)
+          }
+        }))
+      }
     }
 
     // Negotiate endpoint - POST /api/negotiate
@@ -145,18 +221,50 @@ async function handleRoute(request, { params }) {
       try {
         // Verify API key exists
         if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
-          console.error('GOOGLE_GENERATIVE_AI_API_KEY is not set')
-          return handleCORS(NextResponse.json(
-            { error: "API configuration error. Please contact support." },
-            { status: 500 }
-          ))
+          console.error('[NEGOTIATE] GOOGLE_GENERATIVE_AI_API_KEY is not set')
+          return handleCORS(NextResponse.json({
+            ...FALLBACK_RESPONSE,
+            _debug: {
+              error: 'GOOGLE_GENERATIVE_AI_API_KEY environment variable is not set',
+              timestamp: new Date().toISOString()
+            }
+          }))
+        }
+
+        console.log('[NEGOTIATE] Starting negotiation request...')
+        console.log('[NEGOTIATE] Persona:', persona)
+        console.log('[NEGOTIATE] Messages count:', messages.length)
+        console.log('[NEGOTIATE] API Key present:', !!process.env.GOOGLE_GENERATIVE_AI_API_KEY)
+        console.log('[NEGOTIATE] Model: gemini-2.0-flash')
+
+        // Validate schema before calling API
+        try {
+          NegotiationResponseSchema.parse({
+            message: "test",
+            deal_health_score: 50,
+            score_reason: "test"
+          })
+          console.log('[NEGOTIATE] Schema validation passed')
+        } catch (schemaError) {
+          console.error('[NEGOTIATE] Schema validation failed:', schemaError)
+          return handleCORS(NextResponse.json({
+            ...FALLBACK_RESPONSE,
+            _debug: {
+              error: 'Schema validation failed',
+              schemaError: schemaError.message,
+              timestamp: new Date().toISOString()
+            }
+          }))
         }
 
         const google = createGoogleGenerativeAI({
           apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
         })
 
-        const result = await streamObject({
+        console.log('[NEGOTIATE] Calling generateObject with gemini-2.0-flash...')
+
+        // Using generateObject instead of streamObject for debugging
+        const result = await generateObject({
           model: google('gemini-2.0-flash'),
           schema: NegotiationResponseSchema,
           system: selectedPersona.systemPrompt,
@@ -164,24 +272,47 @@ async function handleRoute(request, { params }) {
             role: m.role,
             content: m.content
           })),
-          onFinish: ({ object }) => {
-            if (!object) {
-              console.log('Stream finished with no object')
-            }
-          }
         })
 
-        // Return the streaming response
-        return result.toTextStreamResponse({
-          headers: {
-            'Access-Control-Allow-Origin': process.env.CORS_ORIGINS || '*',
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-          }
-        })
-      } catch (streamError) {
-        console.error('Stream error:', streamError)
-        return handleCORS(NextResponse.json(FALLBACK_RESPONSE))
+        console.log('[NEGOTIATE] generateObject succeeded')
+        console.log('[NEGOTIATE] Response:', JSON.stringify(result.object))
+
+        // Return the response directly (not streaming)
+        return handleCORS(NextResponse.json(result.object))
+
+      } catch (apiError) {
+        // Detailed error logging
+        console.error('[NEGOTIATE] API Error occurred')
+        console.error('[NEGOTIATE] Error name:', apiError.name)
+        console.error('[NEGOTIATE] Error message:', apiError.message)
+        console.error('[NEGOTIATE] Error cause:', apiError.cause)
+        console.error('[NEGOTIATE] Error stack:', apiError.stack)
+        
+        // Try to extract more details
+        let errorDetails = {
+          name: apiError.name || 'UnknownError',
+          message: apiError.message || 'No error message',
+          timestamp: new Date().toISOString()
+        }
+
+        if (apiError.cause) {
+          errorDetails.cause = String(apiError.cause)
+        }
+
+        if (apiError.data) {
+          errorDetails.data = apiError.data
+        }
+
+        if (apiError.responseBody) {
+          errorDetails.responseBody = apiError.responseBody
+        }
+
+        console.error('[NEGOTIATE] Full error details:', JSON.stringify(errorDetails, null, 2))
+
+        return handleCORS(NextResponse.json({
+          ...FALLBACK_RESPONSE,
+          _debug: errorDetails
+        }))
       }
     }
 
@@ -231,43 +362,53 @@ Evaluate the sales rep's performance and return JSON with:
       try {
         // Verify API key exists
         if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
-          console.error('GOOGLE_GENERATIVE_AI_API_KEY is not set for scorecard')
-          return handleCORS(NextResponse.json(
-            { error: "API configuration error. Please contact support." },
-            { status: 500 }
-          ))
+          console.error('[SCORECARD] GOOGLE_GENERATIVE_AI_API_KEY is not set')
+          return handleCORS(NextResponse.json({
+            final_score: 50,
+            verdict: "Unable to generate scorecard - API key not configured.",
+            strengths: ["Participated in the negotiation", "Showed initiative"],
+            improvements: ["Try again for a full evaluation", "Ensure stable connection"],
+            biggest_mistake: "Scorecard generation failed - API configuration error"
+          }))
         }
+
+        console.log('[SCORECARD] Starting scorecard generation...')
 
         const google = createGoogleGenerativeAI({
           apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
         })
 
-        const result = await streamObject({
+        console.log('[SCORECARD] Calling generateObject with gemini-2.0-flash...')
+
+        // Using generateObject instead of streamObject for debugging
+        const result = await generateObject({
           model: google('gemini-2.0-flash'),
           schema: ScorecardResponseSchema,
           prompt: scoringPrompt,
-          onFinish: ({ object }) => {
-            if (!object) {
-              console.log('Scorecard stream finished with no object')
-            }
-          }
         })
 
-        return result.toTextStreamResponse({
-          headers: {
-            'Access-Control-Allow-Origin': process.env.CORS_ORIGINS || '*',
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-          }
-        })
-      } catch (streamError) {
-        console.error('Scorecard error:', streamError)
+        console.log('[SCORECARD] generateObject succeeded')
+        console.log('[SCORECARD] Response:', JSON.stringify(result.object))
+
+        return handleCORS(NextResponse.json(result.object))
+
+      } catch (apiError) {
+        console.error('[SCORECARD] API Error occurred')
+        console.error('[SCORECARD] Error name:', apiError.name)
+        console.error('[SCORECARD] Error message:', apiError.message)
+        console.error('[SCORECARD] Error cause:', apiError.cause)
+
         return handleCORS(NextResponse.json({
           final_score: 50,
           verdict: "Unable to generate scorecard due to an error.",
           strengths: ["Participated in the negotiation", "Showed initiative"],
           improvements: ["Try again for a full evaluation", "Ensure stable connection"],
-          biggest_mistake: "Scorecard generation failed"
+          biggest_mistake: "Scorecard generation failed",
+          _debug: {
+            error: apiError.message,
+            name: apiError.name,
+            timestamp: new Date().toISOString()
+          }
         }))
       }
     }
