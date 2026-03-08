@@ -157,12 +157,21 @@ async function handleRoute(request, { params }) {
       const selectedPersona = PERSONAS[persona]
       
       try {
+        // Verify API key exists
+        if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+          console.error('GOOGLE_GENERATIVE_AI_API_KEY is not set')
+          return handleCORS(NextResponse.json(
+            { error: "API configuration error. Please contact support." },
+            { status: 500 }
+          ))
+        }
+
         const google = createGoogleGenerativeAI({
           apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
         })
 
         const result = await streamObject({
-          model: google('gemini-2.5-flash'),
+          model: google('gemini-2.0-flash'),
           schema: NegotiationResponseSchema,
           system: selectedPersona.systemPrompt,
           messages: messages.map(m => ({
@@ -234,12 +243,21 @@ Evaluate the sales rep's performance and return JSON with:
 - biggest_mistake: One sentence describing their most critical error (or "No major mistakes" if they performed well)`
 
       try {
+        // Verify API key exists
+        if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+          console.error('GOOGLE_GENERATIVE_AI_API_KEY is not set for scorecard')
+          return handleCORS(NextResponse.json(
+            { error: "API configuration error. Please contact support." },
+            { status: 500 }
+          ))
+        }
+
         const google = createGoogleGenerativeAI({
           apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
         })
 
         const result = await streamObject({
-          model: google('gemini-2.5-flash'),
+          model: google('gemini-2.0-flash'),
           schema: ScorecardResponseSchema,
           prompt: scoringPrompt,
           onFinish: ({ object }) => {
