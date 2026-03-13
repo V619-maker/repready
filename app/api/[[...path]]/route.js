@@ -137,7 +137,7 @@ async function handleRoute(request, { params }) {
         apiKeyPresent: !!process.env.GOOGLE_GENERATIVE_AI_API_KEY,
         apiKeyLength: process.env.GOOGLE_GENERATIVE_AI_API_KEY?.length || 0,
         apiKeyPrefix: process.env.GOOGLE_GENERATIVE_AI_API_KEY?.substring(0, 10) || 'NOT_SET',
-        modelName: 'gemini-2.0-flash',
+        modelName: 'gemini-1.5-flash',
         testStatus: 'pending'
       }
 
@@ -162,7 +162,7 @@ async function handleRoute(request, { params }) {
         console.log('[TEST] Google AI client created, calling generateObject...')
 
         const result = await generateObject({
-          model: google('gemini-2.0-flash'),
+          model: google('gemini-1.5-flash'),
           schema: TestResponseSchema,
           prompt: 'Say hello in JSON format with a greeting field and a status field.',
         })
@@ -235,7 +235,7 @@ async function handleRoute(request, { params }) {
         console.log('[NEGOTIATE] Persona:', persona)
         console.log('[NEGOTIATE] Messages count:', messages.length)
         console.log('[NEGOTIATE] API Key present:', !!process.env.GOOGLE_GENERATIVE_AI_API_KEY)
-        console.log('[NEGOTIATE] Model: gemini-2.0-flash')
+        console.log('[NEGOTIATE] Model: gemini-1.5-flash')
 
         // Validate schema before calling API
         try {
@@ -261,11 +261,11 @@ async function handleRoute(request, { params }) {
           apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
         })
 
-        console.log('[NEGOTIATE] Calling generateObject with gemini-2.0-flash...')
+        console.log('[NEGOTIATE] Calling generateObject with gemini-1.5-flash...')
 
         // Using generateObject instead of streamObject for debugging
         const result = await generateObject({
-          model: google('gemini-2.0-flash'),
+          model: google('gemini-1.5-flash'),
           schema: NegotiationResponseSchema,
           system: selectedPersona.systemPrompt,
           messages: messages.map(m => ({
@@ -378,11 +378,11 @@ Evaluate the sales rep's performance and return JSON with:
           apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
         })
 
-        console.log('[SCORECARD] Calling generateObject with gemini-2.0-flash...')
+        console.log('[SCORECARD] Calling generateObject with gemini-1.5-flash...')
 
         // Using generateObject instead of streamObject for debugging
         const result = await generateObject({
-          model: google('gemini-2.0-flash'),
+          model: google('gemini-1.5-flash'),
           schema: ScorecardResponseSchema,
           prompt: scoringPrompt,
         })
