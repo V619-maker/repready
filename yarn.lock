@@ -966,6 +966,11 @@
   dependencies:
     "@types/webidl-conversions" "*"
 
+"@vercel/analytics@^1.4.1":
+  version "1.6.1"
+  resolved "https://registry.yarnpkg.com/@vercel/analytics/-/analytics-1.6.1.tgz#b4e16daf445cf6cd365a91e43d86e9e5b3428ddc"
+  integrity sha512-oH9He/bEM+6oKlv3chWuOOcp8Y6fo6/PSro8hEkgCW3pu9/OiCXiUpRUogDh3Fs3LH2sosDrx8CxeOLBEE+afg==
+
 ai@^3.4.0:
   version "3.4.33"
   resolved "https://registry.yarnpkg.com/ai/-/ai-3.4.33.tgz#b52ac6a7def6972bb5edaf1867ffc13526b8d51d"
