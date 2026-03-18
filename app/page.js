@@ -36,7 +36,11 @@ import {
   BarChart3,
   ArrowRight,
   Lock,
-  Mail
+  Mail,
+  Lightbulb,
+  Phone,
+  FileText,
+  Briefcase
 } from 'lucide-react'
 
 // Persona data
@@ -53,7 +57,8 @@ const PERSONAS = {
     borderColor: 'border-red-500/20',
     description: '20 years of vendor negotiation. CFO mandated 15% cost reduction. His bonus is tied to savings.',
     tactics: ['Threatens vendor consolidation', 'Demands Net-90 terms', 'Pushes for 20% discount'],
-    personality: 'Curt, impatient, never shows genuine interest'
+    personality: 'Curt, impatient, never shows genuine interest',
+    firstMessage: "You've got 3 minutes. We're evaluating four vendors this quarter and my CFO wants 20% off our software spend. Tell me exactly why I should not just go with the cheaper option."
   },
   sandra: {
     id: 'sandra',
@@ -67,14 +72,22 @@ const PERSONAS = {
     borderColor: 'border-purple-500/20',
     description: 'Aggressively protects her team\'s bandwidth. Every response contains a blocker.',
     tactics: ['Claims zero implementation capacity', 'Demands SOC 2 Type II', 'Requires native SAML/SSO'],
-    personality: 'Polite on the surface, but always has objections'
+    personality: 'Polite on the surface, but always has objections',
+    firstMessage: "I've got a few minutes before my next meeting. We're looking at tools like yours, but my team has zero bandwidth for implementation this quarter. What makes you different from the other three vendors I'm evaluating?"
   }
+}
+
+// Coaching tips based on message count
+const COACHING_TIPS = {
+  early: "Tip: Don't mention price yet. Ask Richard about his biggest challenge with his current vendor first.",
+  mid: "Tip: If Richard pushes on price, redirect to ROI. What does a bad vendor cost him per quarter?",
+  late: "Tip: Create urgency by highlighting what competitors are doing. Don't beg — position yourself as the solution."
 }
 
 // Privacy Footer Component
 function PrivacyFooter() {
   return (
-    <footer className="border-t border-border/50 py-4 px-6 bg-[#060A14]">
+    <footer className="border-t border-border/50 py-4 px-6 bg-[#0A0A12]">
       <div className="flex items-center justify-center gap-6 text-xs text-muted-foreground/60">
         <a href="/privacy" className="hover:text-muted-foreground transition-colors">Privacy Policy</a>
         <a href="/terms" className="hover:text-muted-foreground transition-colors">Terms of Service</a>
@@ -91,7 +104,7 @@ function DifficultyStars({ difficulty, size = 'default' }) {
       {[...Array(5)].map((_, i) => (
         <Star
           key={i}
-          className={`${sizeClass} ${i < difficulty ? 'fill-[#00FF88] text-[#00FF88]' : 'text-muted-foreground/30'}`}
+          className={`${sizeClass} ${i < difficulty ? 'fill-[#F5A623] text-[#F5A623]' : 'text-muted-foreground/30'}`}
         />
       ))}
     </div>
@@ -101,124 +114,207 @@ function DifficultyStars({ difficulty, size = 'default' }) {
 // Score trend indicator
 function ScoreTrend({ currentScore, previousScore }) {
   const diff = currentScore - previousScore
-  if (diff > 0) return <TrendingUp className="w-4 h-4 text-[#00FF88]" />
-  if (diff < 0) return <TrendingDown className="w-4 h-4 text-red-500" />
-  return <Minus className="w-4 h-4 text-muted-foreground" />
+  if (diff > 0) return <TrendingUp className="w-5 h-5 text-[#F5A623]" />
+  if (diff < 0) return <TrendingDown className="w-5 h-5 text-[#E63946]" />
+  return <Minus className="w-5 h-5 text-muted-foreground" />
 }
 
-// Get score color based on value
+// Get score color based on value - Updated for amber/red
 function getScoreColor(score) {
-  if (score >= 70) return 'text-[#00FF88]'
-  if (score >= 40) return 'text-yellow-500'
-  return 'text-red-500'
+  if (score >= 70) return 'text-[#22C55E]'
+  if (score >= 40) return 'text-[#F5A623]'
+  return 'text-[#E63946]'
 }
 
 function getProgressColor(score) {
-  if (score >= 70) return 'bg-[#00FF88]'
-  if (score >= 40) return 'bg-yellow-500'
-  return 'bg-red-500'
+  if (score >= 70) return 'bg-[#22C55E]'
+  if (score >= 40) return 'bg-[#F5A623]'
+  return 'bg-[#E63946]'
 }
 
 // Get verdict styling
 function getVerdictStyle(verdict) {
   const lower = verdict.toLowerCase()
-  if (lower.startsWith('passed')) return { color: 'text-[#00FF88]', bg: 'bg-[#00FF88]/10', icon: Trophy }
-  if (lower.startsWith('needs work')) return { color: 'text-yellow-500', bg: 'bg-yellow-500/10', icon: AlertTriangle }
-  return { color: 'text-red-500', bg: 'bg-red-500/10', icon: XCircle }
+  if (lower.startsWith('passed')) return { color: 'text-[#22C55E]', bg: 'bg-[#22C55E]/10', icon: Trophy }
+  if (lower.startsWith('needs work')) return { color: 'text-[#F5A623]', bg: 'bg-[#F5A623]/10', icon: AlertTriangle }
+  return { color: 'text-[#E63946]', bg: 'bg-[#E63946]/10', icon: XCircle }
 }
 
-// Landing Page Component
+// Demo Conversation Card Component
+function DemoCard({ type, score, label, repMessage, richardReply }) {
+  const isWrong = type === 'wrong'
+  const bgColor = isWrong ? 'bg-[#E63946]/5' : 'bg-[#22C55E]/5'
+  const borderColor = isWrong ? 'border-[#E63946]/20' : 'border-[#22C55E]/20'
+  const labelColor = isWrong ? 'text-[#E63946]' : 'text-[#22C55E]'
+  const barColor = isWrong ? 'bg-[#E63946]' : 'bg-[#22C55E]'
+  
+  return (
+    <Card className={`${bgColor} border ${borderColor}`}>
+      <CardContent className="p-5">
+        <div className="flex items-center justify-between mb-4">
+          <Badge variant="outline" className={`${labelColor} border-current`}>
+            {label}
+          </Badge>
+          <div className="flex items-center gap-2">
+            <div className="w-20 h-2 bg-muted rounded-full overflow-hidden">
+              <div className={`h-full ${barColor} rounded-full`} style={{ width: `${score}%` }} />
+            </div>
+            <span className={`text-sm font-mono-score font-bold ${labelColor}`}>{score}%</span>
+          </div>
+        </div>
+        
+        <div className="space-y-3">
+          <div className="flex justify-end">
+            <div className="bg-[#6366F1] text-white rounded-2xl rounded-br-md px-3 py-2 max-w-[85%]">
+              <p className="text-sm">{repMessage}</p>
+            </div>
+          </div>
+          <div className="flex justify-start">
+            <div className="glass richard-bubble rounded-2xl rounded-bl-md px-3 py-2 max-w-[85%]">
+              <p className="text-xs font-semibold text-[#F5A623] mb-1">Richard</p>
+              <p className="text-sm">{richardReply}</p>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// Landing Page Component - REDESIGNED
 function LandingPage({ onGetStarted }) {
   return (
-    <div className="min-h-screen bg-[#0A0F1E] grid-pattern flex flex-col">
+    <div className="min-h-screen bg-[#0D0D1A] grid-pattern flex flex-col">
       {/* Navigation */}
-      <nav className="border-b border-border/50 backdrop-blur-sm bg-[#0A0F1E]/80 sticky top-0 z-50">
+      <nav className="border-b border-border/50 backdrop-blur-sm bg-[#0D0D1A]/80 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#00FF88] to-[#6366F1] flex items-center justify-center">
-              <Target className="w-5 h-5 text-[#0A0F1E]" />
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#F5A623] to-[#E63946] flex items-center justify-center">
+              <Target className="w-5 h-5 text-white" />
             </div>
             <span className="text-xl font-bold">RepReady</span>
           </div>
           <div className="flex items-center gap-6">
-            <a href="/pricing" className="text-sm text-muted-foreground hover:text-[#00FF88] transition-colors">
+            <a href="/pricing" className="text-sm text-muted-foreground hover:text-[#F5A623] transition-colors">
               Pricing
             </a>
             <Button 
               onClick={onGetStarted}
-              className="bg-[#6366F1] hover:bg-[#6366F1]/90 text-white"
+              className="bg-[#E63946] hover:bg-[#E63946]/90 text-white"
             >
-              Start Practicing
+              Challenge Richard Free →
             </Button>
           </div>
         </div>
       </nav>
 
       {/* Hero Section */}
-      <main className="flex-1 flex flex-col items-center justify-center px-6 py-20">
-        <div className="max-w-4xl mx-auto text-center">
-          <Badge className="mb-6 bg-[#6366F1]/10 text-[#6366F1] border-[#6366F1]/20 hover:bg-[#6366F1]/20">
-            AI-Powered Sales Training
-          </Badge>
-          
-          <h1 className="text-5xl md:text-6xl font-bold mb-6 leading-tight">
-            Your Reps Are Practicing on{' '}
-            <span className="text-gradient">Real Deals.</span>
-            <br />
-            <span className="text-[#00FF88]">Stop That.</span>
-          </h1>
-          
-          <p className="text-xl text-muted-foreground mb-12 max-w-2xl mx-auto">
-            Practice the hardest sales conversations before they happen live.
-          </p>
+      <main className="flex-1 px-6 py-16">
+        <div className="max-w-5xl mx-auto">
+          {/* Hero */}
+          <div className="text-center mb-16">
+            <Badge className="mb-4 bg-[#F5A623]/10 text-[#F5A623] border-[#F5A623]/20 hover:bg-[#F5A623]/20">
+              <Users className="w-3 h-3 mr-1" />
+              Sessions Completed: 47
+            </Badge>
+            
+            <h1 className="text-5xl md:text-6xl font-bold mb-4 leading-tight">
+              Your Reps Are Practicing on{' '}
+              <span className="text-gradient">Real Deals.</span>
+              <br />
+              <span className="text-[#E63946]">Stop That.</span>
+            </h1>
+            
+            <p className="text-xl text-muted-foreground mb-4 max-w-2xl mx-auto">
+              Practice the hardest sales conversations before they happen live.
+            </p>
+            
+            <p className="text-lg text-[#F5A623] mb-8 max-w-2xl mx-auto font-medium">
+              Richard, our AI VP Procurement, has an average opponent score of 34%. Most reps don&apos;t last 3 messages.
+            </p>
 
-          <Button 
-            onClick={onGetStarted}
-            size="lg"
-            className="bg-[#6366F1] hover:bg-[#6366F1]/90 text-white h-14 px-8 text-lg gap-2 glow-violet"
-          >
-            Start Free Practice Session
-            <ArrowRight className="w-5 h-5" />
-          </Button>
-        </div>
+            <Button 
+              onClick={onGetStarted}
+              size="lg"
+              className="bg-[#E63946] hover:bg-[#E63946]/90 text-white h-14 px-8 text-lg gap-2 glow-red"
+            >
+              Challenge Richard Free →
+            </Button>
+          </div>
 
-        {/* Value Props */}
-        <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto mt-24">
-          <Card className="glass-card border-0">
-            <CardContent className="pt-6">
-              <div className="w-12 h-12 rounded-xl bg-[#00FF88]/10 flex items-center justify-center mb-4">
-                <Shield className="w-6 h-6 text-[#00FF88]" />
-              </div>
-              <h3 className="font-semibold text-lg mb-2">Zero-Risk Practice</h3>
-              <p className="text-sm text-muted-foreground">
-                Make mistakes in simulation, not in front of your biggest prospect. Every session is a safe space to fail forward.
-              </p>
-            </CardContent>
-          </Card>
+          {/* See What You're Up Against Section */}
+          <div className="mb-16">
+            <div className="text-center mb-8">
+              <h2 className="text-2xl font-bold mb-2">See What You&apos;re Up Against</h2>
+              <p className="text-muted-foreground">One wrong move and Richard smells blood. Here&apos;s how it plays out.</p>
+            </div>
+            
+            <div className="grid md:grid-cols-2 gap-6">
+              <DemoCard 
+                type="wrong"
+                score={15}
+                label="Wrong Move"
+                repMessage="I can do 20% off if you sign today."
+                richardReply="Discount noted. I also need Net-90 terms or we're done."
+              />
+              <DemoCard 
+                type="right"
+                score={72}
+                label="Right Move"
+                repMessage="Before we discuss price — what's your biggest challenge with your current vendor?"
+                richardReply="Fine. Delivery timelines are a problem. But I still need movement on price."
+              />
+            </div>
+            
+            <div className="text-center mt-8">
+              <Button 
+                onClick={onGetStarted}
+                size="lg"
+                className="bg-[#E63946] hover:bg-[#E63946]/90 text-white h-14 px-8 text-lg gap-2 glow-red"
+              >
+                Challenge Richard Free →
+              </Button>
+            </div>
+          </div>
 
-          <Card className="glass-card border-0">
-            <CardContent className="pt-6">
-              <div className="w-12 h-12 rounded-xl bg-[#6366F1]/10 flex items-center justify-center mb-4">
-                <Zap className="w-6 h-6 text-[#6366F1]" />
-              </div>
-              <h3 className="font-semibold text-lg mb-2">Real-Time Coaching</h3>
-              <p className="text-sm text-muted-foreground">
-                Get instant feedback on negotiation tactics. Our AI evaluates your responses and scores your performance live.
-              </p>
-            </CardContent>
-          </Card>
+          {/* Value Props */}
+          <div className="grid md:grid-cols-3 gap-6">
+            <Card className="glass-card border-0">
+              <CardContent className="pt-6">
+                <div className="w-12 h-12 rounded-xl bg-[#F5A623]/10 flex items-center justify-center mb-4">
+                  <Shield className="w-6 h-6 text-[#F5A623]" />
+                </div>
+                <h3 className="font-semibold text-lg mb-2">Zero-Risk Practice</h3>
+                <p className="text-sm text-muted-foreground">
+                  Make mistakes in simulation, not in front of your biggest prospect. Every session is a safe space to fail forward.
+                </p>
+              </CardContent>
+            </Card>
 
-          <Card className="glass-card border-0">
-            <CardContent className="pt-6">
-              <div className="w-12 h-12 rounded-xl bg-red-500/10 flex items-center justify-center mb-4">
-                <BarChart3 className="w-6 h-6 text-red-500" />
-              </div>
-              <h3 className="font-semibold text-lg mb-2">Measurable Progress</h3>
-              <p className="text-sm text-muted-foreground">
-                Track improvement over time. See exactly where reps struggle and watch scores climb session over session.
-              </p>
-            </CardContent>
-          </Card>
+            <Card className="glass-card border-0">
+              <CardContent className="pt-6">
+                <div className="w-12 h-12 rounded-xl bg-[#E63946]/10 flex items-center justify-center mb-4">
+                  <Zap className="w-6 h-6 text-[#E63946]" />
+                </div>
+                <h3 className="font-semibold text-lg mb-2">Real-Time Coaching</h3>
+                <p className="text-sm text-muted-foreground">
+                  Get instant feedback on negotiation tactics. Our AI evaluates your responses and scores your performance live.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="glass-card border-0">
+              <CardContent className="pt-6">
+                <div className="w-12 h-12 rounded-xl bg-[#6366F1]/10 flex items-center justify-center mb-4">
+                  <BarChart3 className="w-6 h-6 text-[#6366F1]" />
+                </div>
+                <h3 className="font-semibold text-lg mb-2">Measurable Progress</h3>
+                <p className="text-sm text-muted-foreground">
+                  Track improvement over time. See exactly where reps struggle and watch scores climb session over session.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </main>
 
@@ -239,7 +335,7 @@ function EmailGate({ onComplete, selectedPersona }) {
     e.preventDefault()
     setError('')
 
-    if (!email || !email.includes('@')) {
+    if (!email || !email.includes('@') || !email.includes('.')) {
       setError('Please enter a valid email address.')
       return
     }
@@ -273,12 +369,12 @@ function EmailGate({ onComplete, selectedPersona }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#0A0F1E] grid-pattern flex flex-col">
+    <div className="min-h-screen bg-[#0D0D1A] grid-pattern flex flex-col">
       {/* Navigation */}
-      <nav className="border-b border-border/50 backdrop-blur-sm bg-[#0A0F1E]/80">
+      <nav className="border-b border-border/50 backdrop-blur-sm bg-[#0D0D1A]/80">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#00FF88] to-[#6366F1] flex items-center justify-center">
-            <Target className="w-5 h-5 text-[#0A0F1E]" />
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#F5A623] to-[#E63946] flex items-center justify-center">
+            <Target className="w-5 h-5 text-white" />
           </div>
           <span className="text-xl font-bold">RepReady</span>
         </div>
@@ -305,7 +401,7 @@ function EmailGate({ onComplete, selectedPersona }) {
                   placeholder="Enter your email to begin"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10 h-12 bg-[#0A0F1E] border-border/50 focus:border-[#6366F1]"
+                  className="pl-10 h-12 bg-[#0D0D1A] border-border/50 focus:border-[#F5A623]"
                 />
               </div>
 
@@ -314,25 +410,25 @@ function EmailGate({ onComplete, selectedPersona }) {
                   id="consent"
                   checked={consent}
                   onCheckedChange={setConsent}
-                  className="mt-1 border-border/50 data-[state=checked]:bg-[#6366F1] data-[state=checked]:border-[#6366F1]"
+                  className="mt-1 border-border/50 data-[state=checked]:bg-[#E63946] data-[state=checked]:border-[#E63946]"
                 />
                 <label htmlFor="consent" className="text-xs text-muted-foreground leading-relaxed cursor-pointer">
                   I agree to processing of my data per the{' '}
-                  <a href="/privacy" className="text-[#6366F1] hover:underline">Privacy Policy</a>
+                  <a href="/privacy" className="text-[#F5A623] hover:underline">Privacy Policy</a>
                   {' '}and that sessions are not used to train AI models.
                 </label>
               </div>
 
               {error && (
-                <p className="text-sm text-red-500">{error}</p>
+                <p className="text-sm text-[#E63946]">{error}</p>
               )}
 
               <Button 
                 type="submit" 
-                className="w-full h-12 bg-[#6366F1] hover:bg-[#6366F1]/90 text-white"
+                className="w-full h-12 bg-[#E63946] hover:bg-[#E63946]/90 text-white"
                 disabled={isLoading}
               >
-                {isLoading ? 'Starting...' : 'Start Practice Session'}
+                {isLoading ? 'Starting...' : 'Challenge Richard Free →'}
               </Button>
             </form>
 
@@ -345,6 +441,77 @@ function EmailGate({ onComplete, selectedPersona }) {
       </main>
 
       <PrivacyFooter />
+    </div>
+  )
+}
+
+// Pre-Call Briefing Screen - NEW
+function PreCallBriefing({ persona, onStartCall }) {
+  const selectedPersona = PERSONAS[persona]
+  
+  return (
+    <div className="flex-1 flex items-center justify-center p-6">
+      <Card className="w-full max-w-2xl glass-card border-0">
+        <CardHeader className="text-center pb-4">
+          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#F5A623] to-[#E63946] mx-auto mb-4 flex items-center justify-center">
+            <Phone className="w-8 h-8 text-white" />
+          </div>
+          <CardTitle className="text-2xl">Pre-Call Briefing</CardTitle>
+          <CardDescription>Review the intel before you go live with {selectedPersona.name}</CardDescription>
+        </CardHeader>
+        
+        <CardContent className="space-y-4">
+          <div className="grid gap-4">
+            <div className="flex items-start gap-4 p-4 bg-muted/30 rounded-lg">
+              <div className="w-10 h-10 rounded-lg bg-[#6366F1]/10 flex items-center justify-center flex-shrink-0">
+                <Briefcase className="w-5 h-5 text-[#6366F1]" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-[#F5A623]">YOUR ROLE</p>
+                <p className="text-sm text-muted-foreground">Account Executive selling a $50,000 SaaS contract.</p>
+              </div>
+            </div>
+            
+            <div className="flex items-start gap-4 p-4 bg-muted/30 rounded-lg">
+              <div className="w-10 h-10 rounded-lg bg-[#E63946]/10 flex items-center justify-center flex-shrink-0">
+                <Users className="w-5 h-5 text-[#E63946]" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-[#F5A623]">ABOUT {selectedPersona.name.toUpperCase()}</p>
+                <p className="text-sm text-muted-foreground">{selectedPersona.title} at a {selectedPersona.company}. CFO has mandated 15% cost reduction this quarter.</p>
+              </div>
+            </div>
+            
+            <div className="flex items-start gap-4 p-4 bg-muted/30 rounded-lg">
+              <div className="w-10 h-10 rounded-lg bg-[#22C55E]/10 flex items-center justify-center flex-shrink-0">
+                <Target className="w-5 h-5 text-[#22C55E]" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-[#F5A623]">YOUR OBJECTIVE</p>
+                <p className="text-sm text-muted-foreground">Get {selectedPersona.name} to agree to a discovery call.</p>
+              </div>
+            </div>
+            
+            <div className="flex items-start gap-4 p-4 bg-[#F5A623]/5 border border-[#F5A623]/20 rounded-lg">
+              <div className="w-10 h-10 rounded-lg bg-[#F5A623]/10 flex items-center justify-center flex-shrink-0">
+                <FileText className="w-5 h-5 text-[#F5A623]" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-[#F5A623]">INTEL</p>
+                <p className="text-sm text-muted-foreground">{selectedPersona.name} has 3 competing vendors on his shortlist.</p>
+              </div>
+            </div>
+          </div>
+          
+          <Button 
+            onClick={onStartCall}
+            size="lg"
+            className="w-full h-14 bg-[#E63946] hover:bg-[#E63946]/90 text-white text-lg mt-6"
+          >
+            Start The Call →
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   )
 }
@@ -380,7 +547,7 @@ function RequestAccessModal({ email, onClose }) {
       <Card className="w-full max-w-md glass-card border-0">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Users className="w-5 h-5 text-[#6366F1]" />
+            <Users className="w-5 h-5 text-[#F5A623]" />
             {submitted ? 'Request Received!' : 'Request Team Access'}
           </CardTitle>
           <CardDescription>
@@ -392,7 +559,7 @@ function RequestAccessModal({ email, onClose }) {
         </CardHeader>
         <CardContent>
           {submitted ? (
-            <Button onClick={onClose} className="w-full bg-[#6366F1] hover:bg-[#6366F1]/90">
+            <Button onClick={onClose} className="w-full bg-[#E63946] hover:bg-[#E63946]/90">
               Close
             </Button>
           ) : (
@@ -401,21 +568,21 @@ function RequestAccessModal({ email, onClose }) {
                 placeholder="Company name"
                 value={company}
                 onChange={(e) => setCompany(e.target.value)}
-                className="bg-[#0A0F1E] border-border/50"
+                className="bg-[#0D0D1A] border-border/50"
                 required
               />
               <Input
                 placeholder="Team size (e.g., 10-50)"
                 value={teamSize}
                 onChange={(e) => setTeamSize(e.target.value)}
-                className="bg-[#0A0F1E] border-border/50"
+                className="bg-[#0D0D1A] border-border/50"
                 required
               />
               <textarea
                 placeholder="Tell us about your training needs..."
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                className="w-full h-24 px-3 py-2 bg-[#0A0F1E] border border-border/50 rounded-md text-sm resize-none focus:outline-none focus:border-[#6366F1]"
+                className="w-full h-24 px-3 py-2 bg-[#0D0D1A] border border-border/50 rounded-md text-sm resize-none focus:outline-none focus:border-[#F5A623]"
               />
               <div className="flex gap-3">
                 <Button type="button" variant="outline" onClick={onClose} className="flex-1">
@@ -423,7 +590,7 @@ function RequestAccessModal({ email, onClose }) {
                 </Button>
                 <Button 
                   type="submit" 
-                  className="flex-1 bg-[#6366F1] hover:bg-[#6366F1]/90"
+                  className="flex-1 bg-[#E63946] hover:bg-[#E63946]/90"
                   disabled={isSubmitting}
                 >
                   {isSubmitting ? 'Submitting...' : 'Request Access'}
@@ -452,10 +619,10 @@ function ScorecardLoading({ personaName }) {
     <div className="flex-1 flex items-center justify-center">
       <div className="text-center">
         <div className="relative mb-8">
-          <div className="w-24 h-24 rounded-full bg-gradient-to-br from-[#6366F1]/20 to-[#6366F1]/5 mx-auto flex items-center justify-center">
-            <Award className="w-12 h-12 text-[#6366F1] animate-pulse" />
+          <div className="w-24 h-24 rounded-full bg-gradient-to-br from-[#F5A623]/20 to-[#F5A623]/5 mx-auto flex items-center justify-center">
+            <Award className="w-12 h-12 text-[#F5A623] animate-pulse" />
           </div>
-          <div className="absolute inset-0 w-24 h-24 mx-auto rounded-full border-4 border-[#6366F1]/20 border-t-[#6366F1] animate-spin" />
+          <div className="absolute inset-0 w-24 h-24 mx-auto rounded-full border-4 border-[#F5A623]/20 border-t-[#F5A623] animate-spin" />
         </div>
         <h2 className="text-2xl font-bold mb-2">{personaName} is reviewing your performance{dots}</h2>
         <p className="text-muted-foreground">Analyzing negotiation tactics and strategies</p>
@@ -478,9 +645,9 @@ function ResultsCard({ scorecard, persona, onTryAgain }) {
           
           <CardHeader className="text-center pb-2 pt-8">
             <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground mb-4">
-              <Sparkles className="w-4 h-4 text-[#00FF88]" />
+              <Sparkles className="w-4 h-4 text-[#F5A623]" />
               <span>Performance Review</span>
-              <Sparkles className="w-4 h-4 text-[#00FF88]" />
+              <Sparkles className="w-4 h-4 text-[#F5A623]" />
             </div>
             <CardTitle className="text-lg font-medium text-muted-foreground">
               Negotiation with {selectedPersona.name}
@@ -490,10 +657,10 @@ function ResultsCard({ scorecard, persona, onTryAgain }) {
           <CardContent className="space-y-8 pb-8">
             <div className="text-center py-6">
               <div className="relative inline-block">
-                <div className={`text-8xl font-bold font-mono-score ${getScoreColor(scorecard.final_score)}`}>
+                <div className={`text-9xl font-black font-mono-score ${getScoreColor(scorecard.final_score)}`}>
                   {scorecard.final_score}
                 </div>
-                <div className="absolute -top-2 -right-4 text-2xl font-medium text-muted-foreground">/100</div>
+                <div className="absolute -top-2 -right-6 text-3xl font-bold text-muted-foreground">/100</div>
               </div>
             </div>
 
@@ -510,30 +677,30 @@ function ResultsCard({ scorecard, persona, onTryAgain }) {
             </div>
 
             <div className="grid md:grid-cols-2 gap-4">
-              <div className="bg-[#00FF88]/5 border border-[#00FF88]/20 rounded-xl p-4">
+              <div className="bg-[#22C55E]/5 border border-[#22C55E]/20 rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <CheckCircle2 className="w-5 h-5 text-[#00FF88]" />
-                  <h3 className="font-semibold text-[#00FF88]">Strengths</h3>
+                  <CheckCircle2 className="w-5 h-5 text-[#22C55E]" />
+                  <h3 className="font-semibold text-[#22C55E]">Strengths</h3>
                 </div>
                 <ul className="space-y-2">
                   {scorecard.strengths?.map((strength, i) => (
                     <li key={i} className="flex items-start gap-2 text-sm">
-                      <span className="text-[#00FF88] mt-1">•</span>
+                      <span className="text-[#22C55E] mt-1">•</span>
                       <span>{strength}</span>
                     </li>
                   ))}
                 </ul>
               </div>
 
-              <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-4">
+              <div className="bg-[#E63946]/5 border border-[#E63946]/20 rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <TrendingUp className="w-5 h-5 text-red-500" />
-                  <h3 className="font-semibold text-red-500">Areas to Improve</h3>
+                  <TrendingUp className="w-5 h-5 text-[#E63946]" />
+                  <h3 className="font-semibold text-[#E63946]">Areas to Improve</h3>
                 </div>
                 <ul className="space-y-2">
                   {scorecard.improvements?.map((improvement, i) => (
                     <li key={i} className="flex items-start gap-2 text-sm">
-                      <span className="text-red-500 mt-1">•</span>
+                      <span className="text-[#E63946] mt-1">•</span>
                       <span>{improvement}</span>
                     </li>
                   ))}
@@ -541,10 +708,10 @@ function ResultsCard({ scorecard, persona, onTryAgain }) {
               </div>
             </div>
 
-            <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4">
+            <div className="bg-[#F5A623]/5 border border-[#F5A623]/20 rounded-xl p-4">
               <div className="flex items-center gap-2 mb-2">
-                <AlertTriangle className="w-5 h-5 text-amber-500" />
-                <h3 className="font-semibold text-amber-500">Key Learning</h3>
+                <AlertTriangle className="w-5 h-5 text-[#F5A623]" />
+                <h3 className="font-semibold text-[#F5A623]">Key Learning</h3>
               </div>
               <p className="text-sm text-muted-foreground italic">
                 &ldquo;{scorecard.biggest_mistake}&rdquo;
@@ -554,10 +721,10 @@ function ResultsCard({ scorecard, persona, onTryAgain }) {
             <Button 
               onClick={onTryAgain} 
               size="lg" 
-              className="w-full bg-[#6366F1] hover:bg-[#6366F1]/90 h-14 text-lg gap-2"
+              className="w-full bg-[#E63946] hover:bg-[#E63946]/90 h-14 text-lg gap-2"
             >
               <RotateCcw className="w-5 h-5" />
-              Try Again
+              Challenge Richard Free →
             </Button>
 
             <p className="text-center text-xs text-muted-foreground">
@@ -580,12 +747,12 @@ function AppSidebar({ activeTab, onTabChange, sessionsUsed }) {
   ]
 
   return (
-    <div className="w-64 border-r border-border/50 bg-[#060A14] flex flex-col">
+    <div className="w-64 border-r border-border/50 bg-[#0A0A12] flex flex-col">
       {/* Logo */}
       <div className="p-4 border-b border-border/50">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#00FF88] to-[#6366F1] flex items-center justify-center">
-            <Target className="w-5 h-5 text-[#0A0F1E]" />
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#F5A623] to-[#E63946] flex items-center justify-center">
+            <Target className="w-5 h-5 text-white" />
           </div>
           <span className="text-lg font-bold">RepReady</span>
         </div>
@@ -604,7 +771,7 @@ function AppSidebar({ activeTab, onTabChange, sessionsUsed }) {
                   disabled={!item.active}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
                     isActive 
-                      ? 'bg-[#6366F1]/10 text-[#6366F1]' 
+                      ? 'bg-[#F5A623]/10 text-[#F5A623]' 
                       : item.active 
                         ? 'text-muted-foreground hover:bg-muted/50 hover:text-foreground' 
                         : 'text-muted-foreground/50 cursor-not-allowed'
@@ -613,7 +780,7 @@ function AppSidebar({ activeTab, onTabChange, sessionsUsed }) {
                   <Icon className="w-4 h-4" />
                   <span className="flex-1 text-left">{item.label}</span>
                   {item.badge && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-[#6366F1]/30 text-[#6366F1]">
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-[#F5A623]/30 text-[#F5A623]">
                       {item.badge}
                     </Badge>
                   )}
@@ -630,11 +797,11 @@ function AppSidebar({ activeTab, onTabChange, sessionsUsed }) {
         <div className="bg-muted/30 rounded-lg p-3">
           <div className="flex items-center justify-between text-xs mb-2">
             <span className="text-muted-foreground">Free Sessions</span>
-            <span className="font-mono-score text-[#00FF88]">{3 - sessionsUsed}/3</span>
+            <span className="font-mono-score text-[#F5A623]">{3 - sessionsUsed}/3</span>
           </div>
           <div className="h-1.5 bg-muted rounded-full overflow-hidden">
             <div 
-              className="h-full bg-gradient-to-r from-[#00FF88] to-[#6366F1] rounded-full transition-all"
+              className="h-full bg-gradient-to-r from-[#F5A623] to-[#E63946] rounded-full transition-all"
               style={{ width: `${((3 - sessionsUsed) / 3) * 100}%` }}
             />
           </div>
@@ -696,15 +863,32 @@ function PersonaSelection({ onSelect }) {
                   ))}
                 </div>
 
-                <Button className="w-full bg-[#6366F1] hover:bg-[#6366F1]/90 group-hover:glow-violet">
-                  Start Practice
-                  <ArrowRight className="w-4 h-4 ml-2" />
+                <Button className="w-full bg-[#E63946] hover:bg-[#E63946]/90 group-hover:glow-red text-white">
+                  Challenge {persona.name} Free →
                 </Button>
               </CardContent>
             </Card>
           ))}
         </div>
       </div>
+    </div>
+  )
+}
+
+// Coaching Tip Bar Component
+function CoachingTipBar({ messageCount }) {
+  let tip = COACHING_TIPS.early
+  if (messageCount >= 3) {
+    tip = COACHING_TIPS.mid
+  }
+  if (messageCount >= 6) {
+    tip = COACHING_TIPS.late
+  }
+  
+  return (
+    <div className="flex items-center gap-2 px-4 py-2 bg-[#F5A623]/10 border-t border-[#F5A623]/20">
+      <Lightbulb className="w-4 h-4 text-[#F5A623] flex-shrink-0" />
+      <p className="text-xs text-[#F5A623]">{tip}</p>
     </div>
   )
 }
@@ -720,8 +904,22 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
   const [streamingMessage, setStreamingMessage] = useState('')
   const [isEndingNegotiation, setIsEndingNegotiation] = useState(false)
   const [sessionStarted, setSessionStarted] = useState(false)
+  const [showBriefing, setShowBriefing] = useState(true)
   const scrollRef = useRef(null)
   const selectedPersona = PERSONAS[persona]
+
+  // Start the call - Richard sends first message
+  const startCall = () => {
+    setShowBriefing(false)
+    // Add Richard's first message
+    setMessages([{
+      role: 'assistant',
+      content: selectedPersona.firstMessage,
+      score: 50,
+      reason: 'Opening — Richard sets the tone. Handle this carefully.'
+    }])
+    setScoreReason('Opening — Richard sets the tone. Handle this carefully.')
+  }
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -757,52 +955,24 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
 
       if (!response.ok) throw new Error('Failed to get response')
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let accumulatedText = ''
-      let latestObject = null
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        const chunk = decoder.decode(value, { stream: true })
-        accumulatedText += chunk
-
-        try {
-          const jsonMatch = accumulatedText.match(/\{[^{}]*"message"[^{}]*\}/)
-          if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[0])
-            latestObject = parsed
-            if (parsed.message) setStreamingMessage(parsed.message)
-            if (typeof parsed.deal_health_score === 'number') {
-              setPreviousScore(currentScore)
-              setCurrentScore(parsed.deal_health_score)
-            }
-            if (parsed.score_reason) setScoreReason(parsed.score_reason)
-          }
-        } catch (e) {
-          const msgMatch = accumulatedText.match(/"message"\s*:\s*"([^"]*)/)
-          if (msgMatch && msgMatch[1]) setStreamingMessage(msgMatch[1])
+      const data = await response.json()
+      
+      if (data.message) {
+        setPreviousScore(currentScore)
+        if (typeof data.deal_health_score === 'number') {
+          setCurrentScore(data.deal_health_score)
         }
-      }
-
-      if (latestObject && latestObject.message) {
+        if (data.score_reason) {
+          setScoreReason(data.score_reason)
+        }
+        
         setMessages(prev => [...prev, { 
           role: 'assistant', 
-          content: latestObject.message,
-          score: latestObject.deal_health_score,
-          reason: latestObject.score_reason
-        }])
-      } else {
-        setMessages(prev => [...prev, { 
-          role: 'assistant', 
-          content: streamingMessage || 'Let me stop you there.',
-          score: 50,
-          reason: 'Response parsing error — score held steady'
+          content: data.message,
+          score: data.deal_health_score,
+          reason: data.score_reason
         }])
       }
-      setStreamingMessage('')
 
     } catch (error) {
       console.error('Error:', error)
@@ -812,15 +982,14 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
         score: 50,
         reason: 'Response parsing error — score held steady'
       }])
-      setStreamingMessage('')
     } finally {
       setIsLoading(false)
     }
   }
 
   const endNegotiation = async () => {
-    if (messages.length === 0) {
-      alert('Start a conversation first before ending the negotiation.')
+    if (messages.length <= 1) {
+      alert('Have a conversation first before ending the negotiation.')
       return
     }
 
@@ -839,47 +1008,10 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
 
       if (!response.ok) throw new Error('Failed to get scorecard')
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let accumulatedText = ''
-      let scorecard = null
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        const chunk = decoder.decode(value, { stream: true })
-        accumulatedText += chunk
-      }
-
+      const data = await response.json()
       await minLoadingTime
 
-      try {
-        let braceCount = 0
-        let startIndex = -1
-        let endIndex = -1
-        
-        for (let i = 0; i < accumulatedText.length; i++) {
-          if (accumulatedText[i] === '{') {
-            if (startIndex === -1) startIndex = i
-            braceCount++
-          } else if (accumulatedText[i] === '}') {
-            braceCount--
-            if (braceCount === 0 && startIndex !== -1) {
-              endIndex = i + 1
-              break
-            }
-          }
-        }
-        
-        if (startIndex !== -1 && endIndex !== -1) {
-          const jsonStr = accumulatedText.slice(startIndex, endIndex)
-          scorecard = JSON.parse(jsonStr)
-        }
-      } catch (parseError) {
-        console.error('Parse error:', parseError)
-      }
-
-      if (scorecard && scorecard.final_score) {
+      if (data.final_score) {
         // Save session
         await fetch('/api/sessions', {
           method: 'POST',
@@ -888,11 +1020,11 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
             userEmail,
             persona,
             messages,
-            scorecard,
-            finalScore: scorecard.final_score
+            scorecard: data,
+            finalScore: data.final_score
           })
         })
-        onShowResults(scorecard)
+        onShowResults(data)
       } else {
         onShowResults({
           final_score: currentScore,
@@ -923,6 +1055,10 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
     }
   }
 
+  if (showBriefing) {
+    return <PreCallBriefing persona={persona} onStartCall={startCall} />
+  }
+
   if (isEndingNegotiation) {
     return <ScorecardLoading personaName={selectedPersona.name} />
   }
@@ -930,7 +1066,7 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
   return (
     <div className="flex-1 flex flex-col">
       {/* Chat Header */}
-      <div className="p-4 border-b border-border/50 bg-[#060A14]">
+      <div className="p-4 border-b border-border/50 bg-[#0A0A12]">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Avatar className={`w-10 h-10 bg-gradient-to-br ${selectedPersona.color}`}>
@@ -939,16 +1075,17 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
               </AvatarFallback>
             </Avatar>
             <div>
-              <h3 className="font-semibold">Negotiation with {selectedPersona.name}</h3>
+              <h3 className="font-semibold">Live Call with {selectedPersona.name}</h3>
               <p className="text-xs text-muted-foreground">{selectedPersona.title}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="text-right mr-4">
+          <div className="flex items-center gap-4">
+            {/* Larger Score Display */}
+            <div className="text-right">
               <div className="text-xs text-muted-foreground mb-1">Deal Health</div>
               <div className="flex items-center gap-2">
                 <ScoreTrend currentScore={currentScore} previousScore={previousScore} />
-                <span className={`text-2xl font-bold font-mono-score ${getScoreColor(currentScore)}`}>
+                <span className={`text-4xl font-black font-mono-score ${getScoreColor(currentScore)}`}>
                   {currentScore}%
                 </span>
               </div>
@@ -957,11 +1094,11 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
               variant="destructive" 
               size="sm" 
               onClick={endNegotiation}
-              disabled={isLoading || messages.length === 0}
-              className="gap-2"
+              disabled={isLoading || messages.length <= 1}
+              className="gap-2 bg-[#E63946] hover:bg-[#E63946]/90"
             >
               <StopCircle className="w-4 h-4" />
-              End Session
+              End Call
             </Button>
           </div>
         </div>
@@ -978,19 +1115,6 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
       <div className="flex-1 relative gradient-border rounded-none">
         <ScrollArea className="h-full p-6" ref={scrollRef}>
           <div className="max-w-3xl mx-auto space-y-6">
-            {messages.length === 0 && !streamingMessage && (
-              <div className="text-center py-12">
-                <div className={`w-20 h-20 rounded-full bg-gradient-to-br ${selectedPersona.color} mx-auto mb-4 flex items-center justify-center`}>
-                  <span className="text-3xl font-bold text-white">{selectedPersona.avatar}</span>
-                </div>
-                <h3 className="text-xl font-semibold mb-2">Start Your Negotiation</h3>
-                <p className="text-muted-foreground max-w-md mx-auto">
-                  You&apos;re about to pitch a $50,000 SaaS contract to {selectedPersona.name}. 
-                  Make your opening statement to begin.
-                </p>
-              </div>
-            )}
-
             {messages.map((message, index) => (
               <div
                 key={index}
@@ -1000,12 +1124,12 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
                   className={`max-w-[80%] rounded-2xl px-4 py-3 ${
                     message.role === 'user'
                       ? 'bg-[#6366F1] text-white rounded-br-md'
-                      : 'glass rounded-bl-md'
+                      : 'glass richard-bubble rounded-bl-md'
                   }`}
                 >
                   {message.role === 'assistant' && (
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs font-semibold text-[#00FF88]">{selectedPersona.name}</span>
+                      <span className="text-xs font-semibold text-[#F5A623]">{selectedPersona.name}</span>
                     </div>
                   )}
                   <p className="text-sm leading-relaxed">{message.content}</p>
@@ -1013,25 +1137,14 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
               </div>
             ))}
 
-            {streamingMessage && (
+            {isLoading && (
               <div className="flex justify-start">
-                <div className="max-w-[80%] rounded-2xl rounded-bl-md px-4 py-3 glass">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-semibold text-[#00FF88]">{selectedPersona.name}</span>
-                  </div>
-                  <p className="text-sm leading-relaxed">{streamingMessage}</p>
-                </div>
-              </div>
-            )}
-
-            {isLoading && !streamingMessage && (
-              <div className="flex justify-start">
-                <div className="glass rounded-2xl rounded-bl-md px-4 py-3">
+                <div className="glass richard-bubble rounded-2xl rounded-bl-md px-4 py-3">
                   <div className="flex items-center gap-2">
                     <div className="flex gap-1">
-                      <div className="w-2 h-2 bg-[#6366F1] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                      <div className="w-2 h-2 bg-[#6366F1] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                      <div className="w-2 h-2 bg-[#6366F1] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                      <div className="w-2 h-2 bg-[#F5A623] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <div className="w-2 h-2 bg-[#F5A623] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <div className="w-2 h-2 bg-[#F5A623] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                     </div>
                     <span className="text-xs text-muted-foreground">{selectedPersona.name} is typing...</span>
                   </div>
@@ -1042,22 +1155,25 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
         </ScrollArea>
       </div>
 
+      {/* Coaching Tip Bar */}
+      <CoachingTipBar messageCount={messages.filter(m => m.role === 'user').length} />
+
       {/* Input Area */}
-      <div className="p-4 border-t border-border/50 bg-[#060A14]">
+      <div className="p-4 border-t border-border/50 bg-[#0A0A12]">
         <div className="max-w-3xl mx-auto">
           <div className="flex gap-3">
             <Input
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Make your pitch or respond to objections..."
-              className="flex-1 bg-muted/30 border-border/50 focus:border-[#6366F1] h-12"
+              placeholder="Respond to Richard..."
+              className="flex-1 bg-muted/30 border-border/50 focus:border-[#F5A623] h-12"
               disabled={isLoading}
             />
             <Button 
               onClick={sendMessage} 
               disabled={isLoading || !inputValue.trim()} 
-              className="bg-[#6366F1] hover:bg-[#6366F1]/90 h-12 px-6"
+              className="bg-[#E63946] hover:bg-[#E63946]/90 h-12 px-6"
             >
               <Send className="w-4 h-4" />
             </Button>
@@ -1139,7 +1255,7 @@ function SessionHistory({ userEmail }) {
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className={`text-2xl font-bold font-mono-score ${getScoreColor(session.finalScore || 50)}`}>
+                        <div className={`text-3xl font-black font-mono-score ${getScoreColor(session.finalScore || 50)}`}>
                           {session.finalScore || 50}%
                         </div>
                         <p className="text-xs text-muted-foreground">{session.messages?.length || 0} messages</p>
@@ -1195,8 +1311,8 @@ function SettingsPanel({ userEmail, onLogout }) {
               Practice the hardest sales conversations before they happen live.
             </p>
             <div className="flex gap-4 text-xs text-muted-foreground">
-              <a href="#" className="hover:text-foreground transition-colors">Privacy Policy</a>
-              <a href="#" className="hover:text-foreground transition-colors">Terms of Service</a>
+              <a href="/privacy" className="hover:text-foreground transition-colors">Privacy Policy</a>
+              <a href="/terms" className="hover:text-foreground transition-colors">Terms of Service</a>
             </div>
           </CardContent>
         </Card>
@@ -1296,7 +1412,7 @@ export default function App() {
 
   // Main App with Sidebar
   return (
-    <div className="min-h-screen bg-[#0A0F1E] flex">
+    <div className="min-h-screen bg-[#0D0D1A] flex">
       <AppSidebar 
         activeTab={activeTab} 
         onTabChange={(tab) => {
