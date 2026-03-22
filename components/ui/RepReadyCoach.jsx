@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useRepMemory } from "../hooks/useRepMemory";
+import { useRepMemory } from "../../hooks/useRepMemory";
 
 const BUYER_SYSTEM = `You are a skeptical CFO who has just joined a vendor's sales call mid-way through. You are analytical, cost-focused, and do not tolerate vague answers. Push back on generic ROI claims. Ask pointed questions about implementation cost, timeline to value, and proof points. Keep every response to 2-3 sentences maximum. You're not hostile — just rigorous and time-constrained.`;
 
