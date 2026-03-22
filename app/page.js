@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import RepReadyCoach from '@/components/ui/RepReadyCoach'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -742,6 +742,7 @@ function AppSidebar({ activeTab, onTabChange, sessionsUsed }) {
   const navItems = [
     { id: 'practice', label: 'Practice Lab', icon: Beaker, active: true },
     { id: 'history', label: 'Session History', icon: History, active: true },
+    { id: 'coach', label: 'AI Coach', icon: Sparkles, active: true },
     { id: 'analytics', label: 'Team Analytics', icon: Users, badge: 'Coming Soon', active: false },
     { id: 'settings', label: 'Settings', icon: Settings, active: true },
   ]
@@ -1449,8 +1450,12 @@ export default function App() {
         )}
 
         {activeTab === 'history' && (
-          <SessionHistory userEmail={user?.email} />
-        )}
+  <SessionHistory userEmail={user?.email} />
+)}
+
+{activeTab === 'coach' && (
+  <RepReadyCoach />
+)}
 
         {activeTab === 'settings' && (
           <SettingsPanel userEmail={user?.email} onLogout={handleLogout} />
