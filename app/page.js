@@ -17,11 +17,22 @@ export default function ScenarioLibrary() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        
         {/* Richard Dossier Card */}
         <article className="glass-panel rounded-xl overflow-hidden group hover:border-cyan-400/40 transition-all duration-500">
           <div className="p-8">
             <div className="flex gap-4 mb-6">
-              <div className="w-20 h-20 bg-zinc-800 rounded border border-white/10"></div>
+              
+              {/* Richard's Image */}
+              <div className="w-20 h-20 rounded border border-white/10 overflow-hidden relative grayscale opacity-80 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-500">
+                <img 
+                  src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&h=400&fit=crop&q=80" 
+                  alt="Richard Vance" 
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 border border-transparent group-hover:border-cyan-400/50 transition-all z-10"></div>
+              </div>
+
               <div>
                 <h2 className="font-headline text-xl font-bold text-white tracking-wide uppercase">Richard Vance</h2>
                 <p className="font-mono text-xs text-zinc-400 mb-3">VP of Procurement // Global Logistics</p>
@@ -43,7 +54,17 @@ export default function ScenarioLibrary() {
         <article className="glass-panel rounded-xl overflow-hidden group hover:border-cyan-400/40 transition-all duration-500">
           <div className="p-8">
             <div className="flex gap-4 mb-6">
-              <div className="w-20 h-20 bg-zinc-800 rounded border border-white/10"></div>
+              
+              {/* Sandra's Image */}
+              <div className="w-20 h-20 rounded border border-white/10 overflow-hidden relative grayscale opacity-80 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-500">
+                <img 
+                  src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&h=400&fit=crop&q=80" 
+                  alt="Sandra Chen" 
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 border border-transparent group-hover:border-cyan-400/50 transition-all z-10"></div>
+              </div>
+
               <div>
                 <h2 className="font-headline text-xl font-bold text-white tracking-wide uppercase">Sandra Chen</h2>
                 <p className="font-mono text-xs text-zinc-400 mb-3">Head of IT Operations // Fintech</p>
