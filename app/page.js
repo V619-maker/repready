@@ -26,10 +26,10 @@ export default function ScenarioLibrary() {
               {/* Richard's Image */}
               <div className="w-20 h-20 rounded border border-white/10 overflow-hidden relative grayscale opacity-80 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-500">
                 <img 
-                  src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&h=400&fit=crop&q=80" 
-                  alt="Richard Vance" 
-                  className="w-full h-full object-cover"
-                />
+  src="https://images.unsplash.com/photo-1556157382-97eda2d62296?w=400&h=400&fit=crop&q=80" 
+  alt="Richard Vance" 
+  className="w-full h-full object-cover"
+/>
                 <div className="absolute inset-0 border border-transparent group-hover:border-cyan-400/50 transition-all z-10"></div>
               </div>
 
@@ -58,10 +58,10 @@ export default function ScenarioLibrary() {
               {/* Sandra's Image */}
               <div className="w-20 h-20 rounded border border-white/10 overflow-hidden relative grayscale opacity-80 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-500">
                 <img 
-                  src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&h=400&fit=crop&q=80" 
-                  alt="Sandra Chen" 
-                  className="w-full h-full object-cover"
-                />
+  src="https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=400&h=400&fit=crop&q=80" 
+  alt="Sandra Chen" 
+  className="w-full h-full object-cover"
+/>
                 <div className="absolute inset-0 border border-transparent group-hover:border-cyan-400/50 transition-all z-10"></div>
               </div>
 
