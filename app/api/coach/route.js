@@ -1,50 +1,44 @@
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextResponse } from 'next/server';
-
-const GEMINI_MODEL = "gemini-2.5-flash";
 
 export async function POST(request) {
   try {
-    const body = await request.json();
-    const { messages, system, max_tokens = 300 } = body;
-
-    if (!messages || !system) {
-      return NextResponse.json({ error: "Missing messages or system" }, { status: 400 });
-    }
-
-    const apiKey = process.env.GOOGLE_GENERATIVE_AI_KEY;
-    if (!apiKey) {
-      console.error("GOOGLE_GENERATIVE_AI_KEY is not set");
-      return NextResponse.json({ error: "API key not configured" }, { status: 500 });
-    }
-
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: system }] },
-        contents: messages,
-        generationConfig: {
-          maxOutputTokens: max_tokens,
-          temperature: 0.7,
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      console.error("Gemini API error:", err);
-      return NextResponse.json({ error: "Upstream API error" }, { status: response.status });
-    }
-
-    const data = await response.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    // 1. Receive the chat history from our new frontend
+    const { messages } = await request.json();
     
-    return NextResponse.json({ text });
+    // 2. Check if your API key is missing
+    if (!process.env.GEMINI_API_KEY) {
+      console.error("Missing GEMINI_API_KEY");
+      return NextResponse.json(
+        { message: "System Error: Gemini API key is missing in Vercel." }, 
+        { status: 500 }
+      );
+    }
 
-  } catch (err) {
-    console.error("Coach API handler error:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    // 3. Initialize the Gemini AI Brain
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+
+    // 4. Format the conversation for the Coach persona
+    const latestMessage = messages[messages.length - 1].content;
+    const prompt = `You are a ruthless, highly tactical B2B Sales Coach for an app called RepReady. 
+    You analyze negotiation telemetry and give sharp, direct advice on frame control and anchoring.
+    Keep your responses concise, punchy, and formatted well.
+    
+    User says: ${latestMessage}`;
+
+    // 5. Generate the response
+    const result = await model.generateContent(prompt);
+    const aiResponseText = result.response.text();
+
+    // 6. Send it back to the frontend in the exact format it expects
+    return NextResponse.json({ message: aiResponseText });
+
+  } catch (error) {
+    console.error("Backend Brain Error:", error);
+    return NextResponse.json(
+      { message: "Neural link severed. Check Vercel logs." }, 
+      { status: 500 }
+    );
   }
 }
