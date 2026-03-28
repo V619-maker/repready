@@ -1,13 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
-import Link from 'next/link'; // Import Link for navigation
+import Link from 'next/link';
 
 export default function RepReadyHome() {
   const [hasSignedUp, setHasSignedUp] = useState(false);
   const [email, setEmail] = useState('');
-  const [hasAgreed, setHasAgreed] = useState(false); // NEW: The Agreement State
+  const [hasAgreed, setHasAgreed] = useState(false);
   const [activeAgent, setActiveAgent] = useState(null);
+  const [showReport, setShowReport] = useState(false); // NEW: Report State
 
   // Add your ElevenLabs Agent IDs here
   const RICHARD_ID = "YOUR_RICHARD_ID";
@@ -20,7 +21,12 @@ export default function RepReadyHome() {
     }
   };
 
-  // --- STATE 1: THE SIGNUP GATE (WITH LEGAL LOCK) ---
+  const terminateSession = () => {
+    setActiveAgent(null);
+    setShowReport(true); // Trigger the audit report
+  };
+
+  // --- STATE 1: THE SIGNUP GATE ---
   if (!hasSignedUp) {
     return (
       <div className="flex items-center justify-center min-h-[80vh]">
@@ -48,7 +54,6 @@ export default function RepReadyHome() {
               />
             </div>
 
-            {/* THE LEGAL LOCK CHECKBOX */}
             <div className="flex items-start gap-3 bg-white/5 p-3 rounded border border-white/5">
               <input 
                 type="checkbox" 
@@ -63,7 +68,6 @@ export default function RepReadyHome() {
               </label>
             </div>
 
-            {/* DYNAMIC BUTTON: Gray if not agreed, Red if ready */}
             <button 
               type="submit" 
               disabled={!hasAgreed}
@@ -76,208 +80,107 @@ export default function RepReadyHome() {
               {hasAgreed ? "Challenge Richard Free →" : "Accept Terms to Access"}
             </button>
           </form>
-
-          <div className="mt-6 flex items-center justify-center gap-2 text-zinc-600 text-[10px] uppercase tracking-widest">
-            <span className="material-symbols-outlined text-xs text-zinc-700">lock</span>
-            <span>3 sessions remaining • encrypted link</span>
-          </div>
         </div>
       </div>
     );
   }
 
-  // --- STATE 2: THE SCENARIO LIBRARY ---
+  // --- MAIN UI ---
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="max-w-6xl mx-auto p-8 relative">
       <div className="mb-12">
         <h1 className="font-headline text-4xl font-bold tracking-tight text-white mb-2 uppercase">Scenario Library</h1>
         <p className="text-zinc-400 font-mono text-sm max-w-xl">SELECT A TARGET PERSONA TO INITIALIZE THE NEGOTIATION SIMULATION ENGINE.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        
-        {/* Richard Dossier Card */}
-        <article className="glass-panel rounded-xl overflow-hidden group hover:border-cyan-400/40 transition-all duration-500">
-          <div className="p-8">
-            <div className="flex justify-between items-start mb-6">
-              <div className="flex gap-4">
-                <div className="w-20 h-20 rounded border border-white/10 overflow-hidden relative grayscale contrast-125 brightness-75 group-hover:grayscale-0 group-hover:brightness-100 transition-all duration-500">
-                  <img 
-                    src="https://images.unsplash.com/photo-1560250097-0b93528c311a?w=400&h=400&fit=crop&q=80" 
-                    alt="Richard Vance" 
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 border border-transparent group-hover:border-cyan-400/50 transition-all z-10"></div>
-                </div>
-
+        {/* Richard Card */}
+        <article className="glass-panel rounded-xl overflow-hidden group hover:border-cyan-400/40 transition-all duration-500 border border-white/10 p-8">
+            <div className="flex gap-4 mb-6">
+                <img src="https://images.unsplash.com/photo-1560250097-0b93528c311a?w=400&h=400&fit=crop&q=80" className="w-20 h-20 rounded grayscale group-hover:grayscale-0 transition-all border border-white/10" />
                 <div>
-                  <h2 className="font-headline text-xl font-bold text-white tracking-wide uppercase">Richard Vance</h2>
-                  <p className="font-mono text-xs text-zinc-400 mb-3">VP of Procurement // Global Logistics</p>
-                  <div className="flex flex-wrap gap-2">
-                    <span className="px-2 py-0.5 bg-red-900/30 text-red-400 text-[10px] font-mono border border-red-500/20 rounded-full">20% DISCOUNT MANDATE</span>
-                    <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 text-[10px] font-mono border border-white/5 rounded-full">HARD-LINER</span>
-                  </div>
+                    <h2 className="text-xl font-bold text-white uppercase">Richard Vance</h2>
+                    <p className="text-xs text-zinc-500 font-mono mb-2">VP of Procurement</p>
+                    <span className="px-2 py-0.5 bg-red-900/30 text-red-400 text-[10px] border border-red-500/20 rounded-full">HARD-LINER</span>
                 </div>
-              </div>
-              <div className="text-cyan-400/20 group-hover:text-cyan-400/60 transition-colors">
-                <span className="material-symbols-outlined text-3xl" style={{fontVariationSettings: "'FILL' 1"}}>verified_user</span>
-              </div>
             </div>
-            
-            <p className="text-sm text-zinc-400 leading-relaxed mb-6">Vance is known for aggressive anchoring and "take it or leave it" ultimatums. Success requires maintaining frame control while offering tiered concessions.</p>
-            
-            <div className="grid grid-cols-3 gap-2 py-4 border-y border-white/5 mb-6">
-              <div className="text-center">
-                <p className="text-[10px] font-mono text-zinc-500 mb-1 uppercase">Difficulty</p>
-                <p className="text-cyan-400 font-mono text-sm">LVL 08</p>
-              </div>
-              <div className="text-center">
-                <p className="text-[10px] font-mono text-zinc-500 mb-1 uppercase">Success Rate</p>
-                <p className="text-white font-mono text-sm">14.2%</p>
-              </div>
-              <div className="text-center">
-                <p className="text-[10px] font-mono text-zinc-500 mb-1 uppercase">Avg. Duration</p>
-                <p className="text-white font-mono text-sm">12:45</p>
-              </div>
-            </div>
-            
-            <button 
-              onClick={() => setActiveAgent(RICHARD_ID)}
-              className="w-full py-4 bg-transparent border border-cyan-400 text-cyan-400 font-headline font-bold uppercase tracking-widest text-sm hover:bg-cyan-400/10 transition-all duration-300"
-            >
-              Initialize Simulation
-            </button>
-          </div>
+            <button onClick={() => setActiveAgent(RICHARD_ID)} className="w-full py-4 border border-cyan-400 text-cyan-400 font-bold uppercase text-xs hover:bg-cyan-400/10 transition-all tracking-widest">Initialize Simulation</button>
         </article>
 
-        {/* Sandra Dossier Card */}
-        <article className="glass-panel rounded-xl overflow-hidden group hover:border-cyan-400/40 transition-all duration-500">
-          <div className="p-8">
-            <div className="flex justify-between items-start mb-6">
-              <div className="flex gap-4">
-                <div className="w-20 h-20 rounded border border-white/10 overflow-hidden relative grayscale contrast-125 brightness-75 group-hover:grayscale-0 group-hover:brightness-100 transition-all duration-500">
-                  <img 
-                    src="https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=400&h=400&fit=crop&q=80" 
-                    alt="Sandra Chen" 
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 border border-transparent group-hover:border-cyan-400/50 transition-all z-10"></div>
-                </div>
-
+        {/* Sandra Card */}
+        <article className="glass-panel rounded-xl overflow-hidden group hover:border-cyan-400/40 transition-all duration-500 border border-white/10 p-8">
+            <div className="flex gap-4 mb-6">
+                <img src="https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=400&h=400&fit=crop&q=80" className="w-20 h-20 rounded grayscale group-hover:grayscale-0 transition-all border border-white/10" />
                 <div>
-                  <h2 className="font-headline text-xl font-bold text-white tracking-wide uppercase">Sandra Chen</h2>
-                  <p className="font-mono text-xs text-zinc-400 mb-3">Head of IT Operations // Fintech</p>
-                  <div className="flex flex-wrap gap-2">
-                    <span className="px-2 py-0.5 bg-cyan-900/30 text-cyan-400 text-[10px] font-mono border border-cyan-400/20 rounded-full">SECURITY OBSESSED</span>
-                    <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 text-[10px] font-mono border border-white/5 rounded-full">ANALYTICAL</span>
-                  </div>
+                    <h2 className="text-xl font-bold text-white uppercase">Sandra Chen</h2>
+                    <p className="text-xs text-zinc-500 font-mono mb-2">Head of IT Ops</p>
+                    <span className="px-2 py-0.5 bg-cyan-900/30 text-cyan-400 text-[10px] border border-cyan-400/20 rounded-full">ANALYTICAL</span>
                 </div>
-              </div>
-              <div className="text-cyan-400/20 group-hover:text-cyan-400/60 transition-colors">
-                <span className="material-symbols-outlined text-3xl">terminal</span>
-              </div>
             </div>
-            
-            <p className="text-sm text-zinc-400 leading-relaxed mb-6">Chen focuses on implementation risk and security protocols. She will drill into technical debt and service level agreements (SLAs).</p>
-            
-            <div className="grid grid-cols-3 gap-2 py-4 border-y border-white/5 mb-6">
-              <div className="text-center">
-                <p className="text-[10px] font-mono text-zinc-500 mb-1 uppercase">Difficulty</p>
-                <p className="text-cyan-400 font-mono text-sm">LVL 06</p>
-              </div>
-              <div className="text-center">
-                <p className="text-[10px] font-mono text-zinc-500 mb-1 uppercase">Success Rate</p>
-                <p className="text-white font-mono text-sm">31.8%</p>
-              </div>
-              <div className="text-center">
-                <p className="text-[10px] font-mono text-zinc-500 mb-1 uppercase">Avg. Duration</p>
-                <p className="text-white font-mono text-sm">18:10</p>
-              </div>
-            </div>
-            
-            <button 
-              onClick={() => setActiveAgent(SANDRA_ID)}
-              className="w-full py-4 bg-transparent border border-cyan-400 text-cyan-400 font-headline font-bold uppercase tracking-widest text-sm hover:bg-cyan-400/10 transition-all duration-300"
-            >
-              Initialize Simulation
-            </button>
-          </div>
+            <button onClick={() => setActiveAgent(SANDRA_ID)} className="w-full py-4 border border-cyan-400 text-cyan-400 font-bold uppercase text-xs hover:bg-cyan-400/10 transition-all tracking-widest">Initialize Simulation</button>
         </article>
       </div>
 
-      {/* --- STATE 3: THE LIVE OVERRIDE MODAL --- */}
+      {/* --- LIVE SIMULATION MODAL --- */}
       {activeAgent && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 backdrop-blur-xl bg-black/80">
-          <div className="glass-panel w-full max-w-5xl rounded-xl overflow-hidden shadow-[0_0_80px_rgba(34,211,238,0.1)] border border-white/20 flex flex-col max-h-[90vh]">
-            <div className="px-8 py-4 border-b border-white/10 flex items-center gap-4 bg-white/5 shrink-0">
-              <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse shadow-[0_0_10px_#ef4444]"></div>
-              <h3 className="font-mono text-cyan-400 uppercase tracking-tighter text-sm">Negotiation Protocol Active</h3>
+          <div className="glass-panel w-full max-w-5xl rounded-xl border border-white/20 overflow-hidden flex flex-col shadow-2xl">
+            <div className="px-8 py-4 border-b border-white/10 bg-white/5 flex items-center gap-4">
+              <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse"></div>
+              <h3 className="font-mono text-cyan-400 uppercase text-xs tracking-tighter">Protocol Active</h3>
             </div>
-            
-            <div className="p-8 grid grid-cols-1 md:grid-cols-5 gap-8 overflow-y-auto">
-              <div className="md:col-span-3 flex flex-col gap-6">
-                <div className="relative h-32 flex items-center justify-center bg-[#111] rounded-lg border border-white/5 shadow-inner">
-                  <div className="flex items-center justify-center gap-1.5 h-16">
-                    <div className="w-1.5 bg-cyan-400 cyber-bar-1 shadow-[0_0_10px_rgba(34,211,238,0.8)]"></div>
-                    <div className="w-1.5 bg-cyan-400 cyber-bar-2 shadow-[0_0_10px_rgba(34,211,238,0.8)]"></div>
-                    <div className="w-1.5 bg-cyan-400 cyber-bar-3 shadow-[0_0_10px_rgba(34,211,238,0.8)]"></div>
-                    <div className="w-1.5 bg-cyan-400 cyber-bar-4 shadow-[0_0_10px_rgba(34,211,238,0.8)]"></div>
-                    <div className="w-1.5 bg-cyan-400 cyber-bar-5 shadow-[0_0_10px_rgba(34,211,238,0.8)]"></div>
-                  </div>
-                  <div className="absolute top-3 right-4 font-mono text-[10px] text-cyan-400/40 uppercase">Voice_Recognition_On</div>
+            <div className="p-12 flex flex-col items-center">
+                <div className="flex gap-1 mb-12 h-20 items-center">
+                    {[...Array(8)].map((_, i) => (
+                        <div key={i} className="w-2 bg-cyan-500/30 rounded-full animate-pulse" style={{height: `${Math.random()*100}%`}}></div>
+                    ))}
                 </div>
-
-                <div className="flex justify-center border border-white/10 rounded-lg p-6 bg-black/40">
-                  {/* @ts-ignore */}
-                  <elevenlabs-convai agent-id={activeAgent}></elevenlabs-convai>
-                </div>
-              </div>
-
-              <div className="md:col-span-2 bg-black/40 border border-white/5 rounded-lg p-6 flex flex-col gap-6">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="material-symbols-outlined text-cyan-400 text-sm">monitoring</span>
-                  <h4 className="font-mono text-cyan-400 text-xs tracking-widest uppercase">Live Telemetry</h4>
-                </div>
-                
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex justify-between text-[10px] font-mono mb-1">
-                      <span className="text-zinc-400">FRAME CONTROL</span>
-                      <span className="text-cyan-400">72%</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-zinc-800 rounded overflow-hidden">
-                      <div className="h-full bg-cyan-400 w-[72%] shadow-[0_0_10px_#00F0FF] transition-all duration-1000"></div>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-[10px] font-mono mb-1">
-                      <span className="text-zinc-400">ANCHOR STRENGTH</span>
-                      <span className="text-red-400">45%</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-zinc-800 rounded overflow-hidden">
-                      <div className="h-full bg-red-500 w-[45%] shadow-[0_0_10px_#ef4444] transition-all duration-1000"></div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex-1 mt-2 border border-white/5 bg-[#0a0a0a] rounded p-4 font-mono text-[10px] space-y-3 relative overflow-hidden">
-                  <div className="absolute top-0 left-0 w-full h-4 bg-gradient-to-b from-[#0a0a0a] to-transparent z-10"></div>
-                  <p className="text-zinc-500">Initializing behavior tracking...</p>
-                  <p className="text-cyan-400">&gt; Target is attempting to anchor low. Hold your ground on price.</p>
-                  <p className="text-cyan-400">&gt; Good pause. Silence is forcing the target to negotiate against themselves.</p>
-                  <p className="text-red-400 animate-pulse">&gt; WARNING: Concession made too quickly. Retrieve value on terms.</p>
-                  <p className="text-zinc-400 animate-pulse">_</p>
-                </div>
-              </div>
+                <button onClick={terminateSession} className="px-12 py-4 border border-red-500 text-red-500 font-bold uppercase text-xs tracking-widest hover:bg-red-500 hover:text-white transition-all">End Simulation</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- POST-SIMULATION AUDIT REPORT (THE NEW SUCCESS MODAL) --- */}
+      {showReport && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 backdrop-blur-2xl bg-black/90 font-mono">
+          <div className="glass-panel w-full max-w-2xl rounded-2xl border border-cyan-500/30 p-10 shadow-[0_0_100px_rgba(6,182,212,0.15)] relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-10 text-[60px] font-bold">AUDIT</div>
             
-            <div className="px-8 py-4 bg-white/5 border-t border-white/10 flex justify-center shrink-0">
-              <button 
-                onClick={() => setActiveAgent(null)}
-                className="px-10 py-3 border border-red-500 text-red-500 text-xs font-headline font-bold uppercase tracking-widest hover:bg-red-500/10 transition-all shadow-[0_0_15px_rgba(239,68,68,0.2)] hover:shadow-[0_0_25px_rgba(239,68,68,0.4)]"
-              >
-                END SIMULATION
-              </button>
+            <h2 className="text-3xl font-bold text-white mb-2 uppercase tracking-tighter italic">Simulation Complete</h2>
+            <p className="text-zinc-500 text-xs mb-8 border-b border-white/5 pb-4 uppercase">Neural Analysis // Performance Review</p>
+            
+            <div className="grid grid-cols-2 gap-8 mb-10">
+                <div className="bg-white/5 p-6 rounded-xl border border-white/5">
+                    <p className="text-zinc-500 text-[10px] uppercase mb-1">Negotiation Score</p>
+                    <p className="text-4xl font-bold text-cyan-400 italic">68<span className="text-sm text-zinc-600">/100</span></p>
+                </div>
+                <div className="bg-white/5 p-6 rounded-xl border border-white/5">
+                    <p className="text-zinc-500 text-[10px] uppercase mb-1">Frame Control</p>
+                    <p className="text-4xl font-bold text-white italic">PRO</p>
+                </div>
+            </div>
+
+            <div className="space-y-4 mb-10">
+                <div className="flex justify-between items-center text-xs">
+                    <span className="text-zinc-400">ANCHORING STRENGTH</span>
+                    <span className="text-green-400">OPTIMAL</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                    <span className="text-zinc-400">EMOTIONAL REGULATION</span>
+                    <span className="text-yellow-400">STABLE</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                    <span className="text-zinc-400">CONCESSION STRATEGY</span>
+                    <span className="text-red-400">WEAK</span>
+                </div>
+            </div>
+
+            <div className="flex gap-4">
+                <Link href="/coach" className="flex-1">
+                    <button className="w-full py-4 bg-cyan-600 text-white font-bold uppercase text-xs tracking-widest hover:bg-cyan-500 transition-all">Review with AI Coach</button>
+                </Link>
+                <button onClick={() => setShowReport(false)} className="flex-1 py-4 border border-white/10 text-white font-bold uppercase text-xs tracking-widest hover:bg-white/5 transition-all">Try Again</button>
             </div>
           </div>
         </div>
