@@ -5,11 +5,13 @@ export async function POST(request) {
     // 1. Receive the chat history
     const { messages } = await request.json();
     
-    // 2. Check for API key
-    if (!process.env.GEMINI_API_KEY) {
-      console.error("Missing GEMINI_API_KEY");
+    // 2. Grab the exact key name from your Vercel dashboard
+    const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_KEY;
+
+    if (!apiKey) {
+      console.error("Missing API Key");
       return NextResponse.json(
-        { message: "System Error: Gemini API key is missing in Vercel settings." }, 
+        { message: "System Error: API key name mismatch." }, 
         { status: 500 }
       );
     }
@@ -22,8 +24,8 @@ export async function POST(request) {
     
     User says: ${latestMessage}`;
 
-    // 4. Call Gemini using native fetch (NO PACKAGES REQUIRED)
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+    // 4. Call Gemini using native fetch 
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
