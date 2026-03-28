@@ -14,12 +14,11 @@ export default function RepReadyHome() {
   const handleSignup = (e) => {
     e.preventDefault();
     if (email) {
-      // Here you would normally send the email to your database
       setHasSignedUp(true);
     }
   };
 
-  // --- STATE 1: THE SIGNUP GATE (From your screenshot) ---
+  // --- STATE 1: THE SIGNUP GATE ---
   if (!hasSignedUp) {
     return (
       <div className="flex items-center justify-center min-h-[80vh]">
@@ -71,7 +70,7 @@ export default function RepReadyHome() {
     );
   }
 
-  // --- STATE 2: THE SCENARIO LIBRARY (Unlocked) ---
+  // --- STATE 2: THE SCENARIO LIBRARY ---
   return (
     <div className="max-w-6xl mx-auto">
       <div className="mb-12">
@@ -190,38 +189,86 @@ export default function RepReadyHome() {
         </article>
       </div>
 
-      {/* THE LIVE OVERRIDE MODAL */}
+      {/* --- STATE 3: THE LIVE OVERRIDE MODAL (WITH TELEMETRY) --- */}
       {activeAgent && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 backdrop-blur-xl bg-black/80">
-          <div className="glass-panel w-full max-w-3xl rounded-xl overflow-hidden shadow-[0_0_80px_rgba(34,211,238,0.1)] border border-white/20">
+          {/* Made the modal wider (max-w-5xl) to fit the telemetry panel */}
+          <div className="glass-panel w-full max-w-5xl rounded-xl overflow-hidden shadow-[0_0_80px_rgba(34,211,238,0.1)] border border-white/20 flex flex-col max-h-[90vh]">
             
-            <div className="px-8 py-4 border-b border-white/10 flex items-center gap-4 bg-white/5">
+            {/* Header */}
+            <div className="px-8 py-4 border-b border-white/10 flex items-center gap-4 bg-white/5 shrink-0">
               <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse shadow-[0_0_10px_#ef4444]"></div>
               <h3 className="font-mono text-cyan-400 uppercase tracking-tighter text-sm">Negotiation Protocol Active</h3>
             </div>
             
-            <div className="p-8 space-y-8">
-              <div className="relative h-24 flex items-center justify-center bg-[#111] rounded border border-white/5">
-                <div className="flex items-center justify-center gap-1.5 h-16">
-                  <div className="w-1.5 bg-cyan-400 cyber-bar-1 shadow-[0_0_10px_rgba(34,211,238,0.8)]"></div>
-                  <div className="w-1.5 bg-cyan-400 cyber-bar-2 shadow-[0_0_10px_rgba(34,211,238,0.8)]"></div>
-                  <div className="w-1.5 bg-cyan-400 cyber-bar-3 shadow-[0_0_10px_rgba(34,211,238,0.8)]"></div>
-                  <div className="w-1.5 bg-cyan-400 cyber-bar-4 shadow-[0_0_10px_rgba(34,211,238,0.8)]"></div>
-                  <div className="w-1.5 bg-cyan-400 cyber-bar-5 shadow-[0_0_10px_rgba(34,211,238,0.8)]"></div>
+            {/* Modal Body: Split into Two Columns */}
+            <div className="p-8 grid grid-cols-1 md:grid-cols-5 gap-8 overflow-y-auto">
+              
+              {/* LEFT COLUMN: Comm Link (Visualizer + ElevenLabs) */}
+              <div className="md:col-span-3 flex flex-col gap-6">
+                <div className="relative h-32 flex items-center justify-center bg-[#111] rounded-lg border border-white/5 shadow-inner">
+                  <div className="flex items-center justify-center gap-1.5 h-16">
+                    <div className="w-1.5 bg-cyan-400 cyber-bar-1 shadow-[0_0_10px_rgba(34,211,238,0.8)]"></div>
+                    <div className="w-1.5 bg-cyan-400 cyber-bar-2 shadow-[0_0_10px_rgba(34,211,238,0.8)]"></div>
+                    <div className="w-1.5 bg-cyan-400 cyber-bar-3 shadow-[0_0_10px_rgba(34,211,238,0.8)]"></div>
+                    <div className="w-1.5 bg-cyan-400 cyber-bar-4 shadow-[0_0_10px_rgba(34,211,238,0.8)]"></div>
+                    <div className="w-1.5 bg-cyan-400 cyber-bar-5 shadow-[0_0_10px_rgba(34,211,238,0.8)]"></div>
+                  </div>
+                  <div className="absolute top-3 right-4 font-mono text-[10px] text-cyan-400/40">VOICE_RECOGNITION_ON</div>
                 </div>
-                <div className="absolute top-2 right-4 font-mono text-[10px] text-cyan-400/40">VOICE_RECOGNITION_ON</div>
+
+                <div className="flex justify-center border border-white/10 rounded-lg p-6 bg-black/40">
+                   {/* @ts-ignore */}
+                  <elevenlabs-convai agent-id={activeAgent}></elevenlabs-convai>
+                </div>
               </div>
 
-              <div className="flex justify-center border border-white/10 rounded-lg p-4 bg-black/40">
-                 {/* @ts-ignore */}
-                <elevenlabs-convai agent-id={activeAgent}></elevenlabs-convai>
+              {/* RIGHT COLUMN: Live AI Telemetry */}
+              <div className="md:col-span-2 bg-black/40 border border-white/5 rounded-lg p-6 flex flex-col gap-6">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="material-symbols-outlined text-cyan-400 text-sm">monitoring</span>
+                  <h4 className="font-mono text-cyan-400 text-xs tracking-widest uppercase">Live Telemetry</h4>
+                </div>
+                
+                {/* Live Scoring Progress Bars */}
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex justify-between text-[10px] font-mono mb-1">
+                      <span className="text-zinc-400">FRAME CONTROL</span>
+                      <span className="text-cyan-400">72%</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-zinc-800 rounded overflow-hidden">
+                      <div className="h-full bg-cyan-400 w-[72%] shadow-[0_0_10px_#00F0FF] transition-all duration-1000"></div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-[10px] font-mono mb-1">
+                      <span className="text-zinc-400">ANCHOR STRENGTH</span>
+                      <span className="text-red-400">45%</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-zinc-800 rounded overflow-hidden">
+                      <div className="h-full bg-red-500 w-[45%] shadow-[0_0_10px_#ef4444] transition-all duration-1000"></div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* AI Coach Live Feed Terminal */}
+                <div className="flex-1 mt-2 border border-white/5 bg-[#0a0a0a] rounded p-4 font-mono text-[10px] space-y-3 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-4 bg-gradient-to-b from-[#0a0a0a] to-transparent z-10"></div>
+                  <p className="text-zinc-500">Initializing behavior tracking...</p>
+                  <p className="text-cyan-400">&gt; Target is attempting to anchor low. Hold your ground on price.</p>
+                  <p className="text-cyan-400">&gt; Good pause. Silence is forcing the target to negotiate against themselves.</p>
+                  <p className="text-red-400 animate-pulse">&gt; WARNING: Concession made too quickly. Retrieve value on terms.</p>
+                  <p className="text-zinc-400 animate-pulse">_</p>
+                </div>
               </div>
             </div>
             
-            <div className="px-8 py-4 bg-white/5 border-t border-white/10 flex justify-center">
+            {/* Footer */}
+            <div className="px-8 py-4 bg-white/5 border-t border-white/10 flex justify-center shrink-0">
               <button 
                 onClick={() => setActiveAgent(null)}
-                className="px-8 py-3 border border-red-500 text-red-500 text-xs font-headline font-bold uppercase tracking-widest hover:bg-red-500/10 transition-all"
+                className="px-10 py-3 border border-red-500 text-red-500 text-xs font-headline font-bold uppercase tracking-widest hover:bg-red-500/10 transition-all shadow-[0_0_15px_rgba(239,68,68,0.2)] hover:shadow-[0_0_25px_rgba(239,68,68,0.4)]"
               >
                 END SIMULATION
               </button>
