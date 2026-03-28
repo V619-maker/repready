@@ -2,6 +2,48 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 
+// Custom Markdown Parser (Zero Dependencies)
+const renderFormattedText = (text) => {
+  return text.split('\n').map((line, index) => {
+    // Handle empty lines as spacing
+    if (!line.trim()) return <div key={index} className="h-2"></div>;
+
+    // Detect bullet points
+    const isBullet = line.trim().startsWith('* ') || line.trim().startsWith('- ');
+    const textToParse = isBullet ? line.trim().substring(2) : line;
+
+    // Parse bold (**text**)
+    const parts = textToParse.split(/(\*\*.*?\*\*)/g);
+    
+    const parsedLine = parts.map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={i} className="text-cyan-300 font-bold tracking-wide">{part.slice(2, -2)}</strong>;
+      }
+      
+      // Parse italics (*text*)
+      const italicParts = part.split(/(\*.*?\*)/g);
+      return italicParts.map((iPart, j) => {
+        if (iPart.startsWith('*') && iPart.endsWith('*') && iPart.length > 2) {
+          return <em key={j} className="text-zinc-200 italic">{iPart.slice(1, -1)}</em>;
+        }
+        return iPart;
+      });
+    });
+
+    // Render as bullet or standard paragraph
+    if (isBullet) {
+      return (
+        <div key={index} className="flex gap-3 mt-2 mb-2 ml-2">
+          <span className="text-cyan-500 font-bold">›</span>
+          <span className="leading-relaxed">{parsedLine}</span>
+        </div>
+      );
+    }
+    
+    return <div key={index} className="mb-3 last:mb-0 leading-relaxed">{parsedLine}</div>;
+  });
+};
+
 export default function CoachPage() {
   const [messages, setMessages] = useState([
     { role: 'assistant', content: "I've reviewed your recent simulation telemetry. Where are you losing frame control, and how can we tighten your anchors?" }
@@ -37,7 +79,7 @@ export default function CoachPage() {
       if (!response.ok) throw new Error('Failed to fetch AI response');
       
       const data = await response.json();
-      const aiResponseText = data.message || data.response || data.text || "System Error: Neural link severed.";
+      const aiResponseText = data.message || "System Error: Neural link severed.";
       
       setMessages(prev => [...prev, { role: 'assistant', content: aiResponseText }]);
     } catch (error) {
@@ -65,12 +107,13 @@ export default function CoachPage() {
                   {msg.role === 'user' ? 'person' : 'psychology'}
                 </span>
               </div>
-              <div className={`max-w-[80%] p-4 rounded-lg font-mono text-sm leading-relaxed ${
+              <div className={`max-w-[85%] p-5 rounded-lg font-mono text-sm shadow-lg ${
                 msg.role === 'user' 
                   ? 'bg-cyan-400/10 border border-cyan-400/20 text-cyan-50' 
-                  : 'bg-black/40 border border-white/5 text-zinc-300'
+                  : 'bg-[#111111] border border-white/10 text-zinc-300'
               }`}>
-                {msg.content}
+                {/* Formatting applied right here */}
+                {renderFormattedText(msg.content)}
               </div>
             </div>
           ))}
@@ -79,7 +122,7 @@ export default function CoachPage() {
                <div className="w-10 h-10 rounded flex items-center justify-center flex-shrink-0 bg-zinc-800 border border-white/10">
                 <span className="material-symbols-outlined text-sm text-zinc-500 animate-spin">sync</span>
               </div>
-              <div className="p-4 rounded-lg font-mono text-sm bg-black/40 border border-white/5 text-zinc-500 animate-pulse">
+              <div className="p-5 rounded-lg font-mono text-sm bg-[#111111] border border-white/10 text-zinc-500 animate-pulse">
                 Analyzing telemetry...
               </div>
             </div>
