@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link'; // Import Link for navigation
 
 export default function RepReadyHome() {
   const [hasSignedUp, setHasSignedUp] = useState(false);
   const [email, setEmail] = useState('');
+  const [hasAgreed, setHasAgreed] = useState(false); // NEW: The Agreement State
   const [activeAgent, setActiveAgent] = useState(null);
 
   // Add your ElevenLabs Agent IDs here
@@ -13,12 +15,12 @@ export default function RepReadyHome() {
 
   const handleSignup = (e) => {
     e.preventDefault();
-    if (email) {
+    if (email && hasAgreed) {
       setHasSignedUp(true);
     }
   };
 
-  // --- STATE 1: THE SIGNUP GATE ---
+  // --- STATE 1: THE SIGNUP GATE (WITH LEGAL LOCK) ---
   if (!hasSignedUp) {
     return (
       <div className="flex items-center justify-center min-h-[80vh]">
@@ -27,43 +29,57 @@ export default function RepReadyHome() {
             <div className="w-16 h-16 bg-[#F97316] rounded-full flex items-center justify-center mb-6">
               <span className="text-white text-3xl font-bold font-headline">R</span>
             </div>
-            <h1 className="text-white text-3xl font-bold font-headline mb-2">Battle-test your skills</h1>
-            <p className="text-zinc-400">against Richard. Enter your email to begin.</p>
+            <h1 className="text-white text-3xl font-bold font-headline mb-2 uppercase tracking-tighter">Battle-test your skills</h1>
+            <p className="text-zinc-400 text-sm">Against the industry's toughest personas.</p>
           </div>
 
           <form onSubmit={handleSignup} className="space-y-6">
             <div className="relative">
               <div className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500">
-                <span className="material-symbols-outlined">mail</span>
+                <span className="material-symbols-outlined text-sm">mail</span>
               </div>
               <input 
                 type="email" 
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@email.com" 
-                className="w-full bg-[#EBF1FA] text-black rounded-lg py-3 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+                placeholder="Enter your work email" 
+                className="w-full bg-[#EBF1FA] text-black rounded-lg py-3 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-cyan-400 font-mono text-sm"
               />
             </div>
 
-            <div className="flex items-start gap-3">
-              <input type="checkbox" required className="mt-1 w-5 h-5 rounded border-zinc-600 bg-zinc-800 text-[#E13B45] focus:ring-[#E13B45]" />
-              <p className="text-sm text-zinc-400 leading-tight">
-                I agree to processing of my data per the <span className="text-yellow-500">Privacy Policy</span> and that sessions are not used to train AI models.
-              </p>
+            {/* THE LEGAL LOCK CHECKBOX */}
+            <div className="flex items-start gap-3 bg-white/5 p-3 rounded border border-white/5">
+              <input 
+                type="checkbox" 
+                id="legal-checkbox"
+                required 
+                checked={hasAgreed}
+                onChange={(e) => setHasAgreed(e.target.checked)}
+                className="mt-1 w-5 h-5 rounded border-zinc-600 bg-zinc-800 text-cyan-500 focus:ring-cyan-500 cursor-pointer" 
+              />
+              <label htmlFor="legal-checkbox" className="text-[10px] text-zinc-400 leading-tight uppercase tracking-wide cursor-pointer select-none">
+                I agree to the processing of my voice data per the <Link href="/terms" className="text-cyan-400 hover:underline">Privacy Protocols</Link> and acknowledge sessions are not used for AI training.
+              </label>
             </div>
 
+            {/* DYNAMIC BUTTON: Gray if not agreed, Red if ready */}
             <button 
               type="submit" 
-              className="w-full bg-[#DC3545] hover:bg-[#C82333] text-white font-bold py-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+              disabled={!hasAgreed}
+              className={`w-full font-bold py-4 rounded-lg transition-all flex items-center justify-center gap-2 uppercase tracking-widest text-xs
+                ${hasAgreed 
+                  ? 'bg-[#DC3545] hover:bg-[#C82333] text-white shadow-[0_0_20px_rgba(220,53,69,0.3)]' 
+                  : 'bg-zinc-800 text-zinc-500 cursor-not-allowed grayscale'
+                }`}
             >
-              Challenge Richard Free &rarr;
+              {hasAgreed ? "Challenge Richard Free →" : "Accept Terms to Access"}
             </button>
           </form>
 
-          <div className="mt-6 flex items-center justify-center gap-2 text-zinc-500 text-sm">
-            <span className="material-symbols-outlined text-sm">lock</span>
-            <span>3 free sessions included. No credit card required.</span>
+          <div className="mt-6 flex items-center justify-center gap-2 text-zinc-600 text-[10px] uppercase tracking-widest">
+            <span className="material-symbols-outlined text-xs text-zinc-700">lock</span>
+            <span>3 sessions remaining • encrypted link</span>
           </div>
         </div>
       </div>
@@ -189,22 +205,16 @@ export default function RepReadyHome() {
         </article>
       </div>
 
-      {/* --- STATE 3: THE LIVE OVERRIDE MODAL (WITH TELEMETRY) --- */}
+      {/* --- STATE 3: THE LIVE OVERRIDE MODAL --- */}
       {activeAgent && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 backdrop-blur-xl bg-black/80">
-          {/* Made the modal wider (max-w-5xl) to fit the telemetry panel */}
           <div className="glass-panel w-full max-w-5xl rounded-xl overflow-hidden shadow-[0_0_80px_rgba(34,211,238,0.1)] border border-white/20 flex flex-col max-h-[90vh]">
-            
-            {/* Header */}
             <div className="px-8 py-4 border-b border-white/10 flex items-center gap-4 bg-white/5 shrink-0">
               <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse shadow-[0_0_10px_#ef4444]"></div>
               <h3 className="font-mono text-cyan-400 uppercase tracking-tighter text-sm">Negotiation Protocol Active</h3>
             </div>
             
-            {/* Modal Body: Split into Two Columns */}
             <div className="p-8 grid grid-cols-1 md:grid-cols-5 gap-8 overflow-y-auto">
-              
-              {/* LEFT COLUMN: Comm Link (Visualizer + ElevenLabs) */}
               <div className="md:col-span-3 flex flex-col gap-6">
                 <div className="relative h-32 flex items-center justify-center bg-[#111] rounded-lg border border-white/5 shadow-inner">
                   <div className="flex items-center justify-center gap-1.5 h-16">
@@ -214,23 +224,21 @@ export default function RepReadyHome() {
                     <div className="w-1.5 bg-cyan-400 cyber-bar-4 shadow-[0_0_10px_rgba(34,211,238,0.8)]"></div>
                     <div className="w-1.5 bg-cyan-400 cyber-bar-5 shadow-[0_0_10px_rgba(34,211,238,0.8)]"></div>
                   </div>
-                  <div className="absolute top-3 right-4 font-mono text-[10px] text-cyan-400/40">VOICE_RECOGNITION_ON</div>
+                  <div className="absolute top-3 right-4 font-mono text-[10px] text-cyan-400/40 uppercase">Voice_Recognition_On</div>
                 </div>
 
                 <div className="flex justify-center border border-white/10 rounded-lg p-6 bg-black/40">
-                   {/* @ts-ignore */}
+                  {/* @ts-ignore */}
                   <elevenlabs-convai agent-id={activeAgent}></elevenlabs-convai>
                 </div>
               </div>
 
-              {/* RIGHT COLUMN: Live AI Telemetry */}
               <div className="md:col-span-2 bg-black/40 border border-white/5 rounded-lg p-6 flex flex-col gap-6">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="material-symbols-outlined text-cyan-400 text-sm">monitoring</span>
                   <h4 className="font-mono text-cyan-400 text-xs tracking-widest uppercase">Live Telemetry</h4>
                 </div>
                 
-                {/* Live Scoring Progress Bars */}
                 <div className="space-y-4">
                   <div>
                     <div className="flex justify-between text-[10px] font-mono mb-1">
@@ -252,7 +260,6 @@ export default function RepReadyHome() {
                   </div>
                 </div>
 
-                {/* AI Coach Live Feed Terminal */}
                 <div className="flex-1 mt-2 border border-white/5 bg-[#0a0a0a] rounded p-4 font-mono text-[10px] space-y-3 relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-full h-4 bg-gradient-to-b from-[#0a0a0a] to-transparent z-10"></div>
                   <p className="text-zinc-500">Initializing behavior tracking...</p>
@@ -264,7 +271,6 @@ export default function RepReadyHome() {
               </div>
             </div>
             
-            {/* Footer */}
             <div className="px-8 py-4 bg-white/5 border-t border-white/10 flex justify-center shrink-0">
               <button 
                 onClick={() => setActiveAgent(null)}
