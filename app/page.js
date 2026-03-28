@@ -2,13 +2,76 @@
 
 import React, { useState } from 'react';
 
-export default function ScenarioLibrary() {
+export default function RepReadyHome() {
+  const [hasSignedUp, setHasSignedUp] = useState(false);
+  const [email, setEmail] = useState('');
   const [activeAgent, setActiveAgent] = useState(null);
 
   // Add your ElevenLabs Agent IDs here
   const RICHARD_ID = "YOUR_RICHARD_ID";
   const SANDRA_ID = "YOUR_SANDRA_ID";
 
+  const handleSignup = (e) => {
+    e.preventDefault();
+    if (email) {
+      // Here you would normally send the email to your database
+      setHasSignedUp(true);
+    }
+  };
+
+  // --- STATE 1: THE SIGNUP GATE (From your screenshot) ---
+  if (!hasSignedUp) {
+    return (
+      <div className="flex items-center justify-center min-h-[80vh]">
+        <div className="bg-[#111] p-10 rounded-2xl border border-white/10 w-full max-w-md shadow-2xl">
+          <div className="flex flex-col items-center text-center mb-8">
+            <div className="w-16 h-16 bg-[#F97316] rounded-full flex items-center justify-center mb-6">
+              <span className="text-white text-3xl font-bold font-headline">R</span>
+            </div>
+            <h1 className="text-white text-3xl font-bold font-headline mb-2">Battle-test your skills</h1>
+            <p className="text-zinc-400">against Richard. Enter your email to begin.</p>
+          </div>
+
+          <form onSubmit={handleSignup} className="space-y-6">
+            <div className="relative">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500">
+                <span className="material-symbols-outlined">mail</span>
+              </div>
+              <input 
+                type="email" 
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@email.com" 
+                className="w-full bg-[#EBF1FA] text-black rounded-lg py-3 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-cyan-400"
+              />
+            </div>
+
+            <div className="flex items-start gap-3">
+              <input type="checkbox" required className="mt-1 w-5 h-5 rounded border-zinc-600 bg-zinc-800 text-[#E13B45] focus:ring-[#E13B45]" />
+              <p className="text-sm text-zinc-400 leading-tight">
+                I agree to processing of my data per the <span className="text-yellow-500">Privacy Policy</span> and that sessions are not used to train AI models.
+              </p>
+            </div>
+
+            <button 
+              type="submit" 
+              className="w-full bg-[#DC3545] hover:bg-[#C82333] text-white font-bold py-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+            >
+              Challenge Richard Free &rarr;
+            </button>
+          </form>
+
+          <div className="mt-6 flex items-center justify-center gap-2 text-zinc-500 text-sm">
+            <span className="material-symbols-outlined text-sm">lock</span>
+            <span>3 free sessions included. No credit card required.</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- STATE 2: THE SCENARIO LIBRARY (Unlocked) ---
   return (
     <div className="max-w-6xl mx-auto">
       <div className="mb-12">
@@ -23,8 +86,6 @@ export default function ScenarioLibrary() {
           <div className="p-8">
             <div className="flex justify-between items-start mb-6">
               <div className="flex gap-4">
-                
-                {/* Richard's Image: Older, serious executive (Darkened & Grayscale) */}
                 <div className="w-20 h-20 rounded border border-white/10 overflow-hidden relative grayscale contrast-125 brightness-75 group-hover:grayscale-0 group-hover:brightness-100 transition-all duration-500">
                   <img 
                     src="https://images.unsplash.com/photo-1560250097-0b93528c311a?w=400&h=400&fit=crop&q=80" 
@@ -43,8 +104,6 @@ export default function ScenarioLibrary() {
                   </div>
                 </div>
               </div>
-              
-              {/* Shield Icon */}
               <div className="text-cyan-400/20 group-hover:text-cyan-400/60 transition-colors">
                 <span className="material-symbols-outlined text-3xl" style={{fontVariationSettings: "'FILL' 1"}}>verified_user</span>
               </div>
@@ -52,7 +111,6 @@ export default function ScenarioLibrary() {
             
             <p className="text-sm text-zinc-400 leading-relaxed mb-6">Vance is known for aggressive anchoring and "take it or leave it" ultimatums. Success requires maintaining frame control while offering tiered concessions.</p>
             
-            {/* Telemetry Data Row */}
             <div className="grid grid-cols-3 gap-2 py-4 border-y border-white/5 mb-6">
               <div className="text-center">
                 <p className="text-[10px] font-mono text-zinc-500 mb-1 uppercase">Difficulty</p>
@@ -82,8 +140,6 @@ export default function ScenarioLibrary() {
           <div className="p-8">
             <div className="flex justify-between items-start mb-6">
               <div className="flex gap-4">
-                
-                {/* Sandra's Image: Stern tech director (Darkened & Grayscale) */}
                 <div className="w-20 h-20 rounded border border-white/10 overflow-hidden relative grayscale contrast-125 brightness-75 group-hover:grayscale-0 group-hover:brightness-100 transition-all duration-500">
                   <img 
                     src="https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=400&h=400&fit=crop&q=80" 
@@ -102,8 +158,6 @@ export default function ScenarioLibrary() {
                   </div>
                 </div>
               </div>
-              
-              {/* Terminal Icon */}
               <div className="text-cyan-400/20 group-hover:text-cyan-400/60 transition-colors">
                 <span className="material-symbols-outlined text-3xl">terminal</span>
               </div>
@@ -111,7 +165,6 @@ export default function ScenarioLibrary() {
             
             <p className="text-sm text-zinc-400 leading-relaxed mb-6">Chen focuses on implementation risk and security protocols. She will drill into technical debt and service level agreements (SLAs).</p>
             
-            {/* Telemetry Data Row */}
             <div className="grid grid-cols-3 gap-2 py-4 border-y border-white/5 mb-6">
               <div className="text-center">
                 <p className="text-[10px] font-mono text-zinc-500 mb-1 uppercase">Difficulty</p>
@@ -148,7 +201,6 @@ export default function ScenarioLibrary() {
             </div>
             
             <div className="p-8 space-y-8">
-              {/* THE NEON AUDIO VISUALIZER */}
               <div className="relative h-24 flex items-center justify-center bg-[#111] rounded border border-white/5">
                 <div className="flex items-center justify-center gap-1.5 h-16">
                   <div className="w-1.5 bg-cyan-400 cyber-bar-1 shadow-[0_0_10px_rgba(34,211,238,0.8)]"></div>
@@ -160,7 +212,6 @@ export default function ScenarioLibrary() {
                 <div className="absolute top-2 right-4 font-mono text-[10px] text-cyan-400/40">VOICE_RECOGNITION_ON</div>
               </div>
 
-              {/* ELEVENLABS WIDGET INJECTION */}
               <div className="flex justify-center border border-white/10 rounded-lg p-4 bg-black/40">
                  {/* @ts-ignore */}
                 <elevenlabs-convai agent-id={activeAgent}></elevenlabs-convai>
