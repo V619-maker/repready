@@ -21,25 +21,52 @@ export default function ScenarioLibrary() {
         {/* Richard Dossier Card */}
         <article className="glass-panel rounded-xl overflow-hidden group hover:border-cyan-400/40 transition-all duration-500">
           <div className="p-8">
-            <div className="flex gap-4 mb-6">
-              
-              {/* Richard's Image */}
-              <div className="w-20 h-20 rounded border border-white/10 overflow-hidden relative grayscale opacity-80 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-500">
-                <img 
-  src="https://images.unsplash.com/photo-1556157382-97eda2d62296?w=400&h=400&fit=crop&q=80" 
-  alt="Richard Vance" 
-  className="w-full h-full object-cover"
-/>
-                <div className="absolute inset-0 border border-transparent group-hover:border-cyan-400/50 transition-all z-10"></div>
-              </div>
+            <div className="flex justify-between items-start mb-6">
+              <div className="flex gap-4">
+                
+                {/* Richard's Image: Older, serious executive (Darkened & Grayscale) */}
+                <div className="w-20 h-20 rounded border border-white/10 overflow-hidden relative grayscale contrast-125 brightness-75 group-hover:grayscale-0 group-hover:brightness-100 transition-all duration-500">
+                  <img 
+                    src="https://images.unsplash.com/photo-1560250097-0b93528c311a?w=400&h=400&fit=crop&q=80" 
+                    alt="Richard Vance" 
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 border border-transparent group-hover:border-cyan-400/50 transition-all z-10"></div>
+                </div>
 
-              <div>
-                <h2 className="font-headline text-xl font-bold text-white tracking-wide uppercase">Richard Vance</h2>
-                <p className="font-mono text-xs text-zinc-400 mb-3">VP of Procurement // Global Logistics</p>
-                <span className="px-2 py-0.5 bg-red-900/30 text-red-400 text-[10px] font-mono border border-red-500/20 rounded-full">20% DISCOUNT MANDATE</span>
+                <div>
+                  <h2 className="font-headline text-xl font-bold text-white tracking-wide uppercase">Richard Vance</h2>
+                  <p className="font-mono text-xs text-zinc-400 mb-3">VP of Procurement // Global Logistics</p>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="px-2 py-0.5 bg-red-900/30 text-red-400 text-[10px] font-mono border border-red-500/20 rounded-full">20% DISCOUNT MANDATE</span>
+                    <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 text-[10px] font-mono border border-white/5 rounded-full">HARD-LINER</span>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Shield Icon */}
+              <div className="text-cyan-400/20 group-hover:text-cyan-400/60 transition-colors">
+                <span className="material-symbols-outlined text-3xl" style={{fontVariationSettings: "'FILL' 1"}}>verified_user</span>
               </div>
             </div>
-            <p className="text-sm text-zinc-400 leading-relaxed mb-8">Vance is known for aggressive anchoring and "take it or leave it" ultimatums. Success requires maintaining frame control while offering tiered concessions.</p>
+            
+            <p className="text-sm text-zinc-400 leading-relaxed mb-6">Vance is known for aggressive anchoring and "take it or leave it" ultimatums. Success requires maintaining frame control while offering tiered concessions.</p>
+            
+            {/* Telemetry Data Row */}
+            <div className="grid grid-cols-3 gap-2 py-4 border-y border-white/5 mb-6">
+              <div className="text-center">
+                <p className="text-[10px] font-mono text-zinc-500 mb-1 uppercase">Difficulty</p>
+                <p className="text-cyan-400 font-mono text-sm">LVL 08</p>
+              </div>
+              <div className="text-center">
+                <p className="text-[10px] font-mono text-zinc-500 mb-1 uppercase">Success Rate</p>
+                <p className="text-white font-mono text-sm">14.2%</p>
+              </div>
+              <div className="text-center">
+                <p className="text-[10px] font-mono text-zinc-500 mb-1 uppercase">Avg. Duration</p>
+                <p className="text-white font-mono text-sm">12:45</p>
+              </div>
+            </div>
             
             <button 
               onClick={() => setActiveAgent(RICHARD_ID)}
@@ -53,25 +80,52 @@ export default function ScenarioLibrary() {
         {/* Sandra Dossier Card */}
         <article className="glass-panel rounded-xl overflow-hidden group hover:border-cyan-400/40 transition-all duration-500">
           <div className="p-8">
-            <div className="flex gap-4 mb-6">
-              
-              {/* Sandra's Image */}
-              <div className="w-20 h-20 rounded border border-white/10 overflow-hidden relative grayscale opacity-80 group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-500">
-                <img 
-  src="https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=400&h=400&fit=crop&q=80" 
-  alt="Sandra Chen" 
-  className="w-full h-full object-cover"
-/>
-                <div className="absolute inset-0 border border-transparent group-hover:border-cyan-400/50 transition-all z-10"></div>
-              </div>
+            <div className="flex justify-between items-start mb-6">
+              <div className="flex gap-4">
+                
+                {/* Sandra's Image: Stern tech director (Darkened & Grayscale) */}
+                <div className="w-20 h-20 rounded border border-white/10 overflow-hidden relative grayscale contrast-125 brightness-75 group-hover:grayscale-0 group-hover:brightness-100 transition-all duration-500">
+                  <img 
+                    src="https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=400&h=400&fit=crop&q=80" 
+                    alt="Sandra Chen" 
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 border border-transparent group-hover:border-cyan-400/50 transition-all z-10"></div>
+                </div>
 
-              <div>
-                <h2 className="font-headline text-xl font-bold text-white tracking-wide uppercase">Sandra Chen</h2>
-                <p className="font-mono text-xs text-zinc-400 mb-3">Head of IT Operations // Fintech</p>
-                <span className="px-2 py-0.5 bg-cyan-900/30 text-cyan-400 text-[10px] font-mono border border-cyan-400/20 rounded-full">SECURITY OBSESSED</span>
+                <div>
+                  <h2 className="font-headline text-xl font-bold text-white tracking-wide uppercase">Sandra Chen</h2>
+                  <p className="font-mono text-xs text-zinc-400 mb-3">Head of IT Operations // Fintech</p>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="px-2 py-0.5 bg-cyan-900/30 text-cyan-400 text-[10px] font-mono border border-cyan-400/20 rounded-full">SECURITY OBSESSED</span>
+                    <span className="px-2 py-0.5 bg-zinc-800 text-zinc-400 text-[10px] font-mono border border-white/5 rounded-full">ANALYTICAL</span>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Terminal Icon */}
+              <div className="text-cyan-400/20 group-hover:text-cyan-400/60 transition-colors">
+                <span className="material-symbols-outlined text-3xl">terminal</span>
               </div>
             </div>
-            <p className="text-sm text-zinc-400 leading-relaxed mb-8">Chen focuses on implementation risk and security protocols. She will drill into technical debt and service level agreements (SLAs).</p>
+            
+            <p className="text-sm text-zinc-400 leading-relaxed mb-6">Chen focuses on implementation risk and security protocols. She will drill into technical debt and service level agreements (SLAs).</p>
+            
+            {/* Telemetry Data Row */}
+            <div className="grid grid-cols-3 gap-2 py-4 border-y border-white/5 mb-6">
+              <div className="text-center">
+                <p className="text-[10px] font-mono text-zinc-500 mb-1 uppercase">Difficulty</p>
+                <p className="text-cyan-400 font-mono text-sm">LVL 06</p>
+              </div>
+              <div className="text-center">
+                <p className="text-[10px] font-mono text-zinc-500 mb-1 uppercase">Success Rate</p>
+                <p className="text-white font-mono text-sm">31.8%</p>
+              </div>
+              <div className="text-center">
+                <p className="text-[10px] font-mono text-zinc-500 mb-1 uppercase">Avg. Duration</p>
+                <p className="text-white font-mono text-sm">18:10</p>
+              </div>
+            </div>
             
             <button 
               onClick={() => setActiveAgent(SANDRA_ID)}
@@ -83,12 +137,11 @@ export default function ScenarioLibrary() {
         </article>
       </div>
 
-      {/* THE LIVE OVERRIDE MODAL (Only shows when an agent is selected) */}
+      {/* THE LIVE OVERRIDE MODAL */}
       {activeAgent && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 backdrop-blur-xl bg-black/80">
           <div className="glass-panel w-full max-w-3xl rounded-xl overflow-hidden shadow-[0_0_80px_rgba(34,211,238,0.1)] border border-white/20">
             
-            {/* Modal Header */}
             <div className="px-8 py-4 border-b border-white/10 flex items-center gap-4 bg-white/5">
               <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse shadow-[0_0_10px_#ef4444]"></div>
               <h3 className="font-mono text-cyan-400 uppercase tracking-tighter text-sm">Negotiation Protocol Active</h3>
@@ -114,7 +167,6 @@ export default function ScenarioLibrary() {
               </div>
             </div>
             
-            {/* Modal Footer (Close Button) */}
             <div className="px-8 py-4 bg-white/5 border-t border-white/10 flex justify-center">
               <button 
                 onClick={() => setActiveAgent(null)}
