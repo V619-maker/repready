@@ -3,9 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 
-// --- 1. PASTE YOUR AGENT IDs HERE ---
-const RICHARD_ID = "<elevenlabs-convai agent-id="agent_8601kmk3maq9f9a9csym74aj7s4e"></elevenlabs-convai><script src="https://unpkg.com/@elevenlabs/convai-widget-embed" async type="text/javascript"></script>";
-const SANDRA_ID = "<elevenlabs-convai agent-id="agent_0301kmsnhr7tf11b62bvd7vsw9qq"></elevenlabs-convai><script src="https://unpkg.com/@elevenlabs/convai-widget-embed" async type="text/javascript"></script>";
+// --- 1. CLEAN AGENT IDs (NO HTML TAGS HERE) ---
+const RICHARD_ID = "agent_8601kmk3maq9f9a9csym74aj7s4e";
+const SANDRA_ID = "agent_0301kmsnhr7tf11b62bvd7vsw9qq";
 
 export default function RepReadyHome() {
   const [hasSignedUp, setHasSignedUp] = useState(false);
@@ -14,14 +14,16 @@ export default function RepReadyHome() {
   const [activeAgent, setActiveAgent] = useState(null);
   const [showReport, setShowReport] = useState(false);
 
-  // --- 2. LOAD THE ELEVENLABS WIDGET SCRIPT ---
+  // --- 2. MULTI-LAYER SCRIPT LOADER (For Vercel Stability) ---
   useEffect(() => {
-    const script = document.createElement('script');
-    script.src = "https://elevenlabs.io/convai-widget/index.js";
-    script.async = true;
-    script.type = "text/javascript";
-    document.head.appendChild(script);
-    return () => { document.head.removeChild(script); };
+    if (typeof window !== 'undefined' && !document.getElementById('elevenlabs-convai-script')) {
+      const script = document.createElement('script');
+      script.id = 'elevenlabs-convai-script';
+      script.src = "https://elevenlabs.io/convai-widget/index.js";
+      script.async = true;
+      script.type = "text/javascript";
+      document.head.appendChild(script);
+    }
   }, []);
 
   const handleSignup = (e) => {
@@ -34,17 +36,17 @@ export default function RepReadyHome() {
     setShowReport(true);
   };
 
-  // --- STATE 1: SIGNUP GATE ---
+  // --- STATE 1: SIGNUP & LEGAL GATE ---
   if (!hasSignedUp) {
     return (
       <div className="flex items-center justify-center min-h-[80vh]">
         <div className="bg-[#111] p-10 rounded-2xl border border-white/10 w-full max-w-md shadow-2xl">
           <div className="flex flex-col items-center text-center mb-8">
             <div className="w-16 h-16 bg-[#F97316] rounded-full flex items-center justify-center mb-6">
-              <span className="text-white text-3xl font-bold italic">R</span>
+              <span className="text-white text-3xl font-bold italic font-headline">R</span>
             </div>
-            <h1 className="text-white text-2xl font-bold uppercase tracking-tighter">Initialize Link</h1>
-            <p className="text-zinc-500 text-xs mt-2">Enter credentials to access simulation deck.</p>
+            <h1 className="text-white text-3xl font-bold font-headline mb-2 uppercase italic tracking-tighter">Initialize Link</h1>
+            <p className="text-zinc-500 text-xs">Authorize credentials to access the simulation deck.</p>
           </div>
 
           <form onSubmit={handleSignup} className="space-y-6">
@@ -60,16 +62,16 @@ export default function RepReadyHome() {
                 onChange={(e) => setHasAgreed(e.target.checked)}
                 className="mt-1 w-5 h-5 accent-cyan-500 cursor-pointer" 
               />
-              <label htmlFor="legal" className="text-[10px] text-zinc-400 uppercase tracking-widest leading-tight">
+              <label htmlFor="legal" className="text-[10px] text-zinc-400 uppercase tracking-widest leading-tight cursor-pointer">
                 I accept the <Link href="/terms" className="text-cyan-400 underline">Neural Protocols</Link> & Data Privacy.
               </label>
             </div>
             <button 
               type="submit" disabled={!hasAgreed}
-              className={`w-full py-4 rounded-lg font-bold uppercase tracking-widest text-xs transition-all
-                ${hasAgreed ? 'bg-[#DC3545] text-white shadow-lg' : 'bg-zinc-800 text-zinc-600 cursor-not-allowed'}`}
+              className={`w-full py-4 rounded-lg font-bold uppercase tracking-widest text-xs transition-all shadow-lg
+                ${hasAgreed ? 'bg-[#DC3545] text-white' : 'bg-zinc-800 text-zinc-600 cursor-not-allowed'}`}
             >
-              Access Simulation →
+              {hasAgreed ? "Challenge Richard Free →" : "Accept Terms to Access"}
             </button>
           </form>
         </div>
@@ -77,65 +79,93 @@ export default function RepReadyHome() {
     );
   }
 
-  // --- STATE 2: DASHBOARD ---
+  // --- STATE 2: THE SCENARIO LIBRARY ---
   return (
     <div className="max-w-6xl mx-auto p-8">
       <div className="mb-12 border-b border-white/10 pb-6">
-        <h1 className="text-4xl font-bold text-white uppercase tracking-tighter italic">Scenario Deck</h1>
-        <p className="text-zinc-500 font-mono text-xs mt-1">TELEMETRY ACTIVE // SELECT TARGET</p>
+        <h1 className="text-4xl font-bold text-white uppercase tracking-tighter italic font-headline">Scenario Deck</h1>
+        <p className="text-zinc-500 font-mono text-xs mt-1">TELEMETRY ACTIVE // SELECT TARGET PERSONA</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* RICHARD CARD */}
+        {/* Richard Card */}
         <div className="glass-panel p-8 rounded-xl border border-white/10 hover:border-cyan-500/50 transition-all group">
           <div className="flex gap-4 mb-6">
-            <img src="https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200" className="w-16 h-16 rounded grayscale group-hover:grayscale-0 transition-all" />
+            <img src="https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200" className="w-16 h-16 rounded grayscale group-hover:grayscale-0 transition-all border border-white/10" />
             <div>
-              <h2 className="text-white font-bold uppercase">Richard Vance</h2>
-              <p className="text-[10px] text-zinc-500 uppercase">VP Procurement // Hard-Liner</p>
+              <h2 className="text-white font-bold uppercase font-headline">Richard Vance</h2>
+              <p className="text-[10px] text-zinc-500 font-mono uppercase">VP Procurement // Hard-Liner</p>
             </div>
           </div>
-          <button onClick={() => setActiveAgent(RICHARD_ID)} className="w-full py-3 border border-cyan-400 text-cyan-400 text-[10px] font-bold uppercase tracking-widest hover:bg-cyan-400/10">Start Session</button>
+          <button onClick={() => setActiveAgent(RICHARD_ID)} className="w-full py-3 border border-cyan-400 text-cyan-400 text-[10px] font-bold uppercase tracking-widest hover:bg-cyan-400/10 transition-all">Start Simulation</button>
         </div>
 
-        {/* SANDRA CARD */}
+        {/* Sandra Card */}
         <div className="glass-panel p-8 rounded-xl border border-white/10 hover:border-cyan-500/50 transition-all group">
           <div className="flex gap-4 mb-6">
-            <img src="https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=200" className="w-16 h-16 rounded grayscale group-hover:grayscale-0 transition-all" />
+            <img src="https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=200" className="w-16 h-16 rounded grayscale group-hover:grayscale-0 transition-all border border-white/10" />
             <div>
-              <h2 className="text-white font-bold uppercase">Sandra Chen</h2>
-              <p className="text-[10px] text-zinc-500 uppercase">Head of IT // Analytical</p>
+              <h2 className="text-white font-bold uppercase font-headline">Sandra Chen</h2>
+              <p className="text-[10px] text-zinc-500 font-mono uppercase">Head of IT // Analytical Blocker</p>
             </div>
           </div>
-          <button onClick={() => setActiveAgent(SANDRA_ID)} className="w-full py-3 border border-cyan-400 text-cyan-400 text-[10px] font-bold uppercase tracking-widest hover:bg-cyan-400/10">Start Session</button>
+          <button onClick={() => setActiveAgent(SANDRA_ID)} className="w-full py-3 border border-cyan-400 text-cyan-400 text-[10px] font-bold uppercase tracking-widest hover:bg-cyan-400/10 transition-all">Start Simulation</button>
         </div>
       </div>
 
-      {/* --- LIVE SIMULATION MODAL --- */}
+      {/* --- STATE 3: LIVE SIMULATION MODAL (WITH TELEMETRY) --- */}
       {activeAgent && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 backdrop-blur-xl bg-black/80">
-          <div className="glass-panel w-full max-w-xl rounded-xl border border-white/20 p-12 flex flex-col items-center">
-            <div className="w-2 h-2 rounded-full bg-red-500 animate-ping mb-4"></div>
-            <h3 className="text-cyan-400 font-mono text-xs uppercase mb-12">Neural Link Established</h3>
+          <div className="glass-panel w-full max-w-5xl rounded-xl border border-white/20 overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="px-8 py-4 border-b border-white/10 bg-white/5 flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_10px_#ef4444]"></div>
+                <h3 className="font-mono text-cyan-400 uppercase text-xs">Negotiation Protocol Active</h3>
+              </div>
+            </div>
             
-            <div className="mb-12">
-              <elevenlabs-convai agent-id={activeAgent}></elevenlabs-convai>
+            <div className="p-10 grid grid-cols-1 md:grid-cols-5 gap-8 overflow-y-auto bg-black/40">
+              <div className="md:col-span-3 flex flex-col gap-6">
+                <div className="h-48 flex flex-col items-center justify-center border border-white/10 rounded bg-[#0a0a0a] p-6 relative">
+                  <elevenlabs-convai agent-id={activeAgent}></elevenlabs-convai>
+                  <p className="absolute bottom-4 text-[8px] text-zinc-600 tracking-[0.3em] uppercase">Encrypted_Voice_Auth</p>
+                </div>
+              </div>
+
+              <div className="md:col-span-2 bg-black/60 border border-white/5 rounded-lg p-6">
+                <h4 className="font-mono text-cyan-400 text-[10px] uppercase mb-6 tracking-widest">Live Telemetry</h4>
+                <div className="space-y-6">
+                  <div>
+                    <div className="flex justify-between text-[10px] font-mono mb-2 text-zinc-500"><span>FRAME CONTROL</span><span>74%</span></div>
+                    <div className="h-1 bg-zinc-800 rounded-full overflow-hidden"><div className="h-full bg-cyan-400 w-[74%]"></div></div>
+                  </div>
+                  <div className="bg-[#0a0a0a] p-4 rounded font-mono text-[9px] text-zinc-500 space-y-2">
+                    <p className="text-cyan-400">&gt; Target is skeptical of your timeline.</p>
+                    <p className="text-red-400 animate-pulse">&gt; WARNING: Concession imminent.</p>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <button onClick={terminateSession} className="px-8 py-3 border border-red-500 text-red-500 font-bold uppercase text-[10px] tracking-widest hover:bg-red-500 hover:text-white transition-all">End Simulation</button>
+            <div className="px-8 py-6 border-t border-white/10 bg-white/5 text-center">
+              <button onClick={terminateSession} className="px-12 py-3 border border-red-500 text-red-500 font-bold uppercase text-[10px] tracking-widest hover:bg-red-500 hover:text-white transition-all">End Simulation</button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* --- SUCCESS REPORT --- */}
+      {/* --- POST-SIMULATION AUDIT --- */}
       {showReport && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 backdrop-blur-2xl bg-black/90 font-mono">
-          <div className="glass-panel w-full max-w-md rounded-xl border border-cyan-500/30 p-10 text-center">
-            <h2 className="text-2xl font-bold text-white mb-2 uppercase italic">Audit Complete</h2>
-            <p className="text-4xl font-bold text-cyan-400 my-8 italic">74<span className="text-sm text-zinc-600">/100</span></p>
+          <div className="glass-panel w-full max-w-md rounded-2xl border border-cyan-500/30 p-12 text-center shadow-2xl">
+            <h2 className="text-3xl font-headline font-bold text-white uppercase italic mb-2 tracking-tighter">Audit Complete</h2>
+            <div className="my-10">
+                <p className="text-zinc-600 text-[10px] uppercase mb-1 tracking-widest">Performance Score</p>
+                <p className="text-6xl font-bold text-cyan-400 italic font-headline tracking-tighter">72<span className="text-lg text-zinc-700">/100</span></p>
+            </div>
             <div className="flex gap-4">
-              <Link href="/coach" className="flex-1 px-4 py-3 bg-cyan-600 text-white font-bold uppercase text-[10px]">Review Feedback</Link>
-              <button onClick={() => setShowReport(false)} className="flex-1 px-4 py-3 border border-white/10 text-white font-bold uppercase text-[10px]">Retry</button>
+              <Link href="/coach" className="flex-1 bg-cyan-600 text-white py-4 font-bold uppercase text-[10px] tracking-widest hover:bg-cyan-500 transition-all">Review Feedback</Link>
+              <button onClick={() => setShowReport(false)} className="flex-1 border border-white/10 text-white py-4 font-bold uppercase text-[10px] tracking-widest hover:bg-white/5 transition-all">Try Again</button>
             </div>
           </div>
         </div>
