@@ -80,7 +80,7 @@ export default function RepReadyHome() {
             <div className="p-8 flex gap-6 flex-1">
               {/* FIXED IMAGE CONTAINER: Prevents stretching, uses portrait crop */}
               <div className="w-24 h-32 shrink-0 border border-white/10 overflow-hidden">
-                <img src="/Richard.jpg" alt="Richard Vance" className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500" />
+                <img src="https://raw.githubusercontent.com/V619-maker/repready/main/public/Richard.jpg" alt="Richard Vance" className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500" />
               </div>
               
               <div className="flex flex-col justify-center">
@@ -108,7 +108,7 @@ export default function RepReadyHome() {
             <div className="p-8 flex gap-6 flex-1">
               {/* FIXED IMAGE CONTAINER */}
               <div className="w-24 h-32 shrink-0 border border-white/10 overflow-hidden">
-                <img src="/Sandra.jpg" alt="Sandra Chen" className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500" />
+                <img src="https://raw.githubusercontent.com/V619-maker/repready/main/public/Sandra.jpg" alt="Sandra Chen" className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500" />
               </div>
               
               <div className="flex flex-col justify-center">
