@@ -1,83 +1,75 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+
+// --- 1. PASTE YOUR AGENT IDs HERE ---
+const RICHARD_ID = "<elevenlabs-convai agent-id="agent_8601kmk3maq9f9a9csym74aj7s4e"></elevenlabs-convai><script src="https://unpkg.com/@elevenlabs/convai-widget-embed" async type="text/javascript"></script>";
+const SANDRA_ID = "<elevenlabs-convai agent-id="agent_0301kmsnhr7tf11b62bvd7vsw9qq"></elevenlabs-convai><script src="https://unpkg.com/@elevenlabs/convai-widget-embed" async type="text/javascript"></script>";
 
 export default function RepReadyHome() {
   const [hasSignedUp, setHasSignedUp] = useState(false);
   const [email, setEmail] = useState('');
   const [hasAgreed, setHasAgreed] = useState(false);
   const [activeAgent, setActiveAgent] = useState(null);
-  const [showReport, setShowReport] = useState(false); // NEW: Report State
+  const [showReport, setShowReport] = useState(false);
 
-  // Add your ElevenLabs Agent IDs here
-  const RICHARD_ID = "YOUR_RICHARD_ID";
-  const SANDRA_ID = "YOUR_SANDRA_ID";
+  // --- 2. LOAD THE ELEVENLABS WIDGET SCRIPT ---
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = "https://elevenlabs.io/convai-widget/index.js";
+    script.async = true;
+    script.type = "text/javascript";
+    document.head.appendChild(script);
+    return () => { document.head.removeChild(script); };
+  }, []);
 
   const handleSignup = (e) => {
     e.preventDefault();
-    if (email && hasAgreed) {
-      setHasSignedUp(true);
-    }
+    if (email && hasAgreed) setHasSignedUp(true);
   };
 
   const terminateSession = () => {
     setActiveAgent(null);
-    setShowReport(true); // Trigger the audit report
+    setShowReport(true);
   };
 
-  // --- STATE 1: THE SIGNUP GATE ---
+  // --- STATE 1: SIGNUP GATE ---
   if (!hasSignedUp) {
     return (
       <div className="flex items-center justify-center min-h-[80vh]">
         <div className="bg-[#111] p-10 rounded-2xl border border-white/10 w-full max-w-md shadow-2xl">
           <div className="flex flex-col items-center text-center mb-8">
             <div className="w-16 h-16 bg-[#F97316] rounded-full flex items-center justify-center mb-6">
-              <span className="text-white text-3xl font-bold font-headline">R</span>
+              <span className="text-white text-3xl font-bold italic">R</span>
             </div>
-            <h1 className="text-white text-3xl font-bold font-headline mb-2 uppercase tracking-tighter">Battle-test your skills</h1>
-            <p className="text-zinc-400 text-sm">Against the industry's toughest personas.</p>
+            <h1 className="text-white text-2xl font-bold uppercase tracking-tighter">Initialize Link</h1>
+            <p className="text-zinc-500 text-xs mt-2">Enter credentials to access simulation deck.</p>
           </div>
 
           <form onSubmit={handleSignup} className="space-y-6">
-            <div className="relative">
-              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500">
-                <span className="material-symbols-outlined text-sm">mail</span>
-              </div>
-              <input 
-                type="email" 
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Enter your work email" 
-                className="w-full bg-[#EBF1FA] text-black rounded-lg py-3 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-cyan-400 font-mono text-sm"
-              />
-            </div>
-
+            <input 
+              type="email" required value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="operator@email.com" 
+              className="w-full bg-[#EBF1FA] text-black rounded-lg py-3 px-4 focus:outline-none font-mono text-sm"
+            />
             <div className="flex items-start gap-3 bg-white/5 p-3 rounded border border-white/5">
               <input 
-                type="checkbox" 
-                id="legal-checkbox"
-                required 
-                checked={hasAgreed}
+                type="checkbox" id="legal" required checked={hasAgreed}
                 onChange={(e) => setHasAgreed(e.target.checked)}
-                className="mt-1 w-5 h-5 rounded border-zinc-600 bg-zinc-800 text-cyan-500 focus:ring-cyan-500 cursor-pointer" 
+                className="mt-1 w-5 h-5 accent-cyan-500 cursor-pointer" 
               />
-              <label htmlFor="legal-checkbox" className="text-[10px] text-zinc-400 leading-tight uppercase tracking-wide cursor-pointer select-none">
-                I agree to the processing of my voice data per the <Link href="/terms" className="text-cyan-400 hover:underline">Privacy Protocols</Link> and acknowledge sessions are not used for AI training.
+              <label htmlFor="legal" className="text-[10px] text-zinc-400 uppercase tracking-widest leading-tight">
+                I accept the <Link href="/terms" className="text-cyan-400 underline">Neural Protocols</Link> & Data Privacy.
               </label>
             </div>
-
             <button 
-              type="submit" 
-              disabled={!hasAgreed}
-              className={`w-full font-bold py-4 rounded-lg transition-all flex items-center justify-center gap-2 uppercase tracking-widest text-xs
-                ${hasAgreed 
-                  ? 'bg-[#DC3545] hover:bg-[#C82333] text-white shadow-[0_0_20px_rgba(220,53,69,0.3)]' 
-                  : 'bg-zinc-800 text-zinc-500 cursor-not-allowed grayscale'
-                }`}
+              type="submit" disabled={!hasAgreed}
+              className={`w-full py-4 rounded-lg font-bold uppercase tracking-widest text-xs transition-all
+                ${hasAgreed ? 'bg-[#DC3545] text-white shadow-lg' : 'bg-zinc-800 text-zinc-600 cursor-not-allowed'}`}
             >
-              {hasAgreed ? "Challenge Richard Free →" : "Accept Terms to Access"}
+              Access Simulation →
             </button>
           </form>
         </div>
@@ -85,102 +77,65 @@ export default function RepReadyHome() {
     );
   }
 
-  // --- MAIN UI ---
+  // --- STATE 2: DASHBOARD ---
   return (
-    <div className="max-w-6xl mx-auto p-8 relative">
-      <div className="mb-12">
-        <h1 className="font-headline text-4xl font-bold tracking-tight text-white mb-2 uppercase">Scenario Library</h1>
-        <p className="text-zinc-400 font-mono text-sm max-w-xl">SELECT A TARGET PERSONA TO INITIALIZE THE NEGOTIATION SIMULATION ENGINE.</p>
+    <div className="max-w-6xl mx-auto p-8">
+      <div className="mb-12 border-b border-white/10 pb-6">
+        <h1 className="text-4xl font-bold text-white uppercase tracking-tighter italic">Scenario Deck</h1>
+        <p className="text-zinc-500 font-mono text-xs mt-1">TELEMETRY ACTIVE // SELECT TARGET</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* Richard Card */}
-        <article className="glass-panel rounded-xl overflow-hidden group hover:border-cyan-400/40 transition-all duration-500 border border-white/10 p-8">
-            <div className="flex gap-4 mb-6">
-                <img src="https://images.unsplash.com/photo-1560250097-0b93528c311a?w=400&h=400&fit=crop&q=80" className="w-20 h-20 rounded grayscale group-hover:grayscale-0 transition-all border border-white/10" />
-                <div>
-                    <h2 className="text-xl font-bold text-white uppercase">Richard Vance</h2>
-                    <p className="text-xs text-zinc-500 font-mono mb-2">VP of Procurement</p>
-                    <span className="px-2 py-0.5 bg-red-900/30 text-red-400 text-[10px] border border-red-500/20 rounded-full">HARD-LINER</span>
-                </div>
+        {/* RICHARD CARD */}
+        <div className="glass-panel p-8 rounded-xl border border-white/10 hover:border-cyan-500/50 transition-all group">
+          <div className="flex gap-4 mb-6">
+            <img src="https://images.unsplash.com/photo-1560250097-0b93528c311a?w=200" className="w-16 h-16 rounded grayscale group-hover:grayscale-0 transition-all" />
+            <div>
+              <h2 className="text-white font-bold uppercase">Richard Vance</h2>
+              <p className="text-[10px] text-zinc-500 uppercase">VP Procurement // Hard-Liner</p>
             </div>
-            <button onClick={() => setActiveAgent(RICHARD_ID)} className="w-full py-4 border border-cyan-400 text-cyan-400 font-bold uppercase text-xs hover:bg-cyan-400/10 transition-all tracking-widest">Initialize Simulation</button>
-        </article>
+          </div>
+          <button onClick={() => setActiveAgent(RICHARD_ID)} className="w-full py-3 border border-cyan-400 text-cyan-400 text-[10px] font-bold uppercase tracking-widest hover:bg-cyan-400/10">Start Session</button>
+        </div>
 
-        {/* Sandra Card */}
-        <article className="glass-panel rounded-xl overflow-hidden group hover:border-cyan-400/40 transition-all duration-500 border border-white/10 p-8">
-            <div className="flex gap-4 mb-6">
-                <img src="https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=400&h=400&fit=crop&q=80" className="w-20 h-20 rounded grayscale group-hover:grayscale-0 transition-all border border-white/10" />
-                <div>
-                    <h2 className="text-xl font-bold text-white uppercase">Sandra Chen</h2>
-                    <p className="text-xs text-zinc-500 font-mono mb-2">Head of IT Ops</p>
-                    <span className="px-2 py-0.5 bg-cyan-900/30 text-cyan-400 text-[10px] border border-cyan-400/20 rounded-full">ANALYTICAL</span>
-                </div>
+        {/* SANDRA CARD */}
+        <div className="glass-panel p-8 rounded-xl border border-white/10 hover:border-cyan-500/50 transition-all group">
+          <div className="flex gap-4 mb-6">
+            <img src="https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=200" className="w-16 h-16 rounded grayscale group-hover:grayscale-0 transition-all" />
+            <div>
+              <h2 className="text-white font-bold uppercase">Sandra Chen</h2>
+              <p className="text-[10px] text-zinc-500 uppercase">Head of IT // Analytical</p>
             </div>
-            <button onClick={() => setActiveAgent(SANDRA_ID)} className="w-full py-4 border border-cyan-400 text-cyan-400 font-bold uppercase text-xs hover:bg-cyan-400/10 transition-all tracking-widest">Initialize Simulation</button>
-        </article>
+          </div>
+          <button onClick={() => setActiveAgent(SANDRA_ID)} className="w-full py-3 border border-cyan-400 text-cyan-400 text-[10px] font-bold uppercase tracking-widest hover:bg-cyan-400/10">Start Session</button>
+        </div>
       </div>
 
       {/* --- LIVE SIMULATION MODAL --- */}
       {activeAgent && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 backdrop-blur-xl bg-black/80">
-          <div className="glass-panel w-full max-w-5xl rounded-xl border border-white/20 overflow-hidden flex flex-col shadow-2xl">
-            <div className="px-8 py-4 border-b border-white/10 bg-white/5 flex items-center gap-4">
-              <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse"></div>
-              <h3 className="font-mono text-cyan-400 uppercase text-xs tracking-tighter">Protocol Active</h3>
+          <div className="glass-panel w-full max-w-xl rounded-xl border border-white/20 p-12 flex flex-col items-center">
+            <div className="w-2 h-2 rounded-full bg-red-500 animate-ping mb-4"></div>
+            <h3 className="text-cyan-400 font-mono text-xs uppercase mb-12">Neural Link Established</h3>
+            
+            <div className="mb-12">
+              <elevenlabs-convai agent-id={activeAgent}></elevenlabs-convai>
             </div>
-            <div className="p-12 flex flex-col items-center">
-                <div className="flex gap-1 mb-12 h-20 items-center">
-                    {[...Array(8)].map((_, i) => (
-                        <div key={i} className="w-2 bg-cyan-500/30 rounded-full animate-pulse" style={{height: `${Math.random()*100}%`}}></div>
-                    ))}
-                </div>
-                <button onClick={terminateSession} className="px-12 py-4 border border-red-500 text-red-500 font-bold uppercase text-xs tracking-widest hover:bg-red-500 hover:text-white transition-all">End Simulation</button>
-            </div>
+
+            <button onClick={terminateSession} className="px-8 py-3 border border-red-500 text-red-500 font-bold uppercase text-[10px] tracking-widest hover:bg-red-500 hover:text-white transition-all">End Simulation</button>
           </div>
         </div>
       )}
 
-      {/* --- POST-SIMULATION AUDIT REPORT (THE NEW SUCCESS MODAL) --- */}
+      {/* --- SUCCESS REPORT --- */}
       {showReport && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 backdrop-blur-2xl bg-black/90 font-mono">
-          <div className="glass-panel w-full max-w-2xl rounded-2xl border border-cyan-500/30 p-10 shadow-[0_0_100px_rgba(6,182,212,0.15)] relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-4 opacity-10 text-[60px] font-bold">AUDIT</div>
-            
-            <h2 className="text-3xl font-bold text-white mb-2 uppercase tracking-tighter italic">Simulation Complete</h2>
-            <p className="text-zinc-500 text-xs mb-8 border-b border-white/5 pb-4 uppercase">Neural Analysis // Performance Review</p>
-            
-            <div className="grid grid-cols-2 gap-8 mb-10">
-                <div className="bg-white/5 p-6 rounded-xl border border-white/5">
-                    <p className="text-zinc-500 text-[10px] uppercase mb-1">Negotiation Score</p>
-                    <p className="text-4xl font-bold text-cyan-400 italic">68<span className="text-sm text-zinc-600">/100</span></p>
-                </div>
-                <div className="bg-white/5 p-6 rounded-xl border border-white/5">
-                    <p className="text-zinc-500 text-[10px] uppercase mb-1">Frame Control</p>
-                    <p className="text-4xl font-bold text-white italic">PRO</p>
-                </div>
-            </div>
-
-            <div className="space-y-4 mb-10">
-                <div className="flex justify-between items-center text-xs">
-                    <span className="text-zinc-400">ANCHORING STRENGTH</span>
-                    <span className="text-green-400">OPTIMAL</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                    <span className="text-zinc-400">EMOTIONAL REGULATION</span>
-                    <span className="text-yellow-400">STABLE</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                    <span className="text-zinc-400">CONCESSION STRATEGY</span>
-                    <span className="text-red-400">WEAK</span>
-                </div>
-            </div>
-
+          <div className="glass-panel w-full max-w-md rounded-xl border border-cyan-500/30 p-10 text-center">
+            <h2 className="text-2xl font-bold text-white mb-2 uppercase italic">Audit Complete</h2>
+            <p className="text-4xl font-bold text-cyan-400 my-8 italic">74<span className="text-sm text-zinc-600">/100</span></p>
             <div className="flex gap-4">
-                <Link href="/coach" className="flex-1">
-                    <button className="w-full py-4 bg-cyan-600 text-white font-bold uppercase text-xs tracking-widest hover:bg-cyan-500 transition-all">Review with AI Coach</button>
-                </Link>
-                <button onClick={() => setShowReport(false)} className="flex-1 py-4 border border-white/10 text-white font-bold uppercase text-xs tracking-widest hover:bg-white/5 transition-all">Try Again</button>
+              <Link href="/coach" className="flex-1 px-4 py-3 bg-cyan-600 text-white font-bold uppercase text-[10px]">Review Feedback</Link>
+              <button onClick={() => setShowReport(false)} className="flex-1 px-4 py-3 border border-white/10 text-white font-bold uppercase text-[10px]">Retry</button>
             </div>
           </div>
         </div>
