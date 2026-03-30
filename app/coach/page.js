@@ -65,21 +65,32 @@ export default function CoachPage() {
     if (!input.trim() || isLoading) return;
 
     const userMessage = { role: 'user', content: input };
-    setMessages(prev => [...prev, userMessage]);
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
     setInput('');
     setIsLoading(true);
 
     try {
+      // 1. Secretly grab the latest scorecard from the $0 LocalStorage database
+      const savedDebrief = localStorage.getItem('repready_latest_debrief');
+      const contextString = savedDebrief 
+        ? `The rep just finished a simulation. Here is their exact telemetry and JSON scorecard: ${savedDebrief}` 
+        : "The rep hasn't completed a simulation yet, or the data is missing.";
+
+      // 2. Fire it to your new "Swiss Army Knife" API route with the system context
       const response = await fetch('/api/coach', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [...messages, userMessage] })
+        body: JSON.stringify({ 
+          system: `You are the RepReady AI Coach. Answer the user's questions based specifically on this telemetry data: ${contextString}`,
+          messages: newMessages 
+        })
       });
 
       if (!response.ok) throw new Error('Failed to fetch AI response');
       
       const data = await response.json();
-      const aiResponseText = data.message || "System Error: Neural link severed.";
+      const aiResponseText = data.text || data.message || "System Error: Neural link severed.";
       
       setMessages(prev => [...prev, { role: 'assistant', content: aiResponseText }]);
     } catch (error) {
