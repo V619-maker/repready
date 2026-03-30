@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 export async function POST(request) {
   try {
-    const { messages } = await request.json();
+    const body = await request.json();
     const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_KEY;
 
     if (!apiKey) {
@@ -11,14 +11,37 @@ export async function POST(request) {
       }, { status: 200 }); 
     }
 
-    const latestMessage = messages[messages.length - 1].content;
-    const promptText = `You are a ruthless, highly tactical B2B Sales Coach for an app called RepReady. 
-    You analyze negotiation telemetry and give sharp, direct advice on frame control and anchoring.
-    Keep your responses concise, punchy, and formatted well.
-    
-    User says: ${latestMessage}`;
+    let promptText = "";
 
-    // THE FIX: Pointing directly to the updated gemini-2.5-flash endpoint
+    // --- 1. SCORING MODE (Triggered when a simulation ends) ---
+    if (body.transcript) {
+      promptText = `You are a senior B2B sales coach evaluating a rep's performance.
+      Review the following call transcript and score the rep from 1-100 on their overall performance, and specifically on BANT execution.
+      
+      Transcript:
+      ${body.transcript}
+      
+      Respond ONLY with valid JSON, nothing else. Use this exact format:
+      {
+        "aggregate_score": 85,
+        "discovery_score": 90,
+        "objection_handling": 70,
+        "value_articulation": 80,
+        "executive_presence": 85,
+        "verdict": "One punchy sentence summarizing their performance."
+      }`;
+    } 
+    // --- 2. CHAT MODE (Your existing Coach interface) ---
+    else if (body.messages) {
+      const latestMessage = body.messages[body.messages.length - 1].content;
+      promptText = `You are a ruthless, highly tactical B2B Sales Coach for an app called RepReady. 
+      You analyze negotiation telemetry and give sharp, direct advice on frame control and anchoring.
+      Keep your responses concise, punchy, and formatted well.
+      
+      User says: ${latestMessage}`;
+    }
+
+    // --- 3. SEND TO GEMINI ---
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
