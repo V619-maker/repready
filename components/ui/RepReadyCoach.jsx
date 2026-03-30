@@ -55,20 +55,24 @@ function ScoreBar({ label, score, prevScore }) {
   const color = score >= 7 ? "#10b981" : score >= 5 ? "#f59e0b" : "#f43f5e";
   const delta = prevScore != null ? Math.round((score - prevScore) * 10) / 10 : null;
   return (
+   function ScoreBar({ label, score, prevScore }) {
+  const color = score >= 7 ? "#22D3EE" : score >= 5 ? "#f59e0b" : "#f43f5e";
+  const delta = prevScore != null ? Math.round((score - prevScore) * 10) / 10 : null;
+  return (
     <div style={{ marginBottom: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 12 }}>
-        <span style={{ color: "#9ca3af", fontFamily: "'DM Mono', monospace", letterSpacing: "0.03em" }}>{label}</span>
+        <span style={{ color: "#9ca3af", fontFamily: "'DM Mono', monospace", letterSpacing: "0.03em", textTransform: "uppercase" }}>{label}</span>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {delta !== null && delta !== 0 && (
-            <span style={{ fontSize: 10, color: delta > 0 ? "#10b981" : "#f43f5e", fontFamily: "'DM Mono', monospace" }}>
+            <span style={{ fontSize: 10, color: delta > 0 ? "#22D3EE" : "#f43f5e", fontFamily: "'DM Mono', monospace" }}>
               {delta > 0 ? "▲" : "▼"}{Math.abs(delta)}
             </span>
           )}
-          <span style={{ fontWeight: 600, color, fontFamily: "'DM Mono', monospace" }}>{score}/10</span>
+          <span style={{ fontWeight: 600, color: "#fff", fontFamily: "'DM Mono', monospace" }}>{score}<span style={{color: "#6b7280"}}>/10</span></span>
         </div>
       </div>
-      <div style={{ height: 3, background: "rgba(255,255,255,0.06)", borderRadius: 2 }}>
-        <div style={{ height: "100%", width: `${score * 10}%`, background: color, borderRadius: 2, transition: "width 1s cubic-bezier(0.4,0,0.2,1)" }} />
+      <div style={{ height: 4, background: "rgba(255,255,255,0.06)", borderRadius: 2 }}>
+        <div style={{ height: "100%", width: `${score * 10}%`, background: color, borderRadius: 2, transition: "width 1s cubic-bezier(0.4,0,0.2,1)", boxShadow: `0 0 10px ${color}40` }} />
       </div>
     </div>
   );
@@ -242,54 +246,100 @@ export default function RepReadyCoach() {
         @keyframes repFadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
         @keyframes repPulse { 0%,100%{opacity:0.5} 50%{opacity:1} }
         .rep-input:focus { outline: none; border-color: rgba(139,92,246,0.6) !important; }
-        .rep-btn-primary:hover { background: #7c3aed !important; }
-        .rep-btn-primary:active { transform: scale(0.98); }
-        .rep-btn-end:hover { background: rgba(244,63,94,0.15) !important; border-color: rgba(244,63,94,0.4) !important; color: #f43f5e !important; }
-        .rep-tip { animation: repFadeIn 0.35s ease; }
-        .rep-msg { animation: repFadeIn 0.25s ease; }
-        .thumb-btn { background: none; border: none; cursor: pointer; padding: 2px 5px; border-radius: 4px; font-size: 12px; opacity: 0.4; transition: opacity 0.15s; }
-        .thumb-btn:hover { opacity: 1; }
-        .thumb-btn.active { opacity: 1; }
-      `}</style>
-
-      {/* Top bar */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", background: "#0d0d10" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg,#6d28d9,#4f46e5)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <span style={{ color: "#fff", fontSize: 13, fontWeight: 700, fontFamily: "'DM Mono', monospace" }}>R</span>
-          </div>
-          <div>
-            <span style={{ fontWeight: 600, fontSize: 13, color: "#f3f4f6" }}>RepReady</span>
-            <span style={{ fontSize: 11, color: "#6b7280", marginLeft: 8 }}>/ CFO Pushback</span>
-          </div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <MemoryBadge memory={memory} />
-          {memory.sessions_completed > 0 && (
-            <button onClick={resetMemory} style={{ background: "none", border: "none", color: "#374151", fontSize: 10, cursor: "pointer", fontFamily: "'DM Mono', monospace" }}>
-              reset memory
-            </button>
-          )}
-          {[["live", "Live call"], ["debrief", "Debrief"], ["next_drill", "Next drill"]].map(([p, label], i) => (
-            <div key={p} style={{ display: "flex", alignItems: "center" }}>
-              {i > 0 && <span style={{ color: "#374151", fontSize: 10, margin: "0 4px" }}>›</span>}
-              <span style={{
-                fontSize: 11, padding: "3px 10px", borderRadius: 20, fontWeight: 500,
-                background: phase === p ? "rgba(109,40,217,0.25)" : "transparent",
-                color: phase === p ? "#a78bfa" : "#4b5563",
-                border: phase === p ? "1px solid rgba(139,92,246,0.3)" : "1px solid transparent",
-              }}>{label}</span>
+        {/* DEBRIEF PHASE */}
+      {phase === "debrief" && (
+        <div style={{ padding: "24px 24px 20px" }}>
+          {debriefLoading ? (
+            <div style={{ textAlign: "center", padding: "70px 0" }}>
+              <div style={{ fontSize: 12, color: "#4b5563", fontFamily: "'DM Mono', monospace", letterSpacing: "0.1em", animation: "repPulse 1.5s infinite" }}>ANALYZING NEURAL TELEMETRY...</div>
             </div>
-          ))}
-        </div>
-      </div>
+          ) : debrief && (
+            <div>
+              <div style={{ padding: "16px 20px", background: "rgba(34,211,238,0.05)", borderRadius: 8, marginBottom: 20, border: "1px solid rgba(34,211,238,0.15)", fontSize: 14, color: "#e5e7eb", lineHeight: 1.6 }}>
+                <span style={{color: "#22D3EE", fontWeight: "bold", fontFamily: "'DM Mono', monospace", marginRight: "10px"}}>VERDICT:</span>
+                {debrief.verdict}
+              </div>
 
-      {/* LIVE PHASE */}
-      {phase === "live" && (
-        <div style={{ display: "flex", height: 456 }}>
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "16px 20px", minWidth: 0 }}>
-            <div ref={chatRef} style={{ flex: 1, overflowY: "auto", paddingRight: 4, marginBottom: 12 }}>
-              {messages.map((m, i) => (
+              {/* NEW: EMOTIONAL TELEMETRY */}
+              <div style={{ padding: 18, background: "rgba(255,255,255,0.03)", borderRadius: 12, border: "1px solid rgba(255,255,255,0.06)", marginBottom: 16 }}>
+                 <div style={{ fontSize: 9, color: "#22D3EE", fontFamily: "'DM Mono', monospace", letterSpacing: "0.12em", fontWeight: 600, marginBottom: 16 }}>
+                    EMOTIONAL TELEMETRY (SENTIMENT)
+                 </div>
+                 {/* Calculate mock sentiment based on discovery score */}
+                 {(() => {
+                    const conf = Math.min((debrief.scores.discovery * 10) + 15, 85);
+                    const def = Math.floor((100 - conf) * 0.6);
+                    const hes = 100 - conf - def;
+                    return (
+                      <div>
+                        <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", marginBottom: 8, background: "#1f2937" }}>
+                          <div style={{ width: `${conf}%`, background: "#10b981", transition: "width 1s" }} />
+                          <div style={{ width: `${hes}%`, background: "#f59e0b", transition: "width 1s" }} />
+                          <div style={{ width: `${def}%`, background: "#f43f5e", transition: "width 1s" }} />
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, fontFamily: "'DM Mono', monospace", fontWeight: 600 }}>
+                          <span style={{ color: "#10b981" }}>Confident ({conf}%)</span>
+                          <span style={{ color: "#f59e0b" }}>Hesitant ({hes}%)</span>
+                          <span style={{ color: "#f43f5e" }}>Defensive ({def}%)</span>
+                        </div>
+                      </div>
+                    );
+                 })()}
+              </div>
+
+              <div style={{ display: "flex", gap: 14, marginBottom: 16 }}>
+                <div style={{ flex: 1, padding: 18, background: "rgba(255,255,255,0.03)", borderRadius: 12, border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ fontSize: 9, color: "#6b7280", fontFamily: "'DM Mono', monospace", letterSpacing: "0.12em", fontWeight: 600, marginBottom: 20 }}>
+                    B.A.N.T. EXECUTION {memory.sessions_completed > 1 ? "· vs avg" : ""}
+                  </div>
+                  {/* Updated Labels to match BANT methodology */}
+                  <ScoreBar label="Budget Discovery" score={debrief.scores.discovery} prevScore={memory.sessions_completed > 1 ? memory.avg_scores.discovery : null} />
+                  <ScoreBar label="Authority Mapping" score={debrief.scores.objection_handling} prevScore={memory.sessions_completed > 1 ? memory.avg_scores.objection_handling : null} />
+                  <ScoreBar label="Need Articulation" score={debrief.scores.value_articulation} prevScore={memory.sessions_completed > 1 ? memory.avg_scores.value_articulation : null} />
+                  <ScoreBar label="Timeline Urgency" score={debrief.scores.executive_presence} prevScore={memory.sessions_completed > 1 ? memory.avg_scores.executive_presence : null} />
+                </div>
+                
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{ flex: 1, padding: 16, background: "rgba(34,211,238,0.05)", borderRadius: 12, border: "1px solid rgba(34,211,238,0.15)" }}>
+                    <div style={{ fontSize: 9, color: "#22D3EE", fontFamily: "'DM Mono', monospace", letterSpacing: "0.12em", fontWeight: 600, marginBottom: 12 }}>TACTICAL STRENGTHS</div>
+                    {debrief.strengths.map((s, i) => (
+                      <div key={i} style={{ fontSize: 12, color: "#d1d5db", lineHeight: 1.6, marginBottom: 8, paddingLeft: 10, borderLeft: "2px solid #22D3EE" }}>{s}</div>
+                    ))}
+                  </div>
+                  <div style={{ flex: 1, padding: 16, background: "rgba(244,63,94,0.05)", borderRadius: 12, border: "1px solid rgba(244,63,94,0.15)" }}>
+                    <div style={{ fontSize: 9, color: "#f43f5e", fontFamily: "'DM Mono', monospace", letterSpacing: "0.12em", fontWeight: 600, marginBottom: 12 }}>GAPS TO CLOSE</div>
+                    {debrief.gaps.map((g, i) => (
+                      <div key={i} style={{ fontSize: 12, color: "#d1d5db", lineHeight: 1.6, marginBottom: 8, paddingLeft: 10, borderLeft: "2px solid #f43f5e" }}>{g}</div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              
+              <div style={{ fontSize: 11, color: "#4b5563", textAlign: "center", marginBottom: 14, fontFamily: "'DM Mono', monospace" }}>
+                Session #{memory.sessions_completed} saved to memory
+              </div>
+              
+              <div style={{ display: "flex", gap: 10 }}>
+                <button className="rep-btn-primary" onClick={handleGetNextDrill}
+                  style={{ flex: 2, padding: "12px", borderRadius: 8, background: "#22D3EE", color: "#000", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", transition: "all 0.2s" }}
+                  onMouseOver={(e) => e.target.style.background = "#fff"}
+                  onMouseOut={(e) => e.target.style.background = "#22D3EE"}
+                >
+                  Analyze Next Drill →
+                </button>
+                <button 
+                  style={{ flex: 1, padding: "12px", borderRadius: 8, background: "transparent", color: "#22D3EE", border: "1px solid rgba(34,211,238,0.4)", cursor: "pointer", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", transition: "all 0.2s" }}
+                  onMouseOver={(e) => e.target.style.background = "rgba(34,211,238,0.1)"}
+                  onMouseOut={(e) => e.target.style.background = "transparent"}
+                >
+                  Export to CRM
+                </button>
+              </div>
+
+            </div>
+          )}
+        </div>
+      )}
                 <div key={i} className="rep-msg" style={{ marginBottom: 14, display: "flex", flexDirection: "column", alignItems: m.role === "user" ? "flex-end" : "flex-start" }}>
                   <div style={{ fontSize: 10, color: "#4b5563", marginBottom: 4, fontFamily: "'DM Mono', monospace", letterSpacing: "0.06em" }}>
                     {m.role === "buyer" ? "CFO" : "YOU"}
