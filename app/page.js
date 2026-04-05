@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldCheck, ChevronRight, Target, Zap, Activity, Radio, BarChart3, BotMessageSquare, BrainCircuit, Fingerprint } from 'lucide-react';
+import { ShieldCheck, ChevronRight, Target, Zap, Activity, Radio, BarChart3, BotMessageSquare, BrainCircuit, Fingerprint, Mail } from 'lucide-react';
 
 const WORKFLOW_STEPS = [
   { id: '01', title: 'Adversary Init', desc: 'Configure AI buyer hostility and objection profile.', icon: Target },
@@ -56,7 +56,6 @@ export default function Home() {
         <div className="max-w-6xl mx-auto px-6">
           <div className="grid lg:grid-cols-2 gap-20 items-start">
             
-            {/* Left Side: Clickable Steps */}
             <div className="space-y-6">
               <h2 className="text-black text-sm font-black uppercase tracking-[0.5em] mb-12 border-l-4 border-cyan-500 pl-4 italic">
                 System Architecture
@@ -93,7 +92,6 @@ export default function Home() {
               ))}
             </div>
 
-            {/* Right Side: THE SMART VISUALIZER */}
             <div className="lg:sticky lg:top-40 aspect-square bg-white border-[3px] border-black flex items-center justify-center relative shadow-2xl overflow-hidden">
               <div className="absolute inset-0 opacity-[0.08]" style={{ backgroundImage: 'linear-gradient(#000 1px, transparent 1px), linear-gradient(90deg, #000 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
               
@@ -106,7 +104,6 @@ export default function Home() {
                   transition={{ duration: 0.4 }}
                   className="flex flex-col items-center gap-10 relative z-10 p-12 text-center w-full"
                 >
-                  {/* Step-Specific Icons & Data Simulators */}
                   <div className="relative">
                     <div className="w-32 h-32 flex items-center justify-center bg-slate-50 border border-slate-100 rounded-full shadow-inner">
                       {activeStep === 0 && <Fingerprint className="w-16 h-16 text-black animate-pulse" />}
@@ -115,18 +112,12 @@ export default function Home() {
                       {activeStep === 3 && <BarChart3 className="w-16 h-16 text-black animate-pulse" />}
                       {activeStep === 4 && <BrainCircuit className="w-16 h-16 text-cyan-500 animate-pulse" />}
                     </div>
-                    {/* Floating Telemetry Bits */}
-                    <div className="absolute -top-4 -right-4 bg-black text-cyan-400 text-[8px] font-mono px-2 py-1 rounded">
-                      LATENCY: 14ms
-                    </div>
                   </div>
 
                   <div className="space-y-4 w-full">
                     <div className="text-3xl font-black text-black uppercase tracking-[0.2em] italic">
                        {WORKFLOW_STEPS[activeStep].title}
                     </div>
-                    
-                    {/* Visual Progress Bar */}
                     <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden max-w-[200px] mx-auto">
                       <motion.div 
                         initial={{ width: 0 }}
@@ -135,7 +126,6 @@ export default function Home() {
                         className="h-full bg-cyan-500"
                       />
                     </div>
-
                     <div className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.5em]">
                        Node // Sequence_{activeStep + 1}
                     </div>
@@ -143,7 +133,47 @@ export default function Home() {
                 </motion.div>
               </AnimatePresence>
             </div>
+          </div>
+        </div>
+      </section>
 
+      {/* CORE FEATURES GRID */}
+      <section className="py-32 bg-black text-white relative z-10">
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="grid md:grid-cols-3 gap-12">
+            <div className="p-10 border border-slate-800 hover:border-cyan-500 transition-colors group">
+              <Radio className="w-8 h-8 text-cyan-500 mb-8 group-hover:animate-pulse" />
+              <h3 className="text-xl font-black uppercase tracking-widest mb-4 italic">Hostile Voice AI</h3>
+              <p className="text-slate-400 text-sm leading-relaxed font-medium">
+                Ultra-low latency voice models trained to throw objections, break your frame, and test your BANT execution in real-time.
+              </p>
+            </div>
+            <div className="p-10 border border-slate-800 hover:border-cyan-500 transition-colors group">
+              <Activity className="w-8 h-8 text-cyan-500 mb-8 group-hover:animate-pulse" />
+              <h3 className="text-xl font-black uppercase tracking-widest mb-4 italic">Instant Telemetry</h3>
+              <p className="text-slate-400 text-sm leading-relaxed font-medium">
+                The second you hang up, the system generates a 0-100 aggregate score, isolating your discovery, value articulation, and presence.
+              </p>
+            </div>
+            <div className="p-10 border border-slate-800 hover:border-cyan-500 transition-colors group">
+              <BrainCircuit className="w-8 h-8 text-cyan-500 mb-8 group-hover:animate-pulse" />
+              <h3 className="text-xl font-black uppercase tracking-widest mb-4 italic">Ruthless AI Coach</h3>
+              <p className="text-slate-400 text-sm leading-relaxed font-medium">
+                Review your raw transcripts side-by-side with an elite AI manager that quotes your exact mistakes and provides tactical fixes.
+              </p>
+            </div>
+          </div>
+
+          {/* CUSTOM DEPLOYMENT CTA */}
+          <div className="mt-32 pt-20 border-t border-slate-900 text-center">
+            <h2 className="text-4xl font-black uppercase italic mb-6 tracking-tight">Need a Custom Deployment?</h2>
+            <p className="text-slate-400 max-w-2xl mx-auto mb-12 font-medium">
+              Looking to train an entire revenue team or require custom hostile AI personas? Establish a direct link with our engineering team.
+            </p>
+            <button className="inline-flex items-center gap-4 px-12 py-5 border-2 border-white font-black uppercase text-xs tracking-[0.3em] hover:bg-white hover:text-black transition-all">
+              <Mail className="w-4 h-4" />
+              Contact Support
+            </button>
           </div>
         </div>
       </section>
