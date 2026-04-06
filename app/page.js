@@ -45,7 +45,7 @@ export default function Home() {
             The elite <span className="text-black font-extrabold">AI Sales Roleplay</span> engine. Master <span className="text-black font-extrabold">objection handling</span> against hostile AI buyers.
           </p>
 
-          <Link href="/demo" className="group bg-black text-white px-16 py-6 font-black uppercase text-sm tracking-[0.3em] hover:bg-cyan-500 hover:text-black transition-all flex items-center gap-4 shadow-2xl">
+          <Link href="/simulate" className="group bg-black text-white px-16 py-6 font-black uppercase text-sm tracking-[0.3em] hover:bg-cyan-500 hover:text-black transition-all flex items-center gap-4 shadow-2xl">
             Run Simulation
             <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
           </Link>
