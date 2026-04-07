@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useUser } from '@clerk/nextjs'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -1040,30 +1041,17 @@ function RequestAccessModal({ email, onClose }) {
 
 // Main App
 export default function SimulatePage() {
-  const [screen, setScreen] = useState('emailGate')
-  const [user, setUser] = useState(null)
+  const { user: clerkUser } = useUser()
   const [selectedPersona, setSelectedPersona] = useState(null)
   const [scorecard, setScorecard] = useState(null)
   const [activeTab, setActiveTab] = useState('practice')
   const [showAccessModal, setShowAccessModal] = useState(false)
+  const [sessionsUsed, setSessionsUsed] = useState(0)
 
-  useEffect(() => {
-    const savedUser = localStorage.getItem('repready_user')
-    if (savedUser) {
-      const userData = JSON.parse(savedUser)
-      setUser(userData)
-      setScreen('app')
-    }
-  }, [])
-
-  const handleEmailComplete = (userData) => {
-    setUser(userData)
-    localStorage.setItem('repready_user', JSON.stringify(userData))
-    setScreen('app')
-  }
+  const userEmail = clerkUser?.primaryEmailAddress?.emailAddress || ''
 
   const handlePersonaSelect = (personaId) => {
-    if (user.sessionsUsed >= 3) {
+    if (sessionsUsed >= 3) {
       setShowAccessModal(true)
       return
     }
@@ -1076,29 +1064,13 @@ export default function SimulatePage() {
       const response = await fetch('/api/user/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: user.email, currentSessionsUsed: user.sessionsUsed || 0 })
+        body: JSON.stringify({ email: userEmail, currentSessionsUsed: sessionsUsed })
       })
       const data = await response.json()
-      const updatedUser = { ...user, sessionsUsed: data.sessionsUsed }
-      setUser(updatedUser)
-      localStorage.setItem('repready_user', JSON.stringify(updatedUser))
+      setSessionsUsed(data.sessionsUsed)
     } catch (error) {
-      const updatedUser = { ...user, sessionsUsed: (user.sessionsUsed || 0) + 1 }
-      setUser(updatedUser)
-      localStorage.setItem('repready_user', JSON.stringify(updatedUser))
+      setSessionsUsed(prev => prev + 1)
     }
-  }
-
-  const handleLogout = () => {
-    localStorage.removeItem('repready_user')
-    setUser(null)
-    setScreen('emailGate')
-    setSelectedPersona(null)
-    setScorecard(null)
-  }
-
-  if (screen === 'emailGate') {
-    return <EmailGate onComplete={handleEmailComplete} selectedPersona={selectedPersona} />
   }
 
   return (
@@ -1112,7 +1084,7 @@ export default function SimulatePage() {
             setScorecard(null)
           }
         }}
-        sessionsUsed={user?.sessionsUsed || 0}
+        sessionsUsed={sessionsUsed}
       />
 
       <div className="flex-1 flex flex-col">
@@ -1127,7 +1099,7 @@ export default function SimulatePage() {
             ) : selectedPersona ? (
               <ChatSimulator 
                 persona={selectedPersona}
-                userEmail={user?.email}
+                userEmail={userEmail}
                 onBack={() => setSelectedPersona(null)}
                 onShowResults={(results) => setScorecard(results)}
                 onSessionUsed={handleSessionUsed}
@@ -1138,15 +1110,15 @@ export default function SimulatePage() {
           </>
         )}
 
-        {activeTab === 'history' && <SessionHistory userEmail={user?.email} />}
-        {activeTab === 'settings' && <SettingsPanel userEmail={user?.email} onLogout={handleLogout} />}
+        {activeTab === 'history' && <SessionHistory userEmail={userEmail} />}
+        {activeTab === 'settings' && <SettingsPanel userEmail={userEmail} onLogout={() => {}} />}
 
         <PrivacyFooter />
       </div>
 
       {showAccessModal && (
         <RequestAccessModal 
-          email={user?.email} 
+          email={userEmail} 
           onClose={() => setShowAccessModal(false)} 
         />
       )}
