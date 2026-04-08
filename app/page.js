@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldCheck, ChevronRight, Target, Zap, Activity, Radio, BarChart3, BotMessageSquare, BrainCircuit, Fingerprint, Mail } from 'lucide-react';
+import { ChevronRight, Target, Zap, Activity, Radio, BarChart3, BotMessageSquare, BrainCircuit, Fingerprint, Mail } from 'lucide-react';
 
 const WORKFLOW_STEPS = [
   { id: '01', title: 'Adversary Init', desc: 'Configure AI buyer hostility and objection profile.', icon: Target },
@@ -164,16 +164,15 @@ export default function Home() {
             </div>
           </div>
 
-          {/* CUSTOM DEPLOYMENT CTA */}
           <div className="mt-32 pt-20 border-t border-slate-900 text-center">
             <h2 className="text-4xl font-black uppercase italic mb-6 tracking-tight">Need a Custom Deployment?</h2>
             <p className="text-slate-400 max-w-2xl mx-auto mb-12 font-medium">
               Looking to train an entire revenue team or require custom hostile AI personas? Establish a direct link with our engineering team.
             </p>
-            <button className="inline-flex items-center gap-4 px-12 py-5 border-2 border-white font-black uppercase text-xs tracking-[0.3em] hover:bg-white hover:text-black transition-all">
+            <a href="mailto:sales@repready.site" className="inline-flex items-center gap-4 px-12 py-5 border-2 border-white font-black uppercase text-xs tracking-[0.3em] hover:bg-white hover:text-black transition-all">
               <Mail className="w-4 h-4" />
               Contact Support
-            </button>
+            </a>
           </div>
         </div>
       </section>
