@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { useConversation } from '@elevenlabs/react';
+import { useConversation, ConversationProvider } from '@elevenlabs/react';
 
 const RICHARD_ID = "agent_8601kmk3maq9f9a9csym74aj7s4e";
 const SANDRA_ID = "agent_0301kmsnhr7tf11b62bvd7vsw9qq";
@@ -374,5 +374,9 @@ function RepReadyDashboard() {
 }
 
 export default function RepReadyHome() {
-  return <RepReadyDashboard />;
+  return (
+    <ConversationProvider>
+      <RepReadyDashboard />
+    </ConversationProvider>
+  );
 }
