@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react'
 
-// ─── SCENARIO DATA ───────────────────────────────────────────────────────────
+const DEMO_MAILTO = 'mailto:vrushalkitke123@gmail.com?subject=RepReady%20Demo%20Request&body=Hi%20Vrushal%2C%20I%27d%20like%20to%20book%20a%20demo%20for%20my%20team.'
+
+// ─── SCENARIO DATA ────────────────────────────────────────────────────────────
 const scenarios = [
   {
     label: 'CFO Pushback — Enterprise Deal',
@@ -51,7 +53,7 @@ const scenarios = [
   },
 ]
 
-// ─── ANIMATED LOGO ───────────────────────────────────────────────────────────
+// ─── ANIMATED LOGO ────────────────────────────────────────────────────────────
 function Logo({ height = 34, repColor = '#0d1117' }) {
   return (
     <svg
@@ -93,7 +95,6 @@ export default function HomePage() {
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
-  // Reveal on scroll
   useEffect(() => {
     const els = document.querySelectorAll('.reveal')
     const obs = new IntersectionObserver((entries) => {
@@ -156,7 +157,7 @@ export default function HomePage() {
                   </svg>
                 </button>
               </a>
-              <a href="/demo">
+              <a href={DEMO_MAILTO}>
                 <button className="btn-cta-sec" aria-label="Book a team demo">
                   <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
                     <circle cx="6.5" cy="6.5" r="5" stroke="currentColor" strokeWidth="1.3" />
@@ -184,9 +185,12 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Product mockup */}
-          <div className="mockup-wrap reveal" style={{ transitionDelay: '0.12s' }}
-            role="img" aria-label="RepReady simulator showing a live CFO pushback negotiation with AI coach feedback">
+          <div
+            className="mockup-wrap reveal"
+            style={{ transitionDelay: '0.12s' }}
+            role="img"
+            aria-label="RepReady simulator showing a live CFO pushback negotiation with AI coach feedback"
+          >
             <div className="mockup-card">
               <div className="mock-bar" aria-hidden="true">
                 <div className="mac-dots">
@@ -221,7 +225,13 @@ export default function HomePage() {
         <div className="wrap">
           <p className="strip-lbl">Trusted by sales teams in</p>
           <div className="logos-row">
-            {[['#00c8e0','S','B2B SaaS'],['#e84545','F','FinServ'],['#6db56d','E','EdTech'],['#c4a040','H','HRO / FAO'],['#a07cd4','T','IT Services']].map(([color, letter, label]) => (
+            {[
+              ['#00c8e0','S','B2B SaaS'],
+              ['#e84545','F','FinServ'],
+              ['#6db56d','E','EdTech'],
+              ['#c4a040','H','HRO / FAO'],
+              ['#a07cd4','T','IT Services'],
+            ].map(([color, letter, label]) => (
               <div className="logo-chip" key={label}>
                 <div className="lcsq" style={{ background: `${color}22`, color }}>{letter}</div>
                 {label}
@@ -262,9 +272,9 @@ export default function HomePage() {
         <div className="wrap">
           <div className="metrics-grid reveal">
             {[
-              { n: '5', s: '+', d: 'battle-tested negotiation scenarios available on day one' },
-              { n: '8', s: '', d: 'coaching dimensions scored on every single simulation' },
-              { n: '2', s: '', d: 'fully voiced AI buyer personas — Richard Chen & Sandra Meyers' },
+              { n: '5',  s: '+',  d: 'battle-tested negotiation scenarios available on day one' },
+              { n: '8',  s: '',   d: 'coaching dimensions scored on every single simulation' },
+              { n: '2',  s: '',   d: 'fully voiced AI buyer personas — Richard Chen & Sandra Meyers' },
               { n: '24', s: '/7', d: 'available — no scheduling, no manager time, no calendar coordination' },
             ].map((m, i) => (
               <div className="metric" key={i}>
@@ -298,10 +308,10 @@ export default function HomePage() {
               <div className="score-preview" role="img" aria-label="Sample AI coach debrief scores">
                 <div className="sp-lbl">Coach Debrief · Session #14</div>
                 {[
-                  { name: 'Frame Control', val: '7.4 / 10', w: 74, cls: 'srow-val', bar: 'sbar-c' },
-                  { name: 'Objection Handling', val: '8.1 / 10', w: 81, cls: 'srow-val', bar: 'sbar-c' },
-                  { name: 'Price Discipline', val: '5.9 / 10', w: 59, cls: 'srow-val2', bar: 'sbar-r' },
-                  { name: 'Listening Quality', val: '7.8 / 10', w: 78, cls: 'srow-val', bar: 'sbar-c' },
+                  { name: 'Frame Control',      val: '7.4 / 10', w: 74, cls: 'srow-val',  bar: 'sbar-c' },
+                  { name: 'Objection Handling', val: '8.1 / 10', w: 81, cls: 'srow-val',  bar: 'sbar-c' },
+                  { name: 'Price Discipline',   val: '5.9 / 10', w: 59, cls: 'srow-val2', bar: 'sbar-r' },
+                  { name: 'Listening Quality',  val: '7.8 / 10', w: 78, cls: 'srow-val',  bar: 'sbar-c' },
                 ].map((row) => (
                   <div className="srow" key={row.name}>
                     <div className="srow-top">
@@ -315,10 +325,10 @@ export default function HomePage() {
               </div>
             </div>
             {[
-              { ico: '🎙️', cls: 'ico-c', h: 'Voice-to-Voice Negotiations', p: "Powered by ElevenLabs. Your reps speak, the AI buyer speaks back — with natural pauses, tone shifts, and pressure tactics baked in. As close to real as practice gets.", tags: [['ft-c','ElevenLabs voice'],['ft-c','Live audio']] },
-              { ico: '📈', cls: 'ico-c', h: 'Deal Health Scoring', p: 'Every call scored live across 8 dimensions. Watch the deal health meter react as you navigate objections — gamified pressure that builds real habits.', tags: [['ft-c','8-dimension score'],['ft-r','Live meter']] },
-              { ico: '📋', cls: 'ico-c', h: 'Pre-Call Briefing Mode', p: 'Before each simulation, reps see a full deal brief — company profile, stakeholder background, deal history. Builds thorough pre-call prep as muscle memory.', tags: [['ft-c','Deal context'],['ft-c','Stakeholder intel']] },
-              { ico: '🎯', cls: 'ico-r', h: 'Adaptive Scenario Engine', p: "RepReady tracks weak spots across sessions and surfaces the scenarios you need most. The more your reps practice, the harder it pushes where they're still losing.", tags: [['ft-r','Adaptive difficulty'],['ft-c','Progress tracking']] },
+              { ico: '🎙️', cls: 'ico-c', h: 'Voice-to-Voice Negotiations',  p: "Powered by ElevenLabs. Your reps speak, the AI buyer speaks back — with natural pauses, tone shifts, and pressure tactics baked in. As close to real as practice gets.", tags: [['ft-c','ElevenLabs voice'],['ft-c','Live audio']] },
+              { ico: '📈', cls: 'ico-c', h: 'Deal Health Scoring',           p: 'Every call scored live across 8 dimensions. Watch the deal health meter react as you navigate objections — gamified pressure that builds real habits.', tags: [['ft-c','8-dimension score'],['ft-r','Live meter']] },
+              { ico: '📋', cls: 'ico-c', h: 'Pre-Call Briefing Mode',        p: 'Before each simulation, reps see a full deal brief — company profile, stakeholder background, deal history. Builds thorough pre-call prep as muscle memory.', tags: [['ft-c','Deal context'],['ft-c','Stakeholder intel']] },
+              { ico: '🎯', cls: 'ico-r', h: 'Adaptive Scenario Engine',      p: "RepReady tracks weak spots across sessions and surfaces the scenarios you need most. The more your reps practice, the harder it pushes where they're still losing.", tags: [['ft-r','Adaptive difficulty'],['ft-c','Progress tracking']] },
             ].map((f) => (
               <div className="feat-card" key={f.h}>
                 <div className={`feat-ico ${f.cls}`} aria-hidden="true">{f.ico}</div>
@@ -346,7 +356,12 @@ export default function HomePage() {
               <h3 className="p-name">Richard Chen</h3>
               <p className="p-role">VP of Procurement · Enterprise Manufacturing</p>
               <ul className="p-traits">
-                {['Anchors hard on price in the first 60 seconds. Expects you to flinch first.','Uses silence as a weapon — waits you out until you give something.','References 3 competing vendors whether they exist or not.','Escalates to CFO approval threat when backed into a corner.'].map(t => (
+                {[
+                  'Anchors hard on price in the first 60 seconds. Expects you to flinch first.',
+                  'Uses silence as a weapon — waits you out until you give something.',
+                  'References 3 competing vendors whether they exist or not.',
+                  'Escalates to CFO approval threat when backed into a corner.',
+                ].map(t => (
                   <li className="p-trait" key={t}><div className="tpip tpip-c" aria-hidden="true" />{t}</li>
                 ))}
               </ul>
@@ -357,7 +372,12 @@ export default function HomePage() {
               <h3 className="p-name">Sandra Meyers</h3>
               <p className="p-role">CFO · Mid-Market SaaS Company</p>
               <ul className="p-traits">
-                {['Reframes every feature as a cost line item. ROI or nothing gets through.','Challenges your numbers before you finish the sentence.','Introduces a budget freeze mid-call to test resolve.','Uses legal and procurement stalls as pure delay tactics.'].map(t => (
+                {[
+                  'Reframes every feature as a cost line item. ROI or nothing gets through.',
+                  'Challenges your numbers before you finish the sentence.',
+                  'Introduces a budget freeze mid-call to test resolve.',
+                  'Uses legal and procurement stalls as pure delay tactics.',
+                ].map(t => (
                   <li className="p-trait" key={t}><div className="tpip tpip-r" aria-hidden="true" />{t}</li>
                 ))}
               </ul>
@@ -377,13 +397,24 @@ export default function HomePage() {
           <div className="scenarios-container reveal">
             <div className="scenarios-list" role="list">
               {scenarios.map((sc, i) => (
-                <button key={i} className={`scenario-btn${activeScenario === i ? ' active' : ''}`} onClick={() => setActiveScenario(i)} role="listitem">
+                <button
+                  key={i}
+                  className={`scenario-btn${activeScenario === i ? ' active' : ''}`}
+                  onClick={() => setActiveScenario(i)}
+                  role="listitem"
+                >
                   <div className={`sbtn-icon${activeScenario === i ? ' active' : ''}`} aria-hidden="true">
                     {['💰','⏳','🧊','⚔️','👻'][i]}
                   </div>
                   <div>
                     <div className="sbtn-title">{sc.label.split(' — ')[0]}</div>
-                    <div className="sbtn-desc">{['Buyer reframes your value as cost. Demands line-item justification.','Champion goes quiet. Legal becomes an infinite delay loop.','Mid-call announcement: budgets frozen until Q2.','Buyer claims your competitor quoted 35% less. Match it or lose.','Your champion can\'t get the real decision maker in the room.'][i]}</div>
+                    <div className="sbtn-desc">{[
+                      'Buyer reframes your value as cost. Demands line-item justification.',
+                      'Champion goes quiet. Legal becomes an infinite delay loop.',
+                      'Mid-call announcement: budgets frozen until Q2.',
+                      'Buyer claims your competitor quoted 35% less. Match it or lose.',
+                      "Your champion can't get the real decision maker in the room.",
+                    ][i]}</div>
                   </div>
                 </button>
               ))}
@@ -417,22 +448,22 @@ export default function HomePage() {
       {/* ── MARQUEE ── */}
       <div className="stats-bar" aria-hidden="true">
         <div className="stats-track">
-          {[...Array(2)].flatMap(() => [
-            { icon: '🎙️', text: <><strong>Voice-to-voice</strong> negotiations powered by ElevenLabs</> },
-            { icon: '⚡', text: <><strong>Real-time coaching</strong> mid-call — not just post-debrief</> },
-            { icon: '📊', text: <><strong>8-dimension scoring</strong> on every session</> },
-            { icon: '🧠', text: <><strong>Adaptive difficulty</strong> — gets harder as your reps improve</> },
-            { icon: '🔒', text: <><strong>Encrypted</strong> session data — never shared or sold</> },
-            { icon: '🌏', text: <><strong>Built for India &amp; SEA</strong> B2B sales teams</> },
-          ]).map((item, i) => (
-            <>
-              <div className="stat-item" key={i}>
+          {[...Array(2)].flatMap((_, arrI) =>
+            [
+              { icon: '🎙️', label: 'Voice-to-voice negotiations powered by ElevenLabs' },
+              { icon: '⚡',  label: 'Real-time coaching mid-call — not just post-debrief' },
+              { icon: '📊', label: '8-dimension scoring on every session' },
+              { icon: '🧠', label: 'Adaptive difficulty — gets harder as your reps improve' },
+              { icon: '🔒', label: 'Encrypted session data — never shared or sold' },
+              { icon: '🌏', label: 'Built for India & SEA B2B sales teams' },
+            ].flatMap((item, itemI) => [
+              <div className="stat-item" key={`item-${arrI}-${itemI}`}>
                 <span className="stat-icon">{item.icon}</span>
-                <span className="stat-text">{item.text}</span>
-              </div>
-              <div className="stat-sep" key={`sep-${i}`} />
-            </>
-          ))}
+                <span className="stat-text">{item.label}</span>
+              </div>,
+              <div className="stat-sep" key={`sep-${arrI}-${itemI}`} />,
+            ])
+          )}
         </div>
       </div>
 
@@ -446,15 +477,23 @@ export default function HomePage() {
           </div>
           <div className="faq-grid reveal">
             {[
-              { q: 'Will my reps actually use this, or will it sit unused?', a: 'RepReady is built for reps, not managers. Sessions take under 15 minutes, there\'s no scheduling overhead, and the gamified scoring creates a natural pull to improve. The AI buyers are hostile enough that reps find themselves wanting to win. Adoption comes from the product — not from enforcement.' },
-              { q: 'How is this different from just having managers do roleplay?', a: 'Manager roleplay is limited by time, availability, and the manager\'s willingness to be genuinely hostile. RepReady\'s AI buyers are available 24/7, are consistently tough regardless of how many times you\'ve run the same scenario, and give scored feedback that a manager can\'t replicate at scale.' },
-              { q: 'Can I see what my team is struggling with across sessions?', a: 'Yes. The manager dashboard (Growth and Enterprise plans) shows aggregate coaching scores across your team — which objection types are consistently weak, where reps are giving away margin, and where confidence is improving. You get visibility without sitting in on every call.' },
-              { q: 'How fast can my team get up and running?', a: 'Your first simulation runs in under 10 minutes from sign-up. No integration, no IT involvement, no calendar coordination. Add seats, send your reps a link, and they\'re in a live negotiation before your next standup.' },
-              { q: 'What does pricing look like and who handles the contract?', a: 'RepReady starts at $49/seat/month with a 5-seat minimum. Volume discounts apply at 15+ seats. Enterprise plans come with an MSA and SLA. Payments are processed via Paddle — works for Indian and global billing with proper invoicing.' },
-              { q: 'Is our call and coaching data private?', a: "Yes. All session data is encrypted in transit and at rest. Your team's call recordings and coaching scores are not shared with third parties and are never used to train AI models without your explicit consent." },
+              { q: 'Will my reps actually use this, or will it sit unused?',       a: "RepReady is built for reps, not managers. Sessions take under 15 minutes, there's no scheduling overhead, and the gamified scoring creates a natural pull to improve. The AI buyers are hostile enough that reps find themselves wanting to win. Adoption comes from the product — not from enforcement." },
+              { q: 'How is this different from just having managers do roleplay?',  a: "Manager roleplay is limited by time, availability, and the manager's willingness to be genuinely hostile. RepReady's AI buyers are available 24/7, consistently tough regardless of how many times you've run the same scenario, and give scored feedback that a manager can't replicate at scale." },
+              { q: 'Can I see what my team is struggling with across sessions?',    a: 'Yes. The manager dashboard (Growth and Enterprise plans) shows aggregate coaching scores across your team — which objection types are consistently weak, where reps are giving away margin, and where confidence is improving. Visibility without sitting in on every call.' },
+              { q: 'How fast can my team get up and running?',                      a: "Your first simulation runs in under 10 minutes from sign-up. No integration, no IT involvement, no calendar coordination. Add seats, send your reps a link, and they're in a live negotiation before your next standup." },
+              { q: 'What does pricing look like and who handles the contract?',     a: 'RepReady starts at $49/seat/month with a 5-seat minimum. Volume discounts apply at 15+ seats. Enterprise plans come with an MSA and SLA. Payments processed via Paddle — works for Indian and global billing with proper invoicing.' },
+              { q: 'Is our call and coaching data private?',                        a: "Yes. All session data is encrypted in transit and at rest. Your team's call recordings and coaching scores are not shared with third parties and are never used to train AI models without your explicit consent." },
             ].map((item, i) => (
-              <div key={i} className={`faq-item${openFaq === i ? ' open' : ''}`} onClick={() => setOpenFaq(openFaq === i ? null : i)} aria-expanded={openFaq === i}>
-                <div className="faq-q">{item.q} <span className="faq-tog" aria-hidden="true">{openFaq === i ? '−' : '+'}</span></div>
+              <div
+                key={i}
+                className={`faq-item${openFaq === i ? ' open' : ''}`}
+                onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                aria-expanded={openFaq === i}
+              >
+                <div className="faq-q">
+                  {item.q}
+                  <span className="faq-tog" aria-hidden="true">{openFaq === i ? '−' : '+'}</span>
+                </div>
                 {openFaq === i && <p className="faq-a">{item.a}</p>}
               </div>
             ))}
@@ -467,14 +506,36 @@ export default function HomePage() {
         <div className="wrap">
           <div className="reveal" style={{ textAlign: 'center' }}>
             <p className="s-tag" style={{ textAlign: 'center' }}>Pricing</p>
-            <h2 className="s-title" id="pricing-heading" style={{ textAlign: 'center', margin: '0 auto 12px' }}>Simple per-seat pricing.<br />No surprises.</h2>
-            <p className="s-sub" style={{ margin: '0 auto', textAlign: 'center' }}>Minimum 5 seats. Volume discounts at 15+. Processed via Paddle — works for India and globally.</p>
+            <h2 className="s-title" id="pricing-heading" style={{ textAlign: 'center', margin: '0 auto 12px' }}>
+              Simple per-seat pricing.<br />No surprises.
+            </h2>
+            <p className="s-sub" style={{ margin: '0 auto', textAlign: 'center' }}>
+              Minimum 5 seats. Volume discounts at 15+. Processed via Paddle — works for India and globally.
+            </p>
           </div>
           <div className="pricing-grid reveal">
             {[
-              { plan: 'Starter', price: '$49', per: '/seat/mo', desc: '5–14 seats. For teams getting started with AI sales training.', pop: false, features: [['check','All core scenarios'],['check','AI Coach post-call debrief'],['check','Deal health scoring'],['check','Text-based buyer personas'],['x','Voice personas (Richard & Sandra)'],['x','Manager analytics dashboard']], btn: 'Get Started', btnCls: 'bpo', href: '/simulate' },
-              { plan: 'Growth', price: '$79', per: '/seat/mo', desc: '5–14 seats. Full voice AI and real-time coaching for serious teams.', pop: true, features: [['check','Everything in Starter'],['check','Richard & Sandra voice personas'],['check','Real-time coaching mid-call'],['check','Pre-call briefing mode'],['check','Manager analytics dashboard'],['x','Custom scenarios']], btn: 'Start Free Trial', btnCls: 'bps', href: '/simulate' },
-              { plan: 'Enterprise', price: 'Custom', per: '', desc: '15+ seats. Volume pricing, custom scenarios, dedicated onboarding.', pop: false, features: [['check','Everything in Growth'],['check','Custom buyer personas'],['check','Custom scenario builder'],['check','Dedicated onboarding'],['check','SLA + priority support'],['check','MSA + SLA included']], btn: 'Talk to Sales', btnCls: 'bpo', href: '/demo' },
+              {
+                plan: 'Starter', price: '$49', per: '/seat/mo',
+                desc: '5–14 seats. For teams getting started with AI sales training.',
+                pop: false,
+                features: [['check','All core scenarios'],['check','AI Coach post-call debrief'],['check','Deal health scoring'],['check','Text-based buyer personas'],['x','Voice personas (Richard & Sandra)'],['x','Manager analytics dashboard']],
+                btn: 'Get Started', btnCls: 'bpo', href: '/simulate',
+              },
+              {
+                plan: 'Growth', price: '$79', per: '/seat/mo',
+                desc: '5–14 seats. Full voice AI and real-time coaching for serious teams.',
+                pop: true,
+                features: [['check','Everything in Starter'],['check','Richard & Sandra voice personas'],['check','Real-time coaching mid-call'],['check','Pre-call briefing mode'],['check','Manager analytics dashboard'],['x','Custom scenarios']],
+                btn: 'Start Free Trial', btnCls: 'bps', href: '/simulate',
+              },
+              {
+                plan: 'Enterprise', price: 'Custom', per: '',
+                desc: '15+ seats. Volume pricing, custom scenarios, dedicated onboarding.',
+                pop: false,
+                features: [['check','Everything in Growth'],['check','Custom buyer personas'],['check','Custom scenario builder'],['check','Dedicated onboarding'],['check','SLA + priority support'],['check','MSA + SLA included']],
+                btn: 'Talk to Sales', btnCls: 'bpo', href: DEMO_MAILTO,
+              },
             ].map((card) => (
               <div key={card.plan} className={`price-card${card.pop ? ' pop' : ''}`}>
                 {card.pop && <div className="pop-badge">Most Popular</div>}
@@ -489,7 +550,9 @@ export default function HomePage() {
                     </li>
                   ))}
                 </ul>
-                <a href={card.href}><button className={`btn-price ${card.btnCls}`}>{card.btn}</button></a>
+                <a href={card.href}>
+                  <button className={`btn-price ${card.btnCls}`}>{card.btn}</button>
+                </a>
               </div>
             ))}
           </div>
@@ -501,11 +564,22 @@ export default function HomePage() {
         <div className="cta-glow" aria-hidden="true" />
         <div className="cta-grid" aria-hidden="true" />
         <div className="wrap">
-          <h2 className="cta-h" id="cta-heading">Your reps are practising on<br /><em>real prospects. Every single day.</em></h2>
+          <h2 className="cta-h" id="cta-heading">
+            Your reps are practising on<br /><em>real prospects. Every single day.</em>
+          </h2>
           <p className="cta-sub">Stop paying that tuition in lost deals. Give your team a simulator that hits harder than reality — before they face the real thing.</p>
           <div className="cta-ctas">
-            <a href="/simulate"><button className="btn-cta-main">Start Free Trial — No Card Needed <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 6.5h9M7.5 2.5l4 4-4 4" stroke="#0a0d14" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg></button></a>
-            <a href="/demo"><button className="btn-cta-sec">Book a Team Demo</button></a>
+            <a href="/simulate">
+              <button className="btn-cta-main">
+                Start Free Trial — No Card Needed
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
+                  <path d="M2 6.5h9M7.5 2.5l4 4-4 4" stroke="#0a0d14" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </a>
+            <a href={DEMO_MAILTO}>
+              <button className="btn-cta-sec">Book a Team Demo</button>
+            </a>
           </div>
         </div>
       </div>
