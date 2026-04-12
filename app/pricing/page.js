@@ -60,7 +60,7 @@ const pricingTiers = [
     ],
     notIncluded: [],
     cta: 'Talk to Sales',
-    ctaLink: 'mailto:vrushalkitke123@gmail.com?subject=RepReady Enterprise Enquiry',
+ctaLink: 'mailto:sales@repready.site?subject=RepReady%20Enterprise%20Enquiry',
     popular: false,
   },
 ]
@@ -234,7 +234,7 @@ export default function PricingPage() {
               Start Free Trial
             </button>
           </Link>
-          <a href="mailto:vrushalkitke123@gmail.com?subject=RepReady Enterprise Enquiry">
+         <a href="mailto:sales@repready.site?subject=RepReady%20Enterprise%20Enquiry">
             <button className="bg-transparent text-slate-300 font-semibold text-sm px-6 py-2.5 rounded-lg border border-slate-700 hover:border-slate-500 transition-all">
               Talk to Sales
             </button>
