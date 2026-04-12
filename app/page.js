@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react'
 
 const DEMO_MAILTO = 'mailto:vrushalkitke123@gmail.com?subject=RepReady%20Demo%20Request&body=Hi%20Vrushal%2C%20I%27d%20like%20to%20book%20a%20demo%20for%20my%20team.'
 
-// ─── SCENARIO DATA ────────────────────────────────────────────────────────────
 const scenarios = [
   {
     label: 'CFO Pushback — Enterprise Deal',
@@ -53,7 +52,6 @@ const scenarios = [
   },
 ]
 
-// ─── ANIMATED LOGO ────────────────────────────────────────────────────────────
 function Logo({ height = 34, repColor = '#0d1117' }) {
   return (
     <svg
@@ -83,7 +81,6 @@ function Logo({ height = 34, repColor = '#0d1117' }) {
   )
 }
 
-// ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function HomePage() {
   const [activeScenario, setActiveScenario] = useState(0)
   const [openFaq, setOpenFaq] = useState(null)
@@ -113,7 +110,7 @@ export default function HomePage() {
 
   return (
     <>
-      {/* ── NAV ── */}
+      {/* NAV */}
       <nav style={{ boxShadow: scrolled ? '0 1px 30px rgba(0,0,0,0.08)' : 'none' }}>
         <a href="/" className="nav-logo" aria-label="RepReady home">
           <Logo height={32} repColor="#0d1117" />
@@ -131,7 +128,7 @@ export default function HomePage() {
         </div>
       </nav>
 
-      {/* ── HERO ── */}
+      {/* HERO */}
       <section className="hero" aria-labelledby="hero-heading">
         <div className="hero-grid" aria-hidden="true" />
         <div className="hero-glow" aria-hidden="true" />
@@ -220,10 +217,10 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── LOGO STRIP ── */}
-      <div className="logo-strip" aria-label="Trusted by sales teams in">
+      {/* LOGO STRIP — FIXED: removed extra > on div and p tag */}
+      <div className="logo-strip" aria-label="Built for sales teams in">
         <div className="wrap">
-          <p className="strip-lbl">Trusted by sales teams in</p>
+          <p className="strip-lbl">Built for sales teams in</p>
           <div className="logos-row">
             {[
               ['#00c8e0','S','B2B SaaS'],
@@ -241,7 +238,7 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* ── HOW IT WORKS ── */}
+      {/* HOW IT WORKS */}
       <section className="hiw-bg" id="how-it-works" aria-labelledby="hiw-heading">
         <div className="wrap">
           <div className="reveal">
@@ -267,7 +264,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── METRICS ── */}
+      {/* METRICS */}
       <section style={{ padding: '56px 5%' }} aria-label="Product facts">
         <div className="wrap">
           <div className="metrics-grid reveal">
@@ -286,7 +283,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── FEATURES ── */}
+      {/* FEATURES */}
       <section className="feat-bg" id="features" aria-labelledby="feat-heading">
         <div className="wrap">
           <div className="reveal">
@@ -341,7 +338,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── PERSONAS ── */}
+      {/* PERSONAS */}
       <section id="personas" aria-labelledby="persona-heading">
         <div className="wrap">
           <div className="reveal">
@@ -386,7 +383,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── SCENARIOS EXPLORER ── */}
+      {/* SCENARIOS EXPLORER */}
       <section className="scenarios-bg" id="scenarios" aria-labelledby="scenarios-heading">
         <div className="wrap">
           <div className="reveal">
@@ -445,7 +442,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── MARQUEE ── */}
+      {/* MARQUEE */}
       <div className="stats-bar" aria-hidden="true">
         <div className="stats-track">
           {[...Array(2)].flatMap((_, arrI) =>
@@ -467,7 +464,7 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* ── FAQ ── */}
+      {/* FAQ */}
       <section id="faq" aria-labelledby="faq-heading">
         <div className="wrap">
           <div className="reveal">
@@ -501,7 +498,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── PRICING ── */}
+      {/* PRICING */}
       <section className="price-bg" id="pricing" aria-labelledby="pricing-heading">
         <div className="wrap">
           <div className="reveal" style={{ textAlign: 'center' }}>
@@ -559,7 +556,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── CTA BANNER ── */}
+      {/* CTA BANNER */}
       <div className="cta-banner" aria-labelledby="cta-heading">
         <div className="cta-glow" aria-hidden="true" />
         <div className="cta-grid" aria-hidden="true" />
@@ -584,7 +581,7 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* ── FOOTER ── */}
+      {/* FOOTER — removed /about, /blog, /msa */}
       <footer role="contentinfo">
         <div className="ft-grid">
           <div>
@@ -604,9 +601,8 @@ export default function HomePage() {
           <div>
             <p className="ft-col-h">Company</p>
             <ul className="ft-links">
-              <li><a href="/about">About</a></li>
-              <li><a href="/blog">Blog</a></li>
               <li><a href="https://linkedin.com" rel="noopener">LinkedIn</a></li>
+              <li><a href={DEMO_MAILTO}>Contact</a></li>
             </ul>
           </div>
           <div>
@@ -614,7 +610,6 @@ export default function HomePage() {
             <ul className="ft-links">
               <li><a href="/privacy">Privacy Policy</a></li>
               <li><a href="/terms">Terms of Service</a></li>
-              <li><a href="/msa">MSA</a></li>
             </ul>
           </div>
         </div>
