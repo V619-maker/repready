@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 
-const DEMO_MAILTO = 'mailto:vrushalkitke123@gmail.com?subject=RepReady%20Demo%20Request&body=Hi%20Vrushal%2C%20I%27d%20like%20to%20book%20a%20demo%20for%20my%20team.'
+const DEMO_MAILTO = 'mailto:sales@repready.site?subject=RepReady%20Demo%20Request&body=Hi%2C%20I%27d%20like%20to%20book%20a%20demo%20for%20my%20team.'
 
 const scenarios = [
   {
@@ -124,7 +124,7 @@ export default function HomePage() {
         </ul>
         <div className="nav-right">
           <a href="/sign-in"><button className="btn-ghost">Sign In</button></a>
-          <a href="/simulate"><button className="btn-primary">Start Free Trial</button></a>
+          <a href="/deck"><button className="btn-primary">Start Free Trial</button></a>
         </div>
       </nav>
 
@@ -146,7 +146,7 @@ export default function HomePage() {
               RepReady gives B2B sales reps live, voice-to-voice negotiation practice against hostile AI buyers — with real-time coaching, deal health scoring, and frame-control analysis. Stop losing deals to objections you never prepared for.
             </p>
             <div className="hero-ctas">
-              <a href="/simulate">
+              <a href="/deck">
                 <button className="btn-cta-main" aria-label="Start free trial">
                   Start Free Trial
                   <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
@@ -217,20 +217,18 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* DEAL TYPE STRIP */}
-      <div className="logo-strip" aria-label="Deal scenarios RepReady trains for">
+      {/* LOGO STRIP — FIXED: removed extra > on div and p tag */}
+      <div className="logo-strip" aria-label="Built for sales teams in">
         <div className="wrap">
-          <p className="strip-lbl">Trains your reps for the deals that actually kill pipelines</p>
+          <p className="strip-lbl">Built for sales teams in</p>
           <div className="logos-row">
             {[
-              ['#00c8e0', '💰', 'CFO Pushback'],
-              ['#e84545', '🧊', 'Budget Freeze'],
-              ['#c4a040', '⏳', 'Procurement Stall'],
-              ['#6db56d', '⚔️', 'Competitor Price Match'],
-              ['#a07cd4', '👻', 'Missing Decision Maker'],
-            ].map(([color, icon, label]) => (
+              ['#00c8e0','S','B2B SaaS'],
+              ['#6db56d','E','EdTech'],
+              ['#c4a040','H','HRO / FAO'],
+            ].map(([color, letter, label]) => (
               <div className="logo-chip" key={label}>
-                <div className="lcsq" style={{ background: `${color}22`, color }}>{icon}</div>
+                <div className="lcsq" style={{ background: `${color}22`, color }}>{letter}</div>
                 {label}
               </div>
             ))}
@@ -271,7 +269,7 @@ export default function HomePage() {
             {[
               { n: '5',  s: '+',  d: 'battle-tested negotiation scenarios available on day one' },
               { n: '8',  s: '',   d: 'coaching dimensions scored on every single simulation' },
-              { n: '2',  s: '',   d: 'fully voiced AI buyer personas — Richard Chen & Sandra Meyers' },
+              { n: '2',  s: '',   d: 'fully voiced AI buyer personas — Richard Vance & Sandra Chen' },
               { n: '24', s: '/7', d: 'available — no scheduling, no manager time, no calendar coordination' },
             ].map((m, i) => (
               <div className="metric" key={i}>
@@ -350,8 +348,8 @@ export default function HomePage() {
             <div className="persona">
               <div className="persona-accent-cyan" aria-hidden="true" />
               <div className="p-ava ava-c" aria-hidden="true">🧑‍💼</div>
-              <h3 className="p-name">Richard Chen</h3>
-              <p className="p-role">VP of Procurement · Enterprise Manufacturing</p>
+              <h3 className="p-name">Richard Vance</h3>
+              <p className="p-role">VP of Procurement · 500-person Logistics Firm</p>
               <ul className="p-traits">
                 {[
                   'Anchors hard on price in the first 60 seconds. Expects you to flinch first.',
@@ -366,14 +364,14 @@ export default function HomePage() {
             <div className="persona">
               <div className="persona-accent-red" aria-hidden="true" />
               <div className="p-ava ava-r" aria-hidden="true">👩‍💼</div>
-              <h3 className="p-name">Sandra Meyers</h3>
-              <p className="p-role">CFO · Mid-Market SaaS Company</p>
+              <h3 className="p-name">Sandra Chen</h3>
+              <p className="p-role">Head of IT · 800-person Financial Firm</p>
               <ul className="p-traits">
                 {[
-                  'Reframes every feature as a cost line item. ROI or nothing gets through.',
-                  'Challenges your numbers before you finish the sentence.',
-                  'Introduces a budget freeze mid-call to test resolve.',
-                  'Uses legal and procurement stalls as pure delay tactics.',
+                  "Aggressively protects her team's bandwidth. Every response contains a blocker.",
+                  'Claims zero implementation capacity this quarter.',
+                  'Demands SOC 2 Type II before any further conversation.',
+                  'Requires native SAML/SSO — uses it as a hard blocker.',
                 ].map(t => (
                   <li className="p-trait" key={t}><div className="tpip tpip-r" aria-hidden="true" />{t}</li>
                 ))}
@@ -517,14 +515,14 @@ export default function HomePage() {
                 desc: '5–14 seats. For teams getting started with AI sales training.',
                 pop: false,
                 features: [['check','All core scenarios'],['check','AI Coach post-call debrief'],['check','Deal health scoring'],['check','Text-based buyer personas'],['x','Voice personas (Richard & Sandra)'],['x','Manager analytics dashboard']],
-                btn: 'Get Started', btnCls: 'bpo', href: '/simulate',
+                btn: 'Get Started', btnCls: 'bpo', href: '/deck',
               },
               {
                 plan: 'Growth', price: '$79', per: '/seat/mo',
                 desc: '5–14 seats. Full voice AI and real-time coaching for serious teams.',
                 pop: true,
                 features: [['check','Everything in Starter'],['check','Richard & Sandra voice personas'],['check','Real-time coaching mid-call'],['check','Pre-call briefing mode'],['check','Manager analytics dashboard'],['x','Custom scenarios']],
-                btn: 'Start Free Trial', btnCls: 'bps', href: '/simulate',
+                btn: 'Start Free Trial', btnCls: 'bps', href: '/deck',
               },
               {
                 plan: 'Enterprise', price: 'Custom', per: '',
@@ -566,7 +564,7 @@ export default function HomePage() {
           </h2>
           <p className="cta-sub">Stop paying that tuition in lost deals. Give your team a simulator that hits harder than reality — before they face the real thing.</p>
           <div className="cta-ctas">
-            <a href="/simulate">
+            <a href="/deck">
               <button className="btn-cta-main">
                 Start Free Trial — No Card Needed
                 <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
@@ -593,7 +591,7 @@ export default function HomePage() {
           <div>
             <p className="ft-col-h">Product</p>
             <ul className="ft-links">
-              <li><a href="/simulate">Simulator</a></li>
+              <li><a href="/deck">Simulator</a></li>
               <li><a href="/coach">AI Coach</a></li>
               <li><a href="/pricing">Pricing</a></li>
             </ul>
