@@ -60,11 +60,11 @@ export default function PrivacyPage() {
           </div>
           <div>
             <h2 className="text-base font-black text-slate-900 mb-3">8. Your Rights</h2>
-            <p className="text-slate-500 text-sm leading-relaxed">You may request access to, correction of, or deletion of your personal data at any time by contacting us at vrushalkitke123@gmail.com. We will respond within 30 days.</p>
+            <p className="text-slate-500 text-sm leading-relaxed">You may request access to, correction of, or deletion of your personal data at any time by contacting us at sales@repready.site. We will respond within 30 days.</p>
           </div>
           <div>
             <h2 className="text-base font-black text-slate-900 mb-3">9. Contact</h2>
-            <p className="text-slate-500 text-sm leading-relaxed">For any privacy-related questions, contact us at <a href="mailto:vrushalkitke123@gmail.com" className="text-cyan-600 hover:underline">vrushalkitke123@gmail.com</a></p>
+            <p className="text-slate-500 text-sm leading-relaxed">For any privacy-related questions, contact us at <a href="mailto:sales@repready.site" className="text-cyan-600 hover:underline">sales@repready.site</a></p>
           </div>
         </div>
       </div>
