@@ -82,7 +82,7 @@ function RepReadyDashboard() {
 
       setTimeLeft(TRIAL_TIME_LIMIT); 
       setCutOff(false);
-      await conversation.startSession({ agentId: activeAgent });
+      await conversation.startSession({ agentId: activeAgent, connectionType: "webrtc" });
     } catch (error) {
       console.error("Failed to start voice connection:", error);
     }
