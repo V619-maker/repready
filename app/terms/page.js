@@ -63,7 +63,7 @@ export default function TermsPage() {
           </div>
           <div>
             <h2 className="text-base font-black text-slate-900 mb-3">10. Contact</h2>
-            <p className="text-slate-500 text-sm leading-relaxed">For questions about these terms, contact <a href="mailto:vrushalkitke123@gmail.com" className="text-cyan-600 hover:underline">vrushalkitke123@gmail.com</a></p>
+            <p className="text-slate-500 text-sm leading-relaxed">For questions about these terms, contact <a href="mailto:sales@repready.site" className="text-cyan-600 hover:underline">sales@repready.site</a></p>
           </div>
         </div>
       </div>
