@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from 'react'
 
-const DEMO_MAILTO = 'mailto:vrushalkitke123@gmail.com?subject=RepReady%20Demo%20Request&body=Hi%20Vrushal%2C%20I%27d%20like%20to%20book%20a%20demo%20for%20my%20team.'
-
+const DEMO_MAILTO = 'mailto:sales@repready.site?subject=RepReady%20Demo%20Request&body=Hi%2C%20I%27d%20like%20to%20book%20a%20demo%20for%20my%20team.'
 const scenarios = [
   {
     label: 'CFO Pushback — Enterprise Deal',
