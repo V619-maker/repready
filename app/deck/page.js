@@ -19,6 +19,15 @@ function RepReadyDashboard() {
   const [liveTranscript, setLiveTranscript] = useState([]);
   const transcriptRef = useRef([]);
 
+  // ── Hide the layout header on this full-screen page ──
+  useEffect(() => {
+    const header = document.querySelector('body > header');
+    if (header) header.style.display = 'none';
+    return () => {
+      if (header) header.style.display = '';
+    };
+  }, []);
+
   const conversation = useConversation({
     onMessage: (message) => {
       if (message.message) {
@@ -200,9 +209,11 @@ function RepReadyDashboard() {
                 Upgrade to Pro to unlock unlimited voice simulations.
               </p>
               <div className="flex gap-4">
-                <button className="px-8 py-3 bg-red-500 text-white font-bold uppercase tracking-[0.2em] text-[10px] hover:bg-red-400 transition-all">
-                  UPGRADE NOW
-                </button>
+                <a href="/pricing">
+                  <button className="px-8 py-3 bg-red-500 text-white font-bold uppercase tracking-[0.2em] text-[10px] hover:bg-red-400 transition-all">
+                    UPGRADE NOW
+                  </button>
+                </a>
                 <button 
                   onClick={() => { setCreditsDepleted(false); setActiveAgent(null); }} 
                   className="px-8 py-3 border border-white/10 text-zinc-400 font-bold uppercase tracking-[0.2em] text-[10px] hover:bg-white/5 hover:text-white transition-all"
