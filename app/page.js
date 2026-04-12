@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react'
 
-const DEMO_MAILTO = 'mailto:sales@repready.site?subject=RepReady%20Demo%20Request&body=Hi%2C%20I%27d%20like%20to%20book%20a%20demo%20for%20my%20team.'
+const DEMO_MAILTO = 'mailto:vrushalkitke123@gmail.com?subject=RepReady%20Demo%20Request&body=Hi%20Vrushal%2C%20I%27d%20like%20to%20book%20a%20demo%20for%20my%20team.'
+
 const scenarios = [
   {
     label: 'CFO Pushback — Enterprise Deal',
@@ -127,8 +128,8 @@ export default function HomePage() {
         </div>
       </nav>
 
-      {/* HERO */}
-      <section className="hero" aria-labelledby="hero-heading">
+      {/* HERO - dark background */}
+      <section className="hero hero-dark" aria-labelledby="hero-heading">
         <div className="hero-grid" aria-hidden="true" />
         <div className="hero-glow" aria-hidden="true" />
         <div className="hero-glow2" aria-hidden="true" />
@@ -216,20 +217,20 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* LOGO STRIP — FIXED: removed extra > on div and p tag */}
-      <div className="logo-strip" aria-label="Built for sales teams in">
+      {/* DEAL TYPE STRIP */}
+      <div className="logo-strip" aria-label="Deal scenarios RepReady trains for">
         <div className="wrap">
-          <p className="strip-lbl">Built for sales teams in</p>
+          <p className="strip-lbl">Trains your reps for the deals that actually kill pipelines</p>
           <div className="logos-row">
             {[
-              ['#00c8e0','S','B2B SaaS'],
-              ['#e84545','F','FinServ'],
-              ['#6db56d','E','EdTech'],
-              ['#c4a040','H','HRO / FAO'],
-              ['#a07cd4','T','IT Services'],
-            ].map(([color, letter, label]) => (
+              ['#00c8e0', '💰', 'CFO Pushback'],
+              ['#e84545', '🧊', 'Budget Freeze'],
+              ['#c4a040', '⏳', 'Procurement Stall'],
+              ['#6db56d', '⚔️', 'Competitor Price Match'],
+              ['#a07cd4', '👻', 'Missing Decision Maker'],
+            ].map(([color, icon, label]) => (
               <div className="logo-chip" key={label}>
-                <div className="lcsq" style={{ background: `${color}22`, color }}>{letter}</div>
+                <div className="lcsq" style={{ background: `${color}22`, color }}>{icon}</div>
                 {label}
               </div>
             ))}
