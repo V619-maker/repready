@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useUser } from '@clerk/nextjs'
+import { useConversation, ConversationProvider } from '@elevenlabs/react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -41,14 +42,23 @@ import {
   Lightbulb,
   Phone,
   FileText,
-  Briefcase
+  Briefcase,
+  Radio
 } from 'lucide-react'
+import Link from 'next/link'
+
+// ElevenLabs Agent IDs
+const RICHARD_AGENT_ID = "agent_8601kmk3maq9f9a9csym74aj7s4e"
+const SANDRA_AGENT_ID = "agent_0301kmsnhr7tf11b62bvd7vsw9qq"
+const TRIAL_TIME_LIMIT = 90
 
 // Persona data
 const PERSONAS = {
   richard: {
     id: 'richard',
+    agentId: RICHARD_AGENT_ID,
     name: 'Richard',
+    fullName: 'Richard Vance',
     title: 'VP Procurement',
     company: '500-person logistics firm',
     difficulty: 5,
@@ -63,7 +73,9 @@ const PERSONAS = {
   },
   sandra: {
     id: 'sandra',
+    agentId: SANDRA_AGENT_ID,
     name: 'Sandra',
+    fullName: 'Sandra Chen',
     title: 'IT Director',
     company: '800-person financial firm',
     difficulty: 4,
@@ -85,7 +97,7 @@ const COACHING_TIPS = {
   late: "Tip: Create urgency by highlighting what competitors are doing. Don't beg — position yourself as the solution."
 }
 
-// Privacy Footer Component
+// Privacy Footer
 function PrivacyFooter() {
   return (
     <footer className="border-t border-border/50 py-4 px-6 bg-[#0A0A12]">
@@ -97,22 +109,18 @@ function PrivacyFooter() {
   )
 }
 
-// Star rating component
+// Star rating
 function DifficultyStars({ difficulty, size = 'default' }) {
   const sizeClass = size === 'small' ? 'w-3 h-3' : 'w-4 h-4'
   return (
     <div className="flex gap-0.5">
       {[...Array(5)].map((_, i) => (
-        <Star
-          key={i}
-          className={`${sizeClass} ${i < difficulty ? 'fill-[#F5A623] text-[#F5A623]' : 'text-muted-foreground/30'}`}
-        />
+        <Star key={i} className={`${sizeClass} ${i < difficulty ? 'fill-[#F5A623] text-[#F5A623]' : 'text-muted-foreground/30'}`} />
       ))}
     </div>
   )
 }
 
-// Score trend indicator
 function ScoreTrend({ currentScore, previousScore }) {
   const diff = currentScore - previousScore
   if (diff > 0) return <TrendingUp className="w-5 h-5 text-[#F5A623]" />
@@ -133,7 +141,7 @@ function getVerdictStyle(verdict) {
   return { color: 'text-[#E63946]', bg: 'bg-[#E63946]/10', icon: XCircle }
 }
 
-// Email Gate Component
+// Email Gate
 function EmailGate({ onComplete, selectedPersona }) {
   const [email, setEmail] = useState('')
   const [consent, setConsent] = useState(false)
@@ -144,32 +152,23 @@ function EmailGate({ onComplete, selectedPersona }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
-
     if (!email || !email.includes('@') || !email.includes('.')) {
       setError('Please enter a valid email address.')
       return
     }
-
     if (!consent) {
       setError('Please agree to the privacy policy to continue.')
       return
     }
-
     setIsLoading(true)
-
     try {
       const response = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, consent })
       })
-
       const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Registration failed')
-      }
-
+      if (!response.ok) throw new Error(data.error || 'Registration failed')
       onComplete({ email: data.email, sessionsUsed: data.sessionsUsed })
     } catch (err) {
       setError(err.message)
@@ -188,7 +187,6 @@ function EmailGate({ onComplete, selectedPersona }) {
           <span className="text-xl font-bold text-white">RepReady</span>
         </div>
       </nav>
-
       <main className="flex-1 flex items-center justify-center px-6 py-12">
         <Card className="w-full max-w-md bg-[#0D0D1A] border border-border/50">
           <CardHeader className="text-center pb-2">
@@ -196,11 +194,8 @@ function EmailGate({ onComplete, selectedPersona }) {
               <span className="text-3xl font-bold text-white">{persona.avatar}</span>
             </div>
             <CardTitle className="text-2xl text-white">Battle-test your skills</CardTitle>
-            <CardDescription className="text-base">
-              against {persona.name}. Enter your email to begin.
-            </CardDescription>
+            <CardDescription className="text-base">against {persona.name}. Enter your email to begin.</CardDescription>
           </CardHeader>
-          
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="relative">
@@ -213,7 +208,6 @@ function EmailGate({ onComplete, selectedPersona }) {
                   className="pl-10 h-12 bg-[#0D0D1A] border-border/50 focus:border-[#F5A623] text-white"
                 />
               </div>
-
               <div className="flex items-start gap-3">
                 <Checkbox
                   id="consent"
@@ -227,20 +221,11 @@ function EmailGate({ onComplete, selectedPersona }) {
                   {' '}and that sessions are not used to train AI models.
                 </label>
               </div>
-
-              {error && (
-                <p className="text-sm text-[#E63946]">{error}</p>
-              )}
-
-              <Button 
-                type="submit" 
-                className="w-full h-12 bg-[#E63946] hover:bg-[#E63946]/90 text-white"
-                disabled={isLoading}
-              >
+              {error && <p className="text-sm text-[#E63946]">{error}</p>}
+              <Button type="submit" className="w-full h-12 bg-[#E63946] hover:bg-[#E63946]/90 text-white" disabled={isLoading}>
                 {isLoading ? 'Starting...' : `Challenge ${persona.name} Free →`}
               </Button>
             </form>
-
             <p className="text-center text-xs text-muted-foreground mt-4">
               <Lock className="w-3 h-3 inline mr-1" />
               3 free sessions included. No credit card required.
@@ -248,16 +233,14 @@ function EmailGate({ onComplete, selectedPersona }) {
           </CardContent>
         </Card>
       </main>
-
       <PrivacyFooter />
     </div>
   )
 }
 
-// Pre-Call Briefing Screen
-function PreCallBriefing({ persona, onStartCall }) {
+// Pre-Call Briefing
+function PreCallBriefing({ persona, onStartTextCall, onStartVoiceCall }) {
   const selectedPersona = PERSONAS[persona]
-  
   return (
     <div className="flex-1 flex items-center justify-center p-6">
       <Card className="w-full max-w-2xl bg-[#0D0D1A] border border-border/50">
@@ -268,7 +251,6 @@ function PreCallBriefing({ persona, onStartCall }) {
           <CardTitle className="text-2xl text-white">Pre-Call Briefing</CardTitle>
           <CardDescription>Review the intel before you go live with {selectedPersona.name}</CardDescription>
         </CardHeader>
-        
         <CardContent className="space-y-4">
           <div className="grid gap-4">
             <div className="flex items-start gap-4 p-4 bg-muted/30 rounded-lg">
@@ -280,7 +262,6 @@ function PreCallBriefing({ persona, onStartCall }) {
                 <p className="text-sm text-muted-foreground">Account Executive selling a $50,000 SaaS contract.</p>
               </div>
             </div>
-            
             <div className="flex items-start gap-4 p-4 bg-muted/30 rounded-lg">
               <div className="w-10 h-10 rounded-lg bg-[#E63946]/10 flex items-center justify-center flex-shrink-0">
                 <Users className="w-5 h-5 text-[#E63946]" />
@@ -290,7 +271,6 @@ function PreCallBriefing({ persona, onStartCall }) {
                 <p className="text-sm text-muted-foreground">{selectedPersona.title} at a {selectedPersona.company}. CFO has mandated 15% cost reduction this quarter.</p>
               </div>
             </div>
-            
             <div className="flex items-start gap-4 p-4 bg-muted/30 rounded-lg">
               <div className="w-10 h-10 rounded-lg bg-[#22C55E]/10 flex items-center justify-center flex-shrink-0">
                 <Target className="w-5 h-5 text-[#22C55E]" />
@@ -300,7 +280,6 @@ function PreCallBriefing({ persona, onStartCall }) {
                 <p className="text-sm text-muted-foreground">Get {selectedPersona.name} to agree to a discovery call.</p>
               </div>
             </div>
-            
             <div className="flex items-start gap-4 p-4 bg-[#F5A623]/5 border border-[#F5A623]/20 rounded-lg">
               <div className="w-10 h-10 rounded-lg bg-[#F5A623]/10 flex items-center justify-center flex-shrink-0">
                 <FileText className="w-5 h-5 text-[#F5A623]" />
@@ -311,16 +290,368 @@ function PreCallBriefing({ persona, onStartCall }) {
               </div>
             </div>
           </div>
-          
-          <Button 
-            onClick={onStartCall}
-            size="lg"
-            className="w-full h-14 bg-[#E63946] hover:bg-[#E63946]/90 text-white text-lg mt-6"
-          >
-            Start The Call →
-          </Button>
+
+          {/* Mode selection */}
+          <div className="grid grid-cols-2 gap-3 mt-6">
+            <Button
+              onClick={onStartTextCall}
+              size="lg"
+              variant="outline"
+              className="h-14 border-border/50 text-white hover:bg-muted/30 flex flex-col gap-1"
+            >
+              <Send className="w-4 h-4" />
+              <span className="text-xs">Text Mode</span>
+            </Button>
+            <Button
+              onClick={onStartVoiceCall}
+              size="lg"
+              className="h-14 bg-[#E63946] hover:bg-[#E63946]/90 text-white flex flex-col gap-1"
+            >
+              <Mic className="w-4 h-4" />
+              <span className="text-xs">Voice Mode</span>
+            </Button>
+          </div>
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+// Voice Call Modal — ported from deck page, styled to match new UI
+function VoiceCallModal({ persona, onClose, onShowResults, userEmail }) {
+  const selectedPersona = PERSONAS[persona]
+  const [isVerifying, setIsVerifying] = useState(false)
+  const [creditsDepleted, setCreditsDepleted] = useState(false)
+  const [timeLeft, setTimeLeft] = useState(TRIAL_TIME_LIMIT)
+  const [cutOff, setCutOff] = useState(false)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [liveTranscript, setLiveTranscript] = useState([])
+  const [recentScore, setRecentScore] = useState(0)
+  const [showAudit, setShowAudit] = useState(false)
+  const transcriptRef = useRef([])
+
+  const conversation = useConversation({
+    onMessage: (message) => {
+      if (message.message) {
+        const speaker = message.source === 'user' ? 'You' : selectedPersona.name
+        transcriptRef.current.push(`${speaker}: ${message.message}`)
+        setLiveTranscript(prev => [...prev, { speaker, text: message.message }])
+      }
+    }
+  })
+
+  useEffect(() => {
+    let interval
+    if (conversation.status === 'connected' && timeLeft > 0) {
+      interval = setInterval(() => setTimeLeft(prev => prev - 1), 1000)
+    } else if (timeLeft === 0 && conversation.status === 'connected') {
+      setCutOff(true)
+      handleEndCall()
+    }
+    return () => clearInterval(interval)
+  }, [conversation.status, timeLeft])
+
+  const formatTime = (seconds) => {
+    const m = Math.floor(seconds / 60)
+    const s = seconds % 60
+    return `${m}:${s.toString().padStart(2, '0')}`
+  }
+
+  const handleStartCall = async () => {
+    setIsVerifying(true)
+    setCreditsDepleted(false)
+    setLiveTranscript([{ speaker: 'System', text: 'Initializing secure connection...' }])
+    try {
+      const creditCheck = await fetch('/api/deduct-credit', { method: 'POST' })
+      if (!creditCheck.ok) {
+        setCreditsDepleted(true)
+        setIsVerifying(false)
+        return
+      }
+      setTimeLeft(TRIAL_TIME_LIMIT)
+      setCutOff(false)
+      await conversation.startSession({ agentId: selectedPersona.agentId, connectionType: 'webrtc' })
+    } catch (error) {
+      console.error('Failed to start voice connection:', error)
+    }
+    setIsVerifying(false)
+  }
+
+  const handleEndCall = async () => {
+    await conversation.endSession()
+    handleTerminate()
+  }
+
+  const handleTerminate = async () => {
+    setIsAnalyzing(true)
+    const minLoadingTime = new Promise(resolve => setTimeout(resolve, 2000))
+    try {
+      const realTranscript = transcriptRef.current.join('\n\n')
+      const finalTranscript = realTranscript.trim() ? realTranscript : 'No words were spoken during the simulation.'
+
+      const response = await fetch('/api/coach', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript: finalTranscript })
+      })
+      const data = await response.json()
+      const cleanJson = data.message.replace(/```json|```/g, '').trim()
+      const scoreData = JSON.parse(cleanJson)
+      const finalScore = cutOff
+        ? Math.max(30, (scoreData.aggregate_score || 75) - 20)
+        : (scoreData.aggregate_score || 75)
+
+      setRecentScore(finalScore)
+
+      localStorage.setItem('repready_latest_debrief', cleanJson)
+      localStorage.setItem('repready_latest_transcript', finalTranscript)
+
+      await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userEmail,
+          persona,
+          messages: transcriptRef.current,
+          scorecard: scoreData,
+          finalScore
+        })
+      })
+
+      transcriptRef.current = []
+      await minLoadingTime
+      setShowAudit(true)
+    } catch (error) {
+      console.error('Scoring error:', error)
+      setRecentScore(60)
+      await minLoadingTime
+      setShowAudit(true)
+    }
+    setIsAnalyzing(false)
+  }
+
+  const handleViewResults = () => {
+    onShowResults({
+      final_score: recentScore,
+      verdict: recentScore >= 70
+        ? 'Passed — Strong performance.'
+        : recentScore >= 40
+          ? 'Needs Work — Room to improve.'
+          : 'Failed — The deal slipped away.',
+      strengths: ['Voice delivery', 'Active engagement'],
+      improvements: ['Objection handling', 'Value articulation'],
+      biggest_mistake: 'Review the full debrief in the Coach tab for detailed analysis.'
+    })
+  }
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 backdrop-blur-xl bg-black/95">
+
+      {/* Credits depleted overlay */}
+      {creditsDepleted && (
+        <div className="absolute inset-0 bg-[#0D0D1A]/98 z-50 flex flex-col items-center justify-center p-10 border border-[#E63946]/30">
+          <XCircle className="w-16 h-16 text-[#E63946] mb-4" />
+          <h3 className="text-[#E63946] text-3xl font-bold mb-2">Credits Depleted</h3>
+          <p className="text-muted-foreground text-sm text-center mb-8 max-w-md">
+            Upgrade to Pro to unlock unlimited voice simulations.
+          </p>
+          <div className="flex gap-4">
+            <a href="/pricing">
+              <Button className="bg-[#E63946] hover:bg-[#E63946]/90 text-white px-8">Upgrade Now</Button>
+            </a>
+            <Button variant="outline" onClick={() => { setCreditsDepleted(false); onClose(); }}>
+              Return to Deck
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <div className="w-full max-w-4xl h-[85vh] border border-border/50 bg-[#0D0D1A] flex flex-col overflow-hidden">
+
+        {/* Header */}
+        <div className="flex justify-between items-center p-4 border-b border-border/50 bg-[#0A0A12]">
+          <div className="flex items-center gap-3">
+            <Avatar className={`w-10 h-10 bg-gradient-to-br ${selectedPersona.color}`}>
+              <AvatarFallback className="text-sm font-bold text-white bg-transparent">{selectedPersona.avatar}</AvatarFallback>
+            </Avatar>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-white">Live Voice Call — {selectedPersona.fullName}</h3>
+                <div className={`w-2 h-2 rounded-full ${conversation.status === 'connected' ? 'bg-[#E63946] animate-pulse' : 'bg-muted-foreground/30'}`} />
+              </div>
+              <p className="text-xs text-muted-foreground">{selectedPersona.title}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            {conversation.status === 'connected' && (
+              <div className="flex items-center gap-2">
+                <Radio className="w-4 h-4 text-[#E63946] animate-pulse" />
+                <span className="text-sm font-mono font-bold text-[#F5A623]">{formatTime(timeLeft)}</span>
+              </div>
+            )}
+            <Button variant="ghost" size="sm" onClick={onClose} className="text-muted-foreground hover:text-white">✕</Button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 flex overflow-hidden">
+
+          {/* Voice visualizer panel */}
+          <div className="w-56 border-r border-border/50 p-6 flex flex-col items-center justify-center bg-[#0A0A12] gap-6">
+            <div className="relative w-32 h-32 flex items-center justify-center">
+              <div className="absolute inset-0 rounded-full border border-border/30" />
+              <div className={`absolute inset-2 rounded-full border border-border/50 ${conversation.status === 'connected' ? 'border-t-[#F5A623] animate-spin' : ''}`} style={{ animationDuration: '4s' }} />
+              <div className="w-12 h-12 rounded-full border border-border/50 flex items-center justify-center">
+                <div className={`w-3 h-3 rounded-full ${conversation.status === 'connected' ? 'bg-[#F5A623] animate-ping' : 'bg-muted-foreground/30'}`} />
+              </div>
+            </div>
+
+            <div className="w-full">
+              <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2 text-center">Voice</p>
+              <div className="flex gap-[2px] items-end h-6 justify-center">
+                {[...Array(10)].map((_, i) => (
+                  <div
+                    key={i}
+                    className={`w-1.5 rounded-sm ${conversation.isSpeaking ? 'bg-[#F5A623] animate-pulse' : 'bg-muted-foreground/20'}`}
+                    style={{ height: conversation.isSpeaking ? `${Math.max(20, Math.random() * 100)}%` : '20%', animationDelay: `${i * 0.1}s` }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="w-full text-center">
+              <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Status</p>
+              <p className={`text-xs font-semibold ${conversation.status === 'connected' ? 'text-[#22C55E]' : 'text-muted-foreground'}`}>
+                {conversation.status === 'connected' ? 'Connected' : isVerifying ? 'Connecting...' : 'Standby'}
+              </p>
+            </div>
+          </div>
+
+          {/* Transcript */}
+          <div className="flex-1 flex flex-col">
+            <ScrollArea className="flex-1 p-6">
+              <div className="space-y-4">
+                {liveTranscript.length === 0 && !isVerifying && (
+                  <p className="text-muted-foreground/50 text-sm text-center mt-8">
+                    Click "Start Call" to connect with {selectedPersona.name}
+                  </p>
+                )}
+                {isVerifying && (
+                  <p className="text-[#F5A623] text-sm animate-pulse text-center mt-8">Verifying credentials...</p>
+                )}
+                {isAnalyzing && (
+                  <p className="text-[#F5A623] text-sm animate-pulse text-center mt-4">Analyzing your performance...</p>
+                )}
+                {liveTranscript.map((msg, i) => (
+                  <div key={i} className={`flex ${msg.speaker === 'You' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                      msg.speaker === 'You'
+                        ? 'bg-[#6366F1] text-white rounded-br-md'
+                        : msg.speaker === 'System'
+                          ? 'bg-muted/20 border border-border/30 text-muted-foreground text-xs rounded-lg'
+                          : 'bg-muted/30 border border-border/50 rounded-bl-md'
+                    }`}>
+                      {msg.speaker !== 'You' && msg.speaker !== 'System' && (
+                        <p className="text-xs font-semibold text-[#F5A623] mb-1">{selectedPersona.name}</p>
+                      )}
+                      <p className="text-sm leading-relaxed text-white">{msg.text}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+
+            <div className="p-4 border-t border-border/50 text-center">
+              <p className="text-xs text-muted-foreground/50">
+                {conversation.status === 'connected'
+                  ? '🎙 Speak your response — Richard is listening'
+                  : 'Voice mode active — your mic will open when the call starts'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer controls */}
+        <div className="flex justify-between items-center p-4 border-t border-border/50 bg-[#0A0A12]">
+          <div>
+            {conversation.status !== 'connected' ? (
+              <Button
+                onClick={handleStartCall}
+                disabled={isVerifying || isAnalyzing}
+                className="bg-[#E63946] hover:bg-[#E63946]/90 text-white gap-2"
+              >
+                <Mic className="w-4 h-4" />
+                {isVerifying ? 'Connecting...' : 'Start Call'}
+              </Button>
+            ) : (
+              <Button variant="outline" disabled className="gap-2 text-muted-foreground/50 cursor-not-allowed">
+                <Mic className="w-4 h-4" />
+                Live
+              </Button>
+            )}
+          </div>
+          {conversation.status === 'connected' ? (
+            <Button
+              onClick={handleEndCall}
+              variant="destructive"
+              className="gap-2 bg-[#E63946] hover:bg-[#E63946]/90"
+            >
+              <StopCircle className="w-4 h-4" />
+              End Call
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              onClick={onClose}
+              disabled={isAnalyzing}
+              className="text-muted-foreground"
+            >
+              Cancel
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Post-call audit modal */}
+      {showAudit && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/95 z-50 p-6">
+          <Card className="w-full max-w-md bg-[#0D0D1A] border border-border/50 text-center">
+            <CardHeader className="pb-2 pt-8">
+              <div className="flex justify-center mb-4">
+                <Award className={`w-16 h-16 ${cutOff ? 'text-[#E63946]' : 'text-[#F5A623]'}`} />
+              </div>
+              <CardTitle className={`text-2xl ${cutOff ? 'text-[#E63946]' : 'text-white'}`}>
+                {cutOff ? 'Trial Time Exceeded' : 'Simulation Complete'}
+              </CardTitle>
+              <CardDescription>
+                {cutOff ? 'Upgrade to Pro for unlimited call time' : 'Performance telemetry generated'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6 pb-8">
+              <div className="bg-muted/20 border border-border/50 rounded-xl p-6">
+                <p className="text-xs text-muted-foreground mb-2 uppercase tracking-widest">Aggregate Score</p>
+                <p className={`text-7xl font-black ${cutOff ? 'text-[#E63946]' : getScoreColor(recentScore)}`}>
+                  {recentScore}
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <Link href="/coach" className="flex-1">
+                  <Button className="w-full bg-[#F5A623] hover:bg-[#F5A623]/90 text-black font-bold">
+                    Analyze with Coach
+                  </Button>
+                </Link>
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={handleViewResults}
+                >
+                  View Scorecard
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }
@@ -328,14 +659,12 @@ function PreCallBriefing({ persona, onStartCall }) {
 // Scorecard Loading
 function ScorecardLoading({ personaName }) {
   const [dots, setDots] = useState('')
-  
   useEffect(() => {
     const interval = setInterval(() => {
       setDots(prev => prev.length >= 3 ? '' : prev + '.')
     }, 400)
     return () => clearInterval(interval)
   }, [])
-
   return (
     <div className="flex-1 flex items-center justify-center">
       <div className="text-center">
@@ -357,13 +686,11 @@ function ResultsCard({ scorecard, persona, onTryAgain }) {
   const selectedPersona = PERSONAS[persona]
   const verdictStyle = getVerdictStyle(scorecard.verdict)
   const VerdictIcon = verdictStyle.icon
-
   return (
     <div className="flex-1 flex items-center justify-center p-6">
       <div className="w-full max-w-2xl">
         <Card className="bg-[#0D0D1A] border border-border/50 overflow-hidden">
           <div className={`h-1 bg-gradient-to-r ${selectedPersona.color}`} />
-          
           <CardHeader className="text-center pb-2 pt-8">
             <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground mb-4">
               <Sparkles className="w-4 h-4 text-[#F5A623]" />
@@ -374,27 +701,20 @@ function ResultsCard({ scorecard, persona, onTryAgain }) {
               Negotiation with {selectedPersona.name}
             </CardTitle>
           </CardHeader>
-
           <CardContent className="space-y-8 pb-8">
             <div className="text-center py-6">
               <div className="relative inline-block">
-                <div className={`text-9xl font-black ${getScoreColor(scorecard.final_score)}`}>
-                  {scorecard.final_score}
-                </div>
+                <div className={`text-9xl font-black ${getScoreColor(scorecard.final_score)}`}>{scorecard.final_score}</div>
                 <div className="absolute -top-2 -right-6 text-3xl font-bold text-muted-foreground">/100</div>
               </div>
             </div>
-
             <div className={`${verdictStyle.bg} rounded-xl p-4 text-center`}>
               <div className="flex items-center justify-center gap-2 mb-1">
                 <VerdictIcon className={`w-5 h-5 ${verdictStyle.color}`} />
-                <span className={`font-bold text-lg ${verdictStyle.color}`}>
-                  {scorecard.verdict.split(':')[0]}
-                </span>
+                <span className={`font-bold text-lg ${verdictStyle.color}`}>{scorecard.verdict.split(':')[0]}</span>
               </div>
               <p className="text-sm text-muted-foreground">{scorecard.verdict}</p>
             </div>
-
             <div className="grid md:grid-cols-2 gap-4">
               <div className="bg-[#22C55E]/5 border border-[#22C55E]/20 rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-3">
@@ -402,48 +722,36 @@ function ResultsCard({ scorecard, persona, onTryAgain }) {
                   <h3 className="font-semibold text-[#22C55E]">Strengths</h3>
                 </div>
                 <ul className="space-y-2">
-                  {scorecard.strengths?.map((strength, i) => (
+                  {scorecard.strengths?.map((s, i) => (
                     <li key={i} className="flex items-start gap-2 text-sm text-white">
-                      <span className="text-[#22C55E] mt-1">•</span>
-                      <span>{strength}</span>
+                      <span className="text-[#22C55E] mt-1">•</span><span>{s}</span>
                     </li>
                   ))}
                 </ul>
               </div>
-
               <div className="bg-[#E63946]/5 border border-[#E63946]/20 rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <TrendingUp className="w-5 h-5 text-[#E63946]" />
                   <h3 className="font-semibold text-[#E63946]">Areas to Improve</h3>
                 </div>
                 <ul className="space-y-2">
-                  {scorecard.improvements?.map((improvement, i) => (
+                  {scorecard.improvements?.map((imp, i) => (
                     <li key={i} className="flex items-start gap-2 text-sm text-white">
-                      <span className="text-[#E63946] mt-1">•</span>
-                      <span>{improvement}</span>
+                      <span className="text-[#E63946] mt-1">•</span><span>{imp}</span>
                     </li>
                   ))}
                 </ul>
               </div>
             </div>
-
             <div className="bg-[#F5A623]/5 border border-[#F5A623]/20 rounded-xl p-4">
               <div className="flex items-center gap-2 mb-2">
                 <AlertTriangle className="w-5 h-5 text-[#F5A623]" />
                 <h3 className="font-semibold text-[#F5A623]">Key Learning</h3>
               </div>
-              <p className="text-sm text-muted-foreground italic">
-                &ldquo;{scorecard.biggest_mistake}&rdquo;
-              </p>
+              <p className="text-sm text-muted-foreground italic">&ldquo;{scorecard.biggest_mistake}&rdquo;</p>
             </div>
-
-            <Button 
-              onClick={onTryAgain} 
-              size="lg" 
-              className="w-full bg-[#E63946] hover:bg-[#E63946]/90 h-14 text-lg gap-2"
-            >
-              <RotateCcw className="w-5 h-5" />
-              Try Again →
+            <Button onClick={onTryAgain} size="lg" className="w-full bg-[#E63946] hover:bg-[#E63946]/90 h-14 text-lg gap-2">
+              <RotateCcw className="w-5 h-5" />Try Again →
             </Button>
           </CardContent>
         </Card>
@@ -460,7 +768,6 @@ function AppSidebar({ activeTab, onTabChange, sessionsUsed }) {
     { id: 'analytics', label: 'Team Analytics', icon: Users, badge: 'Coming Soon', active: false },
     { id: 'settings', label: 'Settings', icon: Settings, active: true },
   ]
-
   return (
     <div className="w-64 border-r border-border/50 bg-[#0A0A12] flex flex-col">
       <div className="p-4 border-b border-border/50">
@@ -471,7 +778,6 @@ function AppSidebar({ activeTab, onTabChange, sessionsUsed }) {
           <span className="text-lg font-bold text-white">RepReady</span>
         </div>
       </div>
-
       <nav className="flex-1 p-3">
         <ul className="space-y-1">
           {navItems.map((item) => {
@@ -483,19 +789,15 @@ function AppSidebar({ activeTab, onTabChange, sessionsUsed }) {
                   onClick={() => item.active && onTabChange(item.id)}
                   disabled={!item.active}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
-                    isActive 
-                      ? 'bg-[#F5A623]/10 text-[#F5A623]' 
-                      : item.active 
-                        ? 'text-muted-foreground hover:bg-muted/50 hover:text-white' 
-                        : 'text-muted-foreground/50 cursor-not-allowed'
+                    isActive ? 'bg-[#F5A623]/10 text-[#F5A623]'
+                    : item.active ? 'text-muted-foreground hover:bg-muted/50 hover:text-white'
+                    : 'text-muted-foreground/50 cursor-not-allowed'
                   }`}
                 >
                   <Icon className="w-4 h-4" />
                   <span className="flex-1 text-left">{item.label}</span>
                   {item.badge && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-[#F5A623]/30 text-[#F5A623]">
-                      {item.badge}
-                    </Badge>
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-[#F5A623]/30 text-[#F5A623]">{item.badge}</Badge>
                   )}
                   {isActive && <ChevronRight className="w-4 h-4" />}
                 </button>
@@ -504,7 +806,6 @@ function AppSidebar({ activeTab, onTabChange, sessionsUsed }) {
           })}
         </ul>
       </nav>
-
       <div className="p-4 border-t border-border/50">
         <div className="bg-muted/30 rounded-lg p-3">
           <div className="flex items-center justify-between text-xs mb-2">
@@ -512,7 +813,7 @@ function AppSidebar({ activeTab, onTabChange, sessionsUsed }) {
             <span className="text-[#F5A623]">{3 - sessionsUsed}/3</span>
           </div>
           <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-            <div 
+            <div
               className="h-full bg-gradient-to-r from-[#F5A623] to-[#E63946] rounded-full transition-all"
               style={{ width: `${((3 - sessionsUsed) / 3) * 100}%` }}
             />
@@ -530,14 +831,11 @@ function PersonaSelection({ onSelect }) {
       <div className="max-w-4xl mx-auto">
         <div className="mb-8">
           <h1 className="text-2xl font-bold mb-2 text-white">Choose Your Adversary</h1>
-          <p className="text-muted-foreground">
-            Practice the hardest sales conversations before they happen live.
-          </p>
+          <p className="text-muted-foreground">Practice the hardest sales conversations before they happen live.</p>
         </div>
-
         <div className="grid md:grid-cols-2 gap-6">
           {Object.values(PERSONAS).map((persona) => (
-            <Card 
+            <Card
               key={persona.id}
               className="bg-[#0D0D1A] border border-border/50 cursor-pointer transition-all duration-300 hover:scale-[1.02] hover:border-[#F5A623]/50 group"
               onClick={() => onSelect(persona.id)}
@@ -545,9 +843,7 @@ function PersonaSelection({ onSelect }) {
               <CardContent className="p-6">
                 <div className="flex items-start gap-4 mb-4">
                   <Avatar className={`w-14 h-14 bg-gradient-to-br ${persona.color}`}>
-                    <AvatarFallback className="text-lg font-bold text-white bg-transparent">
-                      {persona.avatar}
-                    </AvatarFallback>
+                    <AvatarFallback className="text-lg font-bold text-white bg-transparent">{persona.avatar}</AvatarFallback>
                   </Avatar>
                   <div className="flex-1">
                     <div className="flex items-center justify-between mb-1">
@@ -557,24 +853,15 @@ function PersonaSelection({ onSelect }) {
                     <p className="text-sm text-muted-foreground">{persona.title}</p>
                   </div>
                 </div>
-
                 <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3 bg-muted/30 rounded-lg px-3 py-2">
-                  <Building2 className="w-3 h-3" />
-                  <span>{persona.company}</span>
+                  <Building2 className="w-3 h-3" /><span>{persona.company}</span>
                 </div>
-
-                <p className="text-sm text-muted-foreground mb-4">
-                  {persona.description}
-                </p>
-
+                <p className="text-sm text-muted-foreground mb-4">{persona.description}</p>
                 <div className="flex flex-wrap gap-2 mb-4">
                   {persona.tactics.map((tactic, i) => (
-                    <Badge key={i} variant="outline" className="text-xs border-border/50 text-muted-foreground">
-                      {tactic}
-                    </Badge>
+                    <Badge key={i} variant="outline" className="text-xs border-border/50 text-muted-foreground">{tactic}</Badge>
                   ))}
                 </div>
-
                 <Button className="w-full bg-[#E63946] hover:bg-[#E63946]/90 text-white">
                   Challenge {persona.name} →
                 </Button>
@@ -592,7 +879,6 @@ function CoachingTipBar({ messageCount }) {
   let tip = COACHING_TIPS.early
   if (messageCount >= 3) tip = COACHING_TIPS.mid
   if (messageCount >= 6) tip = COACHING_TIPS.late
-  
   return (
     <div className="flex items-center gap-2 px-4 py-2 bg-[#F5A623]/10 border-t border-[#F5A623]/20">
       <Lightbulb className="w-4 h-4 text-[#F5A623] flex-shrink-0" />
@@ -601,7 +887,7 @@ function CoachingTipBar({ messageCount }) {
   )
 }
 
-// Chat Simulator
+// Chat Simulator (text mode)
 function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUsed }) {
   const [messages, setMessages] = useState([])
   const [inputValue, setInputValue] = useState('')
@@ -611,12 +897,11 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
   const [scoreReason, setScoreReason] = useState('Deal starts at neutral — make your pitch.')
   const [isEndingNegotiation, setIsEndingNegotiation] = useState(false)
   const [sessionStarted, setSessionStarted] = useState(false)
-  const [showBriefing, setShowBriefing] = useState(true)
+  const [showVoiceModal, setShowVoiceModal] = useState(false)
   const scrollRef = useRef(null)
   const selectedPersona = PERSONAS[persona]
 
-  const startCall = () => {
-    setShowBriefing(false)
+  useEffect(() => {
     setMessages([{
       role: 'assistant',
       content: selectedPersona.firstMessage,
@@ -624,7 +909,7 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
       reason: 'Opening — they set the tone. Handle this carefully.'
     }])
     setScoreReason('Opening — they set the tone. Handle this carefully.')
-  }
+  }, [persona])
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -634,18 +919,15 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
 
   const sendMessage = async () => {
     if (!inputValue.trim() || isLoading) return
-
     if (!sessionStarted) {
       setSessionStarted(true)
       onSessionUsed()
     }
-
     const userMessage = { role: 'user', content: inputValue.trim() }
     const updatedMessages = [...messages, userMessage]
     setMessages(updatedMessages)
     setInputValue('')
     setIsLoading(true)
-
     try {
       const response = await fetch('/api/negotiate', {
         method: 'POST',
@@ -655,28 +937,23 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
           messages: updatedMessages.map(m => ({ role: m.role, content: m.content }))
         })
       })
-
       if (!response.ok) throw new Error('Failed to get response')
-
       const data = await response.json()
-      
       if (data.message) {
         setPreviousScore(currentScore)
         if (typeof data.deal_health_score === 'number') setCurrentScore(data.deal_health_score)
         if (data.score_reason) setScoreReason(data.score_reason)
-        
-        setMessages(prev => [...prev, { 
-          role: 'assistant', 
+        setMessages(prev => [...prev, {
+          role: 'assistant',
           content: data.message,
           score: data.deal_health_score,
           reason: data.score_reason
         }])
       }
-
     } catch (error) {
       console.error('Error:', error)
-      setMessages(prev => [...prev, { 
-        role: 'assistant', 
+      setMessages(prev => [...prev, {
+        role: 'assistant',
         content: 'Let me stop you there.',
         score: 50,
         reason: 'Response error — score held steady'
@@ -691,10 +968,8 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
       alert('Have a conversation first before ending the negotiation.')
       return
     }
-
     setIsEndingNegotiation(true)
     const minLoadingTime = new Promise(resolve => setTimeout(resolve, 2000))
-
     try {
       const response = await fetch('/api/scorecard', {
         method: 'POST',
@@ -704,12 +979,9 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
           messages: messages.map(m => ({ role: m.role, content: m.content }))
         })
       })
-
       if (!response.ok) throw new Error('Failed to get scorecard')
-
       const data = await response.json()
       await minLoadingTime
-
       if (data.final_score) {
         await fetch('/api/sessions', {
           method: 'POST',
@@ -726,7 +998,6 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
           biggest_mistake: "Unable to generate detailed analysis."
         })
       }
-
     } catch (error) {
       await minLoadingTime
       onShowResults({
@@ -746,18 +1017,28 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
     }
   }
 
-  if (showBriefing) return <PreCallBriefing persona={persona} onStartCall={startCall} />
   if (isEndingNegotiation) return <ScorecardLoading personaName={selectedPersona.name} />
 
   return (
     <div className="flex-1 flex flex-col">
+      {/* Voice modal */}
+      {showVoiceModal && (
+        <VoiceCallModal
+          persona={persona}
+          userEmail={userEmail}
+          onClose={() => setShowVoiceModal(false)}
+          onShowResults={(results) => {
+            setShowVoiceModal(false)
+            onShowResults(results)
+          }}
+        />
+      )}
+
       <div className="p-4 border-b border-border/50 bg-[#0A0A12]">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Avatar className={`w-10 h-10 bg-gradient-to-br ${selectedPersona.color}`}>
-              <AvatarFallback className="text-sm font-bold text-white bg-transparent">
-                {selectedPersona.avatar}
-              </AvatarFallback>
+              <AvatarFallback className="text-sm font-bold text-white bg-transparent">{selectedPersona.avatar}</AvatarFallback>
             </Avatar>
             <div>
               <h3 className="font-semibold text-white">Live Call with {selectedPersona.name}</h3>
@@ -769,46 +1050,36 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
               <div className="text-xs text-muted-foreground mb-1">Deal Health</div>
               <div className="flex items-center gap-2">
                 <ScoreTrend currentScore={currentScore} previousScore={previousScore} />
-                <span className={`text-4xl font-black ${getScoreColor(currentScore)}`}>
-                  {currentScore}%
-                </span>
+                <span className={`text-4xl font-black ${getScoreColor(currentScore)}`}>{currentScore}%</span>
               </div>
             </div>
-            <Button 
-              variant="destructive" 
-              size="sm" 
+            <Button
+              variant="destructive"
+              size="sm"
               onClick={endNegotiation}
               disabled={isLoading || messages.length <= 1}
               className="gap-2 bg-[#E63946] hover:bg-[#E63946]/90"
             >
-              <StopCircle className="w-4 h-4" />
-              End Call
+              <StopCircle className="w-4 h-4" />End Call
             </Button>
           </div>
         </div>
       </div>
 
       <div className="px-4 py-2 bg-muted/20 border-b border-border/50">
-        <p className="text-xs text-muted-foreground italic text-center">
-          &ldquo;{scoreReason}&rdquo;
-        </p>
+        <p className="text-xs text-muted-foreground italic text-center">&ldquo;{scoreReason}&rdquo;</p>
       </div>
 
       <div className="flex-1 overflow-hidden">
         <ScrollArea className="h-full p-6" ref={scrollRef}>
           <div className="max-w-3xl mx-auto space-y-6">
             {messages.map((message, index) => (
-              <div
-                key={index}
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                    message.role === 'user'
-                      ? 'bg-[#6366F1] text-white rounded-br-md'
-                      : 'bg-muted/30 border border-border/50 rounded-bl-md'
-                  }`}
-                >
+              <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                  message.role === 'user'
+                    ? 'bg-[#6366F1] text-white rounded-br-md'
+                    : 'bg-muted/30 border border-border/50 rounded-bl-md'
+                }`}>
                   {message.role === 'assistant' && (
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-xs font-semibold text-[#F5A623]">{selectedPersona.name}</span>
@@ -818,7 +1089,6 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
                 </div>
               </div>
             ))}
-
             {isLoading && (
               <div className="flex justify-start">
                 <div className="bg-muted/30 border border-border/50 rounded-2xl rounded-bl-md px-4 py-3">
@@ -850,19 +1120,22 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
               className="flex-1 bg-muted/30 border-border/50 focus:border-[#F5A623] h-12 text-white"
               disabled={isLoading}
             />
-            <Button 
-              onClick={sendMessage} 
-              disabled={isLoading || !inputValue.trim()} 
+            <Button
+              onClick={sendMessage}
+              disabled={isLoading || !inputValue.trim()}
               className="bg-[#E63946] hover:bg-[#E63946]/90 h-12 px-6"
             >
               <Send className="w-4 h-4" />
             </Button>
           </div>
-          
           <div className="flex items-center justify-center mt-3">
-            <Button variant="ghost" disabled className="gap-2 text-muted-foreground/50 cursor-not-allowed">
+            <Button
+              variant="ghost"
+              onClick={() => setShowVoiceModal(true)}
+              className="gap-2 text-[#F5A623] hover:text-[#F5A623]/80 hover:bg-[#F5A623]/10"
+            >
               <Mic className="w-4 h-4" />
-              <span className="text-sm">Voice Mode (Pro)</span>
+              <span className="text-sm">Switch to Voice Mode</span>
             </Button>
           </div>
         </div>
@@ -875,7 +1148,6 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
 function SessionHistory({ userEmail }) {
   const [sessions, setSessions] = useState([])
   const [isLoading, setIsLoading] = useState(true)
-
   useEffect(() => {
     const fetchSessions = async () => {
       try {
@@ -890,7 +1162,6 @@ function SessionHistory({ userEmail }) {
     }
     fetchSessions()
   }, [userEmail])
-
   return (
     <div className="flex-1 p-8 overflow-auto">
       <div className="max-w-4xl mx-auto">
@@ -898,7 +1169,6 @@ function SessionHistory({ userEmail }) {
           <h1 className="text-2xl font-bold mb-2 text-white">Session History</h1>
           <p className="text-muted-foreground">Review your past practice sessions and track your progress.</p>
         </div>
-
         {isLoading ? (
           <div className="text-center py-12 text-muted-foreground">Loading sessions...</div>
         ) : sessions.length === 0 ? (
@@ -919,20 +1189,14 @@ function SessionHistory({ userEmail }) {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <Avatar className={`w-10 h-10 bg-gradient-to-br ${personaData?.color || 'from-gray-500 to-gray-600'}`}>
-                          <AvatarFallback className="text-sm font-bold text-white bg-transparent">
-                            {personaData?.avatar || '?'}
-                          </AvatarFallback>
+                          <AvatarFallback className="text-sm font-bold text-white bg-transparent">{personaData?.avatar || '?'}</AvatarFallback>
                         </Avatar>
                         <div>
                           <h3 className="font-semibold text-white">{personaData?.name || 'Unknown'}</h3>
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(session.createdAt).toLocaleDateString()}
-                          </p>
+                          <p className="text-xs text-muted-foreground">{new Date(session.createdAt).toLocaleDateString()}</p>
                         </div>
                       </div>
-                      <div className={`text-3xl font-black ${getScoreColor(session.finalScore || 50)}`}>
-                        {session.finalScore || 50}%
-                      </div>
+                      <div className={`text-3xl font-black ${getScoreColor(session.finalScore || 50)}`}>{session.finalScore || 50}%</div>
                     </div>
                   </CardContent>
                 </Card>
@@ -954,7 +1218,6 @@ function SettingsPanel({ userEmail, onLogout }) {
           <h1 className="text-2xl font-bold mb-2 text-white">Settings</h1>
           <p className="text-muted-foreground">Manage your account and preferences.</p>
         </div>
-
         <Card className="bg-[#0D0D1A] border border-border/50 mb-6">
           <CardHeader>
             <CardTitle className="text-lg text-white">Account</CardTitle>
@@ -965,9 +1228,7 @@ function SettingsPanel({ userEmail, onLogout }) {
               <p className="text-sm text-muted-foreground">{userEmail}</p>
             </div>
             <Separator className="bg-border/50" />
-            <Button variant="outline" onClick={onLogout} className="w-full">
-              Sign Out
-            </Button>
+            <Button variant="outline" onClick={onLogout} className="w-full">Sign Out</Button>
           </CardContent>
         </Card>
       </div>
@@ -982,7 +1243,6 @@ function RequestAccessModal({ email, onClose }) {
   const [message, setMessage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
-
   const handleSubmit = async (e) => {
     e.preventDefault()
     setIsSubmitting(true)
@@ -999,7 +1259,6 @@ function RequestAccessModal({ email, onClose }) {
       setIsSubmitting(false)
     }
   }
-
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <Card className="w-full max-w-md bg-[#0D0D1A] border border-border/50">
@@ -1039,8 +1298,8 @@ function RequestAccessModal({ email, onClose }) {
   )
 }
 
-// Main App
-export default function SimulatePage() {
+// Main App (inner, needs ConversationProvider above)
+function SimulatePageInner() {
   const { user: clerkUser } = useUser()
   const [selectedPersona, setSelectedPersona] = useState(null)
   const [scorecard, setScorecard] = useState(null)
@@ -1075,8 +1334,8 @@ export default function SimulatePage() {
 
   return (
     <div className="min-h-screen bg-[#0D0D1A] flex">
-      <AppSidebar 
-        activeTab={activeTab} 
+      <AppSidebar
+        activeTab={activeTab}
         onTabChange={(tab) => {
           setActiveTab(tab)
           if (tab === 'practice') {
@@ -1086,18 +1345,17 @@ export default function SimulatePage() {
         }}
         sessionsUsed={sessionsUsed}
       />
-
       <div className="flex-1 flex flex-col">
         {activeTab === 'practice' && (
           <>
             {scorecard ? (
-              <ResultsCard 
-                scorecard={scorecard} 
-                persona={selectedPersona} 
-                onTryAgain={() => { setSelectedPersona(null); setScorecard(null); setActiveTab('practice') }} 
+              <ResultsCard
+                scorecard={scorecard}
+                persona={selectedPersona}
+                onTryAgain={() => { setSelectedPersona(null); setScorecard(null); setActiveTab('practice') }}
               />
             ) : selectedPersona ? (
-              <ChatSimulator 
+              <ChatSimulator
                 persona={selectedPersona}
                 userEmail={userEmail}
                 onBack={() => setSelectedPersona(null)}
@@ -1109,19 +1367,22 @@ export default function SimulatePage() {
             )}
           </>
         )}
-
         {activeTab === 'history' && <SessionHistory userEmail={userEmail} />}
         {activeTab === 'settings' && <SettingsPanel userEmail={userEmail} onLogout={() => {}} />}
-
         <PrivacyFooter />
       </div>
-
       {showAccessModal && (
-        <RequestAccessModal 
-          email={userEmail} 
-          onClose={() => setShowAccessModal(false)} 
-        />
+        <RequestAccessModal email={userEmail} onClose={() => setShowAccessModal(false)} />
       )}
     </div>
+  )
+}
+
+// Wrap with ConversationProvider so useConversation works
+export default function SimulatePage() {
+  return (
+    <ConversationProvider>
+      <SimulatePageInner />
+    </ConversationProvider>
   )
 }
