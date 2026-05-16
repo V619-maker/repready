@@ -628,17 +628,22 @@ Evaluate the sales rep's performance and return JSON with:
       }
     }
 
-    // Save session - POST /api/sessions (stores in cookie for now)
+    // Save session - POST /api/sessions
     if (route === '/sessions' && method === 'POST') {
       try {
         const body = await request.json()
         const session = {
           id: uuidv4(),
-          ...body,
+          userEmail: body.userEmail || '',
+          orgId: body.orgId || null,
+          persona: body.persona || '',
+          finalScore: body.finalScore || 0,
+          verdict: body.scorecard?.verdict || '',
+          mode: body.mode || 'text',
           createdAt: new Date().toISOString()
         }
-        
-        // For now, just return success - sessions are tracked in localStorage on frontend
+        const db = await getDb()
+        await db.collection('sessions').insertOne(session)
         return handleCORS(NextResponse.json(session))
       } catch (error) {
         console.error('Save session error:', error)
@@ -651,28 +656,98 @@ Evaluate the sales rep's performance and return JSON with:
 
     // Get sessions by user - GET /api/sessions?email=xxx
     if (route === '/sessions' && method === 'GET') {
-      // Return empty array - sessions are stored in localStorage on frontend
-      return handleCORS(NextResponse.json([]))
+      try {
+        const url = new URL(request.url)
+        const email = url.searchParams.get('email')
+        if (!email) return handleCORS(NextResponse.json([]))
+        const db = await getDb()
+        const sessions = await db.collection('sessions')
+          .find({ userEmail: email })
+          .sort({ createdAt: -1 })
+          .limit(50)
+          .toArray()
+        return handleCORS(NextResponse.json(sessions))
+      } catch (error) {
+        console.error('Get sessions error:', error)
+        return handleCORS(NextResponse.json([]))
+      }
     }
 
-    // Route not found
-    return handleCORS(NextResponse.json(
-      { error: `Route ${route} not found` },
-      { status: 404 }
-    ))
+    // Delete sessions for a user - DELETE /api/sessions?email=xxx
+    if (route === '/sessions' && method === 'DELETE') {
+      try {
+        const url = new URL(request.url)
+        const email = url.searchParams.get('email')
+        if (!email) return handleCORS(NextResponse.json(
+          { error: "Email required" }, { status: 400 }
+        ))
+        const db = await getDb()
+        await db.collection('sessions').deleteMany({ userEmail: email })
+        return handleCORS(NextResponse.json({ success: true }))
+      } catch (error) {
+        return handleCORS(NextResponse.json(
+          { error: "Failed to delete sessions." }, { status: 500 }
+        ))
+      }
+    }
 
-  } catch (error) {
-    console.error('API Error:', error)
-    return handleCORS(NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    ))
-  }
-}
+    // Manager dashboard - GET /api/dashboard?orgId=xxx
+    if (route === '/dashboard' && method === 'GET') {
+      try {
+        const url = new URL(request.url)
+        const orgId = url.searchParams.get('orgId')
+        if (!orgId) return handleCORS(NextResponse.json(
+          { error: "orgId required" }, { status: 400 }
+        ))
+        const db = await getDb()
+        const sessions = await db.collection('sessions')
+          .find({ orgId: orgId })
+          .sort({ createdAt: -1 })
+          .toArray()
 
-// Export all HTTP methods
-export const GET = handleRoute
-export const POST = handleRoute
-export const PUT = handleRoute
-export const DELETE = handleRoute
-export const PATCH = handleRoute
+        const repMap = {}
+        for (const s of sessions) {
+          if (!repMap[s.userEmail]) {
+            repMap[s.userEmail] = {
+              userEmail: s.userEmail,
+              sessions: 0,
+              totalScore: 0,
+              lastSession: s.createdAt
+            }
+          }
+          repMap[s.userEmail].sessions++
+          repMap[s.userEmail].totalScore += s.finalScore || 0
+          if (s.createdAt > repMap[s.userEmail].lastSession) {
+            repMap[s.userEmail].lastSession = s.createdAt
+          }
+        }
+
+        const reps = Object.values(repMap).map(r => ({
+          ...r,
+          avgScore: r.sessions > 0 ? Math.round(r.totalScore / r.sessions) : 0
+        })).sort((a, b) => b.avgScore - a.avgScore)
+
+        return handleCORS(NextResponse.json({
+          orgId,
+          totalSessions: sessions.length,
+          avgScore: reps.length > 0
+            ? Math.round(reps.reduce((sum, r) => sum + r.avgScore, 0) / reps.length)
+            : 0,
+          totalReps: reps.length,
+          passingReps: reps.filter(r => r.avgScore >= 70).length,
+          reps,
+          recentSessions: sessions.slice(0, 10).map(s => ({
+            userEmail: s.userEmail,
+            persona: s.persona,
+            finalScore: s.finalScore,
+            mode: s.mode,
+            createdAt: s.createdAt
+          }))
+        }))
+      } catch (error) {
+        console.error('Dashboard error:', error)
+        return handleCORS(NextResponse.json(
+          { error: "Failed to load dashboard." }, { status: 500 }
+        ))
+      }
+    }
