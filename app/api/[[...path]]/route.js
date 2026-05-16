@@ -751,3 +751,24 @@ Evaluate the sales rep's performance and return JSON with:
         ))
       }
     }
+
+    // Route not found
+    return handleCORS(NextResponse.json(
+      { error: `Route ${route} not found` },
+      { status: 404 }
+    ))
+  } catch (error) {
+    console.error('API Error:', error)
+    return handleCORS(NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    ))
+  }
+}
+
+// Export all HTTP methods
+export const GET = handleRoute
+export const POST = handleRoute
+export const PUT = handleRoute
+export const DELETE = handleRoute
+export const PATCH = handleRoute
