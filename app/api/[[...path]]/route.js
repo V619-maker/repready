@@ -3,6 +3,16 @@ import { NextResponse } from 'next/server'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { generateObject } from 'ai'
 import { z } from 'zod'
+import { MongoClient } from 'mongodb'
+
+let cachedClient = null
+async function getDb() {
+  if (!cachedClient) {
+    cachedClient = new MongoClient(process.env.MONGO_URL)
+    await cachedClient.connect()
+  }
+  return cachedClient.db(process.env.DB_NAME || 'repready')
+}
 
 // Helper function to handle CORS
 function handleCORS(response) {
