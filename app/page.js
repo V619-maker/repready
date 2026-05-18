@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldCheck, ChevronRight, Target, Zap, Activity, Radio, BarChart3, BotMessageSquare, BrainCircuit, Fingerprint, Mail } from 'lucide-react';
+import { ChevronRight, Target, Zap, Activity, Radio, BarChart3, BotMessageSquare, BrainCircuit, Fingerprint, Mail } from 'lucide-react';
 
 const WORKFLOW_STEPS = [
   { id: '01', title: 'Adversary Init', desc: 'Configure AI buyer hostility and objection profile.', icon: Target },
@@ -26,32 +26,29 @@ export default function Home() {
   return (
     <div className="relative min-h-screen bg-[#0a0d14] selection:bg-cyan-900">
       
-      {/* BACKGROUND GRID */}
       <div className="fixed inset-0 opacity-[0.06] pointer-events-none z-0" 
            style={{ backgroundImage: 'linear-gradient(rgba(0,200,224,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(0,200,224,0.3) 1px, transparent 1px)', backgroundSize: '60px 60px' }} />
 
-      {/* HERO SECTION */}
       <section className="relative pt-40 pb-24 flex flex-col items-center text-center px-6 z-10">
-          <div className="inline-block mb-10 px-6 py-2 border border-cyan-500/40 bg-cyan-500/5 text-cyan-400 text-[11px] uppercase tracking-[0.4em] font-black">
-            B2B Sales Simulation Engine V1.0
-          </div>
-          
-          <h1 className="text-6xl md:text-[90px] font-black text-white tracking-tighter leading-[0.9] mb-10 uppercase italic">
-            Stop Practicing On <br/>
-            <span className="text-[#e84545]">Real Prospects.</span>
-          </h1>
+        <div className="inline-block mb-10 px-6 py-2 border border-cyan-500/40 bg-cyan-500/5 text-cyan-400 text-[11px] uppercase tracking-[0.4em] font-black">
+          B2B Sales Simulation Engine V1.0
+        </div>
+        
+        <h1 className="text-6xl md:text-[90px] font-black text-white tracking-tighter leading-[0.9] mb-10 uppercase italic">
+          Stop Practicing On <br/>
+          <span className="text-[#e84545]">Real Prospects.</span>
+        </h1>
 
-          <p className="text-lg text-slate-400 max-w-2xl mx-auto mb-16 font-mono leading-relaxed">
-            Run live, voice-to-voice negotiations with hostile AI buyers. Get instant telemetry, frame-control analysis, and ruthless feedback from the AI Coach.
-          </p>
+        <p className="text-lg text-slate-400 max-w-2xl mx-auto mb-16 font-mono leading-relaxed">
+          Run live, voice-to-voice negotiations with hostile AI buyers. Get instant telemetry, frame-control analysis, and ruthless feedback from the AI Coach.
+        </p>
 
-          <Link href="/simulate" className="group bg-cyan-500 text-black px-16 py-5 font-black uppercase text-sm tracking-[0.3em] hover:bg-cyan-400 transition-all flex items-center gap-4">
-            Start Free Trial
-            <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-          </Link>
+        <Link href="/deck" className="group bg-cyan-500 text-black px-16 py-5 font-black uppercase text-sm tracking-[0.3em] hover:bg-cyan-400 transition-all flex items-center gap-4">
+          Start Free Trial
+          <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+        </Link>
       </section>
 
-      {/* SYSTEM ARCHITECTURE SECTION */}
       <section className="py-32 bg-[#0d1117] border-y border-slate-800 relative z-10">
         <div className="max-w-6xl mx-auto px-6">
           <div className="grid lg:grid-cols-2 gap-20 items-start">
@@ -116,7 +113,7 @@ export default function Home() {
 
                   <div className="space-y-4 w-full">
                     <div className="text-3xl font-black text-white uppercase tracking-[0.2em] italic">
-                       {WORKFLOW_STEPS[activeStep].title}
+                      {WORKFLOW_STEPS[activeStep].title}
                     </div>
                     <div className="w-full h-px bg-slate-800 overflow-hidden max-w-[200px] mx-auto">
                       <motion.div 
@@ -127,7 +124,7 @@ export default function Home() {
                       />
                     </div>
                     <div className="text-slate-600 font-bold text-[10px] uppercase tracking-[0.5em]">
-                       Node // Sequence_{activeStep + 1}
+                      Node // Sequence_{activeStep + 1}
                     </div>
                   </div>
                 </motion.div>
@@ -137,7 +134,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* CORE FEATURES GRID */}
       <section className="py-32 bg-[#0a0d14] relative z-10">
         <div className="max-w-6xl mx-auto px-6">
           <div className="grid md:grid-cols-3 gap-8">
@@ -178,7 +174,7 @@ export default function Home() {
       </section>
 
       <footer className="py-16 text-center text-slate-700 text-[11px] uppercase tracking-[0.6em] font-black bg-[#0a0d14] border-t border-slate-900">
-         © 2026 RepReady Systems // Professional Grade
+        © 2026 RepReady Systems // Professional Grade
       </footer>
     </div>
   );
