@@ -89,7 +89,7 @@ useEffect(() => {
       <div style={S.content}>
 
         {/* Hero */}
-        <section className= "reveal-section"style ={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '80px 40px', position: 'relative', zIndex: 10 }}>
+       <section className="reveal-section" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '80px 40px', position: 'relative', zIndex: 10 }}>
           <div style={{ display: 'inline-block', marginBottom: 32, padding: '8px 24px', border: '1px solid rgba(0,200,224,0.4)', background: 'rgba(0,200,224,0.05)', color: '#00c8e0', fontSize: 11, letterSpacing: '0.4em', textTransform: 'uppercase', fontWeight: 900 }}>
             B2B Sales Simulation Engine V1.0
           </div>
