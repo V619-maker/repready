@@ -24,158 +24,200 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="relative min-h-screen bg-[#0a0d14] selection:bg-cyan-900">
-      
-      <div className="fixed inset-0 opacity-[0.06] pointer-events-none z-0" 
-           style={{ backgroundImage: 'linear-gradient(rgba(0,200,224,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(0,200,224,0.3) 1px, transparent 1px)', backgroundSize: '60px 60px' }} />
+    <div className="relative min-h-screen bg-[#0a0d14]" style={{ fontFamily: 'monospace' }}>
 
-      <section className="relative pt-40 pb-24 flex flex-col items-center text-center px-6 z-10">
-        <div className="inline-block mb-10 px-6 py-2 border border-cyan-500/40 bg-cyan-500/5 text-cyan-400 text-[11px] uppercase tracking-[0.4em] font-black">
-          B2B Sales Simulation Engine V1.0
-        </div>
-        
-        <h1 className="text-6xl md:text-[90px] font-black text-white tracking-tighter leading-[0.9] mb-10 uppercase italic">
-          Stop Practicing On <br/>
-          <span className="text-[#e84545]">Real Prospects.</span>
-        </h1>
+      {/* Grid background */}
+      <div className="fixed inset-0 opacity-[0.06] pointer-events-none z-0"
+        style={{ backgroundImage: 'linear-gradient(rgba(0,200,224,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(0,200,224,0.3) 1px, transparent 1px)', backgroundSize: '60px 60px' }} />
 
-        <p className="text-lg text-slate-400 max-w-2xl mx-auto mb-16 font-mono leading-relaxed">
-          Run live, voice-to-voice negotiations with hostile AI buyers. Get instant telemetry, frame-control analysis, and ruthless feedback from the AI Coach.
-        </p>
-
-        <Link href="/deck" className="group bg-cyan-500 text-black px-16 py-5 font-black uppercase text-sm tracking-[0.3em] hover:bg-cyan-400 transition-all flex items-center gap-4">
-          Start Free Trial
-          <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+      {/* Top nav */}
+      <nav style={{
+        position: 'fixed', top: 0, left: 0, right: 0, height: 64,
+        background: 'rgba(10,13,20,0.95)', borderBottom: '1px solid rgba(0,200,224,0.1)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '0 24px 0 130px', zIndex: 200, backdropFilter: 'blur(12px)'
+      }}>
+        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
+          <div style={{ width: 28, height: 28, border: '2px solid #00c8e0', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+            <span style={{ color: '#fff', fontWeight: 900, fontSize: 14 }}>R</span>
+            <div style={{ position: 'absolute', top: 2, right: 2, width: 5, height: 5, background: '#e84545', borderRadius: '50%' }} />
+          </div>
+          <span style={{ color: '#fff', fontWeight: 900, fontSize: 16, letterSpacing: '0.05em' }}>
+            REP<span style={{ color: '#00c8e0' }}>READY</span>
+          </span>
         </Link>
-      </section>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+          <Link href="/pricing" style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, textDecoration: 'none', letterSpacing: '0.2em', textTransform: 'uppercase', fontWeight: 700 }}>
+            Pricing
+          </Link>
+          <Link href="/sign-in" style={{ background: '#fff', color: '#000', padding: '8px 20px', fontSize: 11, fontWeight: 900, textDecoration: 'none', letterSpacing: '0.2em', textTransform: 'uppercase' }}>
+            Sign In
+          </Link>
+        </div>
+      </nav>
 
-      <section className="py-32 bg-[#0d1117] border-y border-slate-800 relative z-10">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="grid lg:grid-cols-2 gap-20 items-start">
-            
-            <div className="space-y-4">
-              <h2 className="text-cyan-400 text-sm font-black uppercase tracking-[0.5em] mb-12 border-l-4 border-cyan-500 pl-4 italic">
-                System Architecture
-              </h2>
-              
-              {WORKFLOW_STEPS.map((step, index) => (
-                <div 
-                  key={step.id}
-                  onClick={() => setActiveStep(index)}
-                  className={`p-8 border transition-all duration-500 group cursor-pointer relative overflow-hidden
-                    ${activeStep === index ? 'bg-cyan-500/5 border-cyan-500/50 translate-x-2' : 'bg-[#0a0d14] border-slate-800 hover:border-slate-600'}
-                  `}
-                >
-                  <div className="flex gap-8 items-center relative z-10">
-                    <div className={`text-5xl font-black italic transition-colors 
-                      ${activeStep === index ? 'text-cyan-400' : 'text-slate-700 group-hover:text-slate-500'}
-                    `}>
-                      {step.id}
+      {/* Left sidebar */}
+      <div style={{
+        position: 'fixed', left: 0, top: 0, bottom: 0, width: 100,
+        background: '#050505', borderRight: '1px solid rgba(0,200,224,0.1)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        paddingTop: 80, zIndex: 100, gap: 8
+      }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '12px 0', width: '100%' }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#00c8e0', boxShadow: '0 0 8px #00c8e0' }} />
+          <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Active</span>
+        </div>
+
+        <Link href="/deck" style={{ textDecoration: 'none', width: '100%' }}>
+          <div style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+            padding: '16px 0', width: '100%', borderLeft: '3px solid #00c8e0',
+            background: 'rgba(0,200,224,0.05)', cursor: 'pointer'
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00c8e0" strokeWidth="2">
+              <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
+              <rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
+            </svg>
+            <span style={{ color: '#00c8e0', fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 700 }}>Dash</span>
+          </div>
+        </Link>
+
+        <Link href="/coach" style={{ textDecoration: 'none', width: '100%' }}>
+          <div style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+            padding: '16px 0', width: '100%', cursor: 'pointer'
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 8v4l3 3" />
+            </svg>
+            <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase' }}>Coach</span>
+          </div>
+        </Link>
+      </div>
+
+      {/* Main content */}
+      <div style={{ paddingLeft: 100, paddingTop: 64 }}>
+
+        {/* Hero */}
+        <section style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '80px 40px', position: 'relative', zIndex: 10 }}>
+          <div style={{ display: 'inline-block', marginBottom: 32, padding: '8px 24px', border: '1px solid rgba(0,200,224,0.4)', background: 'rgba(0,200,224,0.05)', color: '#00c8e0', fontSize: 11, letterSpacing: '0.4em', textTransform: 'uppercase', fontWeight: 900 }}>
+            B2B Sales Simulation Engine V1.0
+          </div>
+
+          <h1 style={{ fontSize: 'clamp(48px, 8vw, 90px)', fontWeight: 900, color: '#fff', letterSpacing: '-0.03em', lineHeight: 0.9, marginBottom: 32, textTransform: 'uppercase', fontStyle: 'italic' }}>
+            Stop Practicing On<br />
+            <span style={{ color: '#e84545' }}>Real Prospects.</span>
+          </h1>
+
+          <p style={{ fontSize: 16, color: 'rgba(255,255,255,0.4)', maxWidth: 560, margin: '0 auto 48px', lineHeight: 1.8 }}>
+            Run live, voice-to-voice negotiations with hostile AI buyers. Get instant telemetry, frame-control analysis, and ruthless feedback from the AI Coach.
+          </p>
+
+          <Link href="/deck" style={{
+            display: 'inline-flex', alignItems: 'center', gap: 12,
+            background: '#00c8e0', color: '#000', padding: '18px 48px',
+            fontWeight: 900, fontSize: 13, letterSpacing: '0.3em', textTransform: 'uppercase',
+            textDecoration: 'none'
+          }}>
+            Start Free Trial
+            <ChevronRight size={16} />
+          </Link>
+        </section>
+
+        {/* System Architecture */}
+        <section style={{ padding: '80px 40px', background: '#0d1117', borderTop: '1px solid rgba(0,200,224,0.1)', borderBottom: '1px solid rgba(0,200,224,0.1)', position: 'relative', zIndex: 10 }}>
+          <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 60, alignItems: 'start' }}>
+              <div>
+                <h2 style={{ color: '#00c8e0', fontSize: 11, fontWeight: 900, letterSpacing: '0.5em', textTransform: 'uppercase', marginBottom: 40, borderLeft: '4px solid #00c8e0', paddingLeft: 16, fontStyle: 'italic' }}>
+                  System Architecture
+                </h2>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {WORKFLOW_STEPS.map((step, index) => (
+                    <div key={step.id} onClick={() => setActiveStep(index)}
+                      style={{
+                        padding: '24px', border: `1px solid ${activeStep === index ? 'rgba(0,200,224,0.5)' : 'rgba(255,255,255,0.05)'}`,
+                        background: activeStep === index ? 'rgba(0,200,224,0.05)' : '#0a0d14',
+                        cursor: 'pointer', transition: 'all 0.3s',
+                        transform: activeStep === index ? 'translateX(8px)' : 'none'
+                      }}>
+                      <div style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
+                        <span style={{ fontSize: 40, fontWeight: 900, fontStyle: 'italic', color: activeStep === index ? '#00c8e0' : 'rgba(255,255,255,0.1)' }}>{step.id}</span>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 900, color: activeStep === index ? '#fff' : 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>{step.title}</div>
+                          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>{step.desc}</div>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className={`text-lg font-black uppercase tracking-widest mb-2 italic transition-colors
-                        ${activeStep === index ? 'text-white' : 'text-slate-400'}
-                      `}>
-                        {step.title}
-                      </h3>
-                      <p className={`text-sm font-medium leading-relaxed transition-colors
-                        ${activeStep === index ? 'text-slate-400' : 'text-slate-600'}
-                      `}>
-                        {step.desc}
-                      </p>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ position: 'sticky', top: 100, aspectRatio: '1', background: '#0a0d14', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', inset: 0, opacity: 0.05, backgroundImage: 'linear-gradient(rgba(0,200,224,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(0,200,224,0.5) 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+                <AnimatePresence mode="wait">
+                  <motion.div key={activeStep}
+                    initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.1 }}
+                    transition={{ duration: 0.4 }}
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, padding: 40, textAlign: 'center', position: 'relative', zIndex: 1 }}>
+                    <div style={{ width: 100, height: 100, borderRadius: '50%', background: '#0d1117', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {activeStep === 0 && <Fingerprint size={48} color="#00c8e0" />}
+                      {activeStep === 1 && <Radio size={48} color="#00c8e0" />}
+                      {activeStep === 2 && <Zap size={48} color="#e84545" />}
+                      {activeStep === 3 && <BarChart3 size={48} color="#00c8e0" />}
+                      {activeStep === 4 && <BrainCircuit size={48} color="#00c8e0" />}
                     </div>
-                  </div>
+                    <div style={{ fontSize: 22, fontWeight: 900, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.2em', fontStyle: 'italic' }}>
+                      {WORKFLOW_STEPS[activeStep].title}
+                    </div>
+                    <div style={{ width: 120, height: 1, background: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
+                      <motion.div initial={{ width: 0 }} animate={{ width: '100%' }} transition={{ duration: 5, ease: 'linear' }} style={{ height: '100%', background: '#00c8e0' }} />
+                    </div>
+                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', letterSpacing: '0.4em', textTransform: 'uppercase' }}>
+                      Node // Sequence_{activeStep + 1}
+                    </div>
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Features */}
+        <section style={{ padding: '80px 40px', position: 'relative', zIndex: 10 }}>
+          <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24 }}>
+              {[
+                { icon: <Radio size={28} color="#00c8e0" />, title: 'Hostile Voice AI', desc: 'Ultra-low latency voice models trained to throw objections, break your frame, and test your BANT execution in real-time.' },
+                { icon: <Activity size={28} color="#00c8e0" />, title: 'Instant Telemetry', desc: 'The second you hang up, the system generates a 0-100 aggregate score, isolating your discovery, value articulation, and presence.' },
+                { icon: <BrainCircuit size={28} color="#00c8e0" />, title: 'Ruthless AI Coach', desc: 'Review your raw transcripts with an elite AI manager that quotes your exact mistakes and provides tactical fixes.' },
+              ].map((f, i) => (
+                <div key={i} style={{ padding: 32, border: '1px solid rgba(255,255,255,0.05)', background: '#0a0d14' }}>
+                  <div style={{ marginBottom: 20 }}>{f.icon}</div>
+                  <h3 style={{ color: '#fff', fontSize: 13, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12, fontStyle: 'italic' }}>{f.title}</h3>
+                  <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, lineHeight: 1.8 }}>{f.desc}</p>
                 </div>
               ))}
             </div>
 
-            <div className="lg:sticky lg:top-40 aspect-square bg-[#0a0d14] border border-slate-800 flex items-center justify-center relative overflow-hidden">
-              <div className="absolute inset-0 opacity-[0.05]" style={{ backgroundImage: 'linear-gradient(rgba(0,200,224,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(0,200,224,0.5) 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
-              
-              <AnimatePresence mode="wait">
-                <motion.div 
-                  key={activeStep}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 1.1 }}
-                  transition={{ duration: 0.4 }}
-                  className="flex flex-col items-center gap-10 relative z-10 p-12 text-center w-full"
-                >
-                  <div className="relative">
-                    <div className="w-32 h-32 flex items-center justify-center bg-slate-900 border border-slate-700 rounded-full">
-                      {activeStep === 0 && <Fingerprint className="w-16 h-16 text-cyan-400 animate-pulse" />}
-                      {activeStep === 1 && <Radio className="w-16 h-16 text-cyan-400 animate-bounce" />}
-                      {activeStep === 2 && <Zap className="w-16 h-16 text-[#e84545] animate-pulse" />}
-                      {activeStep === 3 && <BarChart3 className="w-16 h-16 text-cyan-400 animate-pulse" />}
-                      {activeStep === 4 && <BrainCircuit className="w-16 h-16 text-cyan-400 animate-pulse" />}
-                    </div>
-                  </div>
-
-                  <div className="space-y-4 w-full">
-                    <div className="text-3xl font-black text-white uppercase tracking-[0.2em] italic">
-                      {WORKFLOW_STEPS[activeStep].title}
-                    </div>
-                    <div className="w-full h-px bg-slate-800 overflow-hidden max-w-[200px] mx-auto">
-                      <motion.div 
-                        initial={{ width: 0 }}
-                        animate={{ width: "100%" }}
-                        transition={{ duration: 5, ease: "linear" }}
-                        className="h-full bg-cyan-500"
-                      />
-                    </div>
-                    <div className="text-slate-600 font-bold text-[10px] uppercase tracking-[0.5em]">
-                      Node // Sequence_{activeStep + 1}
-                    </div>
-                  </div>
-                </motion.div>
-              </AnimatePresence>
+            <div style={{ marginTop: 80, paddingTop: 60, borderTop: '1px solid rgba(255,255,255,0.05)', textAlign: 'center' }}>
+              <h2 style={{ color: '#fff', fontSize: 32, fontWeight: 900, textTransform: 'uppercase', fontStyle: 'italic', marginBottom: 16 }}>Need a Custom Deployment?</h2>
+              <p style={{ color: 'rgba(255,255,255,0.3)', maxWidth: 480, margin: '0 auto 40px', fontSize: 13, lineHeight: 1.8 }}>
+                Looking to train an entire revenue team or require custom hostile AI personas? Establish a direct link with our engineering team.
+              </p>
+              <a href="mailto:sales@repready.site" style={{ display: 'inline-flex', alignItems: 'center', gap: 12, padding: '16px 40px', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.4)', fontSize: 11, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.3em', textDecoration: 'none' }}>
+                <Mail size={14} />
+                Contact Support
+              </a>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section className="py-32 bg-[#0a0d14] relative z-10">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="grid md:grid-cols-3 gap-8">
-            <div className="p-10 border border-slate-800 hover:border-cyan-500/50 transition-colors group">
-              <Radio className="w-8 h-8 text-cyan-500 mb-8 group-hover:animate-pulse" />
-              <h3 className="text-xl font-black uppercase tracking-widest mb-4 italic text-white">Hostile Voice AI</h3>
-              <p className="text-slate-500 text-sm leading-relaxed font-medium">
-                Ultra-low latency voice models trained to throw objections, break your frame, and test your BANT execution in real-time.
-              </p>
-            </div>
-            <div className="p-10 border border-slate-800 hover:border-cyan-500/50 transition-colors group">
-              <Activity className="w-8 h-8 text-cyan-500 mb-8 group-hover:animate-pulse" />
-              <h3 className="text-xl font-black uppercase tracking-widest mb-4 italic text-white">Instant Telemetry</h3>
-              <p className="text-slate-500 text-sm leading-relaxed font-medium">
-                The second you hang up, the system generates a 0-100 aggregate score, isolating your discovery, value articulation, and presence.
-              </p>
-            </div>
-            <div className="p-10 border border-slate-800 hover:border-cyan-500/50 transition-colors group">
-              <BrainCircuit className="w-8 h-8 text-cyan-500 mb-8 group-hover:animate-pulse" />
-              <h3 className="text-xl font-black uppercase tracking-widest mb-4 italic text-white">Ruthless AI Coach</h3>
-              <p className="text-slate-500 text-sm leading-relaxed font-medium">
-                Review your raw transcripts side-by-side with an elite AI manager that quotes your exact mistakes and provides tactical fixes.
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-32 pt-20 border-t border-slate-900 text-center">
-            <h2 className="text-4xl font-black uppercase italic mb-6 tracking-tight text-white">Need a Custom Deployment?</h2>
-            <p className="text-slate-500 max-w-2xl mx-auto mb-12 font-medium">
-              Looking to train an entire revenue team or require custom hostile AI personas? Establish a direct link with our engineering team.
-            </p>
-            <a href="mailto:sales@repready.site" className="inline-flex items-center gap-4 px-12 py-5 border border-slate-700 font-black uppercase text-xs tracking-[0.3em] hover:border-cyan-500 hover:text-cyan-400 transition-all text-slate-400">
-              <Mail className="w-4 h-4" />
-              Contact Support
-            </a>
-          </div>
-        </div>
-      </section>
-
-      <footer className="py-16 text-center text-slate-700 text-[11px] uppercase tracking-[0.6em] font-black bg-[#0a0d14] border-t border-slate-900">
-        © 2026 RepReady Systems // Professional Grade
-      </footer>
+        <footer style={{ padding: '40px', textAlign: 'center', color: 'rgba(255,255,255,0.15)', fontSize: 11, letterSpacing: '0.4em', textTransform: 'uppercase', borderTop: '1px solid rgba(255,255,255,0.05)', position: 'relative', zIndex: 10 }}>
+          © 2026 RepReady Systems // Professional Grade
+        </footer>
+      </div>
     </div>
   );
 }
