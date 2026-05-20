@@ -28,7 +28,25 @@ export default function Home() {
     const timer = setInterval(() => setActiveStep(p => (p + 1) % WORKFLOW_STEPS.length), 5000);
     return () => clearInterval(timer);
   }, []);
-
+useEffect(() => {
+    const els = document.querySelectorAll('.reveal-section')
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          e.target.style.opacity = '1'
+          e.target.style.transform = 'translateY(0)'
+          obs.unobserve(e.target)
+        }
+      })
+    }, { threshold: 0.1 })
+    els.forEach(el => {
+      el.style.opacity = '0'
+      el.style.transform = 'translateY(24px)'
+      el.style.transition = 'opacity 0.6s ease, transform 0.6s ease'
+      obs.observe(el)
+    })
+    return () => obs.disconnect()
+  }, [])
   return (
     <div style={S.page}>
       <div style={S.grid} />
@@ -71,7 +89,7 @@ export default function Home() {
       <div style={S.content}>
 
         {/* Hero */}
-        <section style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '80px 40px', position: 'relative', zIndex: 10 }}>
+        <section style= className="reveal-section"{{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '80px 40px', position: 'relative', zIndex: 10 }}>
           <div style={{ display: 'inline-block', marginBottom: 32, padding: '8px 24px', border: '1px solid rgba(0,200,224,0.4)', background: 'rgba(0,200,224,0.05)', color: '#00c8e0', fontSize: 11, letterSpacing: '0.4em', textTransform: 'uppercase', fontWeight: 900 }}>
             B2B Sales Simulation Engine V1.0
           </div>
@@ -107,12 +125,51 @@ export default function Home() {
         </div>
 
         {/* Stats */}
-        <section style={{ padding: '80px 40px', position: 'relative', zIndex: 10 }}>
+        <section style=className="reveal-section"{{ padding: '80px 40px', position: 'relative', zIndex: 10 }}>
           <div style={{ maxWidth: 1000, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, background: 'rgba(0,200,224,0.1)' }}>
             {[
               { n: '1,200+', label: 'Simulations run' },
               { n: '2', label: 'Hostile AI buyer personas' },
               { n: '8', label: 'Coaching dimensions scored' },
+              {/* Built for */}
+<section style=className="reveal-section"{{ padding: '80px 40px', background: '#0d1117', borderTop: '1px solid rgba(255,255,255,0.05)', position: 'relative', zIndex: 10 }}>
+  <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+    <div style={{ textAlign: 'center', marginBottom: 60 }}>
+      <div style={{ color: '#00c8e0', fontSize: 10, fontWeight: 900, letterSpacing: '0.4em', textTransform: 'uppercase', marginBottom: 16 }}>Who it's for</div>
+      <h2 style={{ fontSize: 'clamp(28px, 4vw, 48px)', fontWeight: 900, color: '#fff', fontStyle: 'italic', textTransform: 'uppercase', letterSpacing: '-0.02em' }}>Built for every person<br />on your revenue team.</h2>
+    </div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, background: 'rgba(255,255,255,0.05)' }}>
+      {[
+        { role: 'SDRs', desc: 'Handle cold call objections before they cost you a meeting. Practice the first 60 seconds until it's automatic.' },
+        { role: 'AEs', desc: 'Sharpen discovery, price defense, and multi-stakeholder navigation. Win the deals you should already be closing.' },
+        { role: 'Sales Managers', desc: 'See exactly where each rep loses ground. Coach to specific objection patterns, not gut feel.' },
+        { role: 'VP Sales', desc: 'Ramp new hires faster. Reduce lost deals from poor preparation. Track team readiness with real data.' },
+      ].map((r, i) => (
+        <div key={i} style={{ background: '#0d1117', padding: '32px 24px' }}>
+          <div style={{ fontSize: 11, color: '#00c8e0', fontWeight: 900, letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 16, borderBottom: '1px solid rgba(0,200,224,0.2)', paddingBottom: 12 }}>{r.role}</div>
+          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', lineHeight: 1.8 }}>{r.desc}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+{/* Testimonial */}
+<section style=className="reveal-section"{{ padding: '80px 40px', position: 'relative', zIndex: 10 }}>
+  <div style={{ maxWidth: 700, margin: '0 auto', textAlign: 'center' }}>
+    <div style={{ fontSize: 40, color: '#00c8e0', lineHeight: 1, marginBottom: 24, opacity: 0.4 }}>"</div>
+    <p style={{ fontSize: 'clamp(18px, 2.5vw, 28px)', color: '#fff', fontStyle: 'italic', fontWeight: 700, lineHeight: 1.5, marginBottom: 32, letterSpacing: '-0.01em' }}>
+      Richard is more aggressive than any real CFO I've met. After 10 sessions I stopped flinching on price completely.
+    </p>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+      <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(0,200,224,0.1)', border: '1px solid rgba(0,200,224,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00c8e0', fontWeight: 900, fontSize: 14 }}>A</div>
+      <div style={{ textAlign: 'left' }}>
+        <div style={{ fontSize: 13, color: '#fff', fontWeight: 700 }}>AE, B2B SaaS</div>
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Early Access User</div>
+      </div>
+    </div>
+  </div>
+</section>
             ].map((s, i) => (
               <div key={i} style={{ background: '#0a0d14', padding: '48px 32px', textAlign: 'center' }}>
                 <div style={{ fontSize: 56, fontWeight: 900, color: '#00c8e0', fontStyle: 'italic', letterSpacing: '-0.03em', lineHeight: 1 }}>{s.n}</div>
@@ -123,7 +180,7 @@ export default function Home() {
         </section>
 
         {/* How it works */}
-        <section style={{ padding: '80px 40px', background: '#0d1117', borderTop: '1px solid rgba(255,255,255,0.05)', position: 'relative', zIndex: 10 }}>
+        <section style=className="reveal-section"{{ padding: '80px 40px', background: '#0d1117', borderTop: '1px solid rgba(255,255,255,0.05)', position: 'relative', zIndex: 10 }}>
           <div style={{ maxWidth: 1000, margin: '0 auto' }}>
             <div style={{ textAlign: 'center', marginBottom: 60 }}>
               <div style={{ color: '#00c8e0', fontSize: 10, fontWeight: 900, letterSpacing: '0.4em', textTransform: 'uppercase', marginBottom: 16 }}>How it works</div>
@@ -147,7 +204,7 @@ export default function Home() {
         </section>
 
         {/* Meet the buyers */}
-        <section style={{ padding: '80px 40px', position: 'relative', zIndex: 10 }}>
+        <section style=className="reveal-section"{{ padding: '80px 40px', position: 'relative', zIndex: 10 }}>
           <div style={{ maxWidth: 1000, margin: '0 auto' }}>
             <div style={{ textAlign: 'center', marginBottom: 60 }}>
               <div style={{ color: '#00c8e0', fontSize: 10, fontWeight: 900, letterSpacing: '0.4em', textTransform: 'uppercase', marginBottom: 16 }}>AI Buyer Personas</div>
@@ -193,7 +250,7 @@ export default function Home() {
         </section>
 
         {/* System Architecture */}
-        <section style={{ padding: '80px 40px', background: '#0d1117', borderTop: '1px solid rgba(0,200,224,0.1)', borderBottom: '1px solid rgba(0,200,224,0.1)', position: 'relative', zIndex: 10 }}>
+        <section style=className="reveal-section"{{ padding: '80px 40px', background: '#0d1117', borderTop: '1px solid rgba(0,200,224,0.1)', borderBottom: '1px solid rgba(0,200,224,0.1)', position: 'relative', zIndex: 10 }}>
           <div style={{ maxWidth: 1000, margin: '0 auto' }}>
             <div style={{ textAlign: 'center', marginBottom: 60 }}>
               <div style={{ color: '#00c8e0', fontSize: 10, fontWeight: 900, letterSpacing: '0.4em', textTransform: 'uppercase', marginBottom: 16 }}>Under the hood</div>
@@ -237,7 +294,7 @@ export default function Home() {
         </section>
 
         {/* Features */}
-        <section style={{ padding: '80px 40px', position: 'relative', zIndex: 10 }}>
+        <section style=className="reveal-section"{{ padding: '80px 40px', position: 'relative', zIndex: 10 }}>
           <div style={{ maxWidth: 1000, margin: '0 auto' }}>
             <div style={{ textAlign: 'center', marginBottom: 60 }}>
               <div style={{ color: '#00c8e0', fontSize: 10, fontWeight: 900, letterSpacing: '0.4em', textTransform: 'uppercase', marginBottom: 16 }}>Platform features</div>
@@ -260,7 +317,7 @@ export default function Home() {
         </section>
 
         {/* CTA Banner */}
-        <section style={{ padding: '100px 40px', background: '#050505', borderTop: '1px solid rgba(0,200,224,0.1)', textAlign: 'center', position: 'relative', zIndex: 10, overflow: 'hidden' }}>
+        <section style=className="reveal-section"{{ padding: '100px 40px', background: '#050505', borderTop: '1px solid rgba(0,200,224,0.1)', textAlign: 'center', position: 'relative', zIndex: 10, overflow: 'hidden' }}>
           <div style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(ellipse 60% 60% at 50% 50%, rgba(0,200,224,0.05) 0%, transparent 70%)', pointerEvents: 'none' }} />
           <div style={{ maxWidth: 700, margin: '0 auto', position: 'relative', zIndex: 1 }}>
             <h2 style={{ fontSize: 'clamp(28px, 4vw, 52px)', fontWeight: 900, color: '#fff', fontStyle: 'italic', textTransform: 'uppercase', letterSpacing: '-0.02em', marginBottom: 20, lineHeight: 1 }}>
