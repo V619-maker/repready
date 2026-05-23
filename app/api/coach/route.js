@@ -30,7 +30,7 @@ export async function POST(request) {
     return NextResponse.json({ error: "Missing messages or system" }, { status: 400 });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (!apiKey) {
     console.error("GEMINI_API_KEY is not set");
     return NextResponse.json({ error: "API key not configured" }, { status: 500 });
