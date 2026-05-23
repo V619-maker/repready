@@ -751,7 +751,180 @@ Evaluate the sales rep's performance and return JSON with:
         ))
       }
     }
+// Boardroom Review - POST /api/boardroom
+if (route === '/boardroom' && method === 'POST') {
+  try {
+    const body = await request.json()
+    const { transcript, persona } = body
 
+    if (!transcript || !persona) {
+      return handleCORS(NextResponse.json(
+        { error: "transcript and persona required" }, { status: 400 }
+      ))
+    }
+
+    if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+      return handleCORS(NextResponse.json(
+        { error: "API key not configured" }, { status: 500 }
+      ))
+    }
+
+    const google = createGoogleGenerativeAI({
+      apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+    })
+
+    const ProcurementSchema = z.object({
+      score: z.number().min(0).max(100).describe("Procurement score 0-100"),
+      reasoning: z.string().describe("2-3 sentences explaining the score"),
+      marginDefense: z.enum(['strong', 'moderate', 'weak']).describe("How well the rep defended margins"),
+      discountedEarly: z.boolean().describe("Did the rep offer discounts before establishing value"),
+    })
+
+    const EnablementSchema = z.object({
+      score: z.number().min(0).max(100).describe("Sales enablement score 0-100"),
+      reasoning: z.string().describe("2-3 sentences explaining the score"),
+      callControl: z.enum(['strong', 'moderate', 'weak']).describe("How well the rep controlled the call"),
+      usedDiscovery: z.boolean().describe("Did the rep use discovery questions before pitching"),
+    })
+
+    const ExecutiveSchema = z.object({
+      finalScore: z.number().min(0).max(100).describe("Weighted final score"),
+      grade: z.enum(['A', 'B', 'C', 'D', 'F']).describe("Letter grade"),
+      verdict: z.string().describe("One sentence executive verdict"),
+      whatYouDidRight: z.string().describe("One specific thing the rep did well — max 20 words"),
+      whatYouDidWrong: z.string().describe("One critical mistake — max 20 words"),
+      oneThingToFixNext: z.string().describe("One tactical fix for the next session — max 20 words"),
+    })
+
+    const personaContext = persona === 'richard'
+      ? 'VP Procurement at a logistics firm. CFO-mandated 15% cost reduction. Anchors on price, threatens vendor consolidation, demands Net-90 terms.'
+      : 'IT Director at a financial firm. Blocks on SOC 2, SAML/SSO, and bandwidth. Polite but always has a blocker.'
+
+    const PROCUREMENT_PROMPT = `You are an elite procurement analyst evaluating a B2B sales rep's performance.
+
+BUYER CONTEXT: ${personaContext}
+
+SCORING CRITERIA:
+
+HIGH SCORE signals (rep did these):
+- Postponed discount conversation until value was established
+- Traded concessions for value ("lower price if 24-month commitment")
+- Uncovered cost of delay ("how does stalling impact Q4 targets?")
+- Held firm on price when challenged without apologizing
+- Asked about budget structure before discussing numbers
+
+LOW SCORE signals (rep did these):
+- Dropped price immediately on first objection
+- Offered verbal discounts before understanding budget ("we can work something out")
+- Apologized for pricing or became defensive about cost
+- Agreed to demands without any counter-ask
+- Never established ROI before entering price discussion
+
+TRANSCRIPT:
+${transcript}
+
+Score strictly on margin defense only. Ignore tone, confidence, or rapport.`
+
+    const ENABLEMENT_PROMPT = `You are a senior sales enablement director evaluating call execution technique.
+
+BUYER CONTEXT: ${personaContext}
+
+SCORING CRITERIA — based on Challenger Sale and MEDDPICC frameworks:
+
+HIGH SCORE signals (rep did these):
+- Acknowledged and validated objections before responding ("It makes sense data residency is a concern")
+- Asked deep discovery questions to find root cause of objections
+- Maintained control of next steps instead of letting buyer end the call
+- Reframed the conversation from cost to business impact
+- Used silence and pauses effectively after making a point
+
+LOW SCORE signals (rep did these):
+- Became defensive or scripted when pushed back
+- Jumped straight to product features without understanding the real objection
+- Let the buyer set the agenda and control the call direction
+- Failed to uncover WHY an objection was raised
+- Responded to every objection with a feature pitch
+
+TRANSCRIPT:
+${transcript}
+
+Score strictly on technique and call structure. Ignore margin or pricing behavior.`
+
+    // Run both analyst agents in parallel
+    const [procurementResult, enablementResult] = await Promise.all([
+      generateObject({
+        model: google('gemini-2.5-flash'),
+        schema: ProcurementSchema,
+        system: PROCUREMENT_PROMPT,
+        prompt: `Evaluate this sales rep's margin defense and pricing discipline. Be strict and realistic.`,
+      }),
+      generateObject({
+        model: google('gemini-2.5-flash'),
+        schema: EnablementSchema,
+        system: ENABLEMENT_PROMPT,
+        prompt: `Evaluate this sales rep's call technique, discovery depth, and objection handling. Be strict and realistic.`,
+      }),
+    ])
+
+    const procScore = procurementResult.object.score
+    const enableScore = enablementResult.object.score
+    const weightedScore = Math.round((procScore * 0.6) + (enableScore * 0.4))
+
+    // Executive Summarizer — third agent ingests both outputs
+    const executiveResult = await generateObject({
+      model: google('gemini-2.5-flash'),
+      schema: ExecutiveSchema,
+      prompt: `You are an executive sales performance reviewer. Two specialist analysts have scored this rep.
+
+PROCUREMENT ANALYST SCORE: ${procScore}/100
+Procurement reasoning: ${procurementResult.object.reasoning}
+Margin defense: ${procurementResult.object.marginDefense}
+Discounted early: ${procurementResult.object.discountedEarly}
+
+SALES ENABLEMENT ANALYST SCORE: ${enableScore}/100  
+Enablement reasoning: ${enablementResult.object.reasoning}
+Call control: ${enablementResult.object.callControl}
+Used discovery: ${enablementResult.object.usedDiscovery}
+
+WEIGHTED FINAL SCORE (60% procurement, 40% enablement): ${weightedScore}/100
+
+Grade scale: A=90+, B=75-89, C=60-74, D=45-59, F=below 45
+
+Write a crisp executive summary. Each feedback field must be under 20 words. Be direct, not motivational. This is enterprise-grade feedback.`,
+    })
+
+    return handleCORS(NextResponse.json({
+      procurementScore: procScore,
+      enablementScore: enableScore,
+      finalScore: weightedScore,
+      grade: executiveResult.object.grade,
+      verdict: executiveResult.object.verdict,
+      whatYouDidRight: executiveResult.object.whatYouDidRight,
+      whatYouDidWrong: executiveResult.object.whatYouDidWrong,
+      oneThingToFixNext: executiveResult.object.oneThingToFixNext,
+      analysts: {
+        procurement: {
+          score: procScore,
+          reasoning: procurementResult.object.reasoning,
+          marginDefense: procurementResult.object.marginDefense,
+          discountedEarly: procurementResult.object.discountedEarly,
+        },
+        enablement: {
+          score: enableScore,
+          reasoning: enablementResult.object.reasoning,
+          callControl: enablementResult.object.callControl,
+          usedDiscovery: enablementResult.object.usedDiscovery,
+        }
+      }
+    }))
+
+  } catch (error) {
+    console.error('Boardroom error:', error)
+    return handleCORS(NextResponse.json(
+      { error: "Boardroom review failed." }, { status: 500 }
+    ))
+  }
+}
     // Route not found
     return handleCORS(NextResponse.json(
       { error: `Route ${route} not found` },
