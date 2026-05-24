@@ -107,7 +107,7 @@ function RepReadyDashboard() {
       });
 
       const data = await response.json()
-const cleanJson = data.text.replace(/```json|```/g, "").trim()
+const cleanJson = data.message.replace(/```json|```/g, "").trim()
       const scoreData = JSON.parse(cleanJson);
       
       const finalScore = cutOff ? Math.max(30, (scoreData.aggregate_score || 75) - 20) : (scoreData.aggregate_score || 75);
