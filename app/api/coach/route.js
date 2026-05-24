@@ -1,23 +1,8 @@
-// app/api/coach/route.js — Next.js route handler
-// Proxies Gemini API calls so GEMINI_API_KEY never touches the browser.
-
 import { NextResponse } from "next/server";
 
 const GEMINI_MODEL = "gemini-2.0-flash";
 
 export async function POST(request) {
-  const origin = request.headers.get("origin") || "";
-  const allowed = [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "https://repready.site",
-    "https://www.repready.site",
-    "https://repready.vercel.app",
-  ];
-  if (process.env.NODE_ENV === "production" && !allowed.includes(origin)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
   let body;
   try {
     body = await request.json();
@@ -26,14 +11,12 @@ export async function POST(request) {
   }
 
   const { messages, system, max_tokens = 300 } = body;
-
   if (!messages || !system) {
     return NextResponse.json({ error: "Missing messages or system" }, { status: 400 });
   }
 
   const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (!apiKey) {
-    console.error("GEMINI_API_KEY is not set");
     return NextResponse.json({ error: "API key not configured" }, { status: 500 });
   }
 
@@ -61,7 +44,7 @@ export async function POST(request) {
 
     const data = await response.json();
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    return NextResponse.json({ text });
+    return NextResponse.json({ message: text });
   } catch (err) {
     console.error("Coach API handler error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
