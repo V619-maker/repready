@@ -11,6 +11,7 @@ export async function POST(request) {
     "http://localhost:3000",
     "http://localhost:5173",
     "https://repready.site",
+    "https://www.repready.site",
     "https://repready.vercel.app",
   ];
   if (process.env.NODE_ENV === "production" && !allowed.includes(origin)) {
