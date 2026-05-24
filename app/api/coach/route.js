@@ -10,15 +10,31 @@ export async function POST(request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { messages, system, max_tokens = 300 } = body;
-  if (!messages || !system) {
-    return NextResponse.json({ error: "Missing messages or system" }, { status: 400 });
+  const { transcript } = body;
+  if (!transcript) {
+    return NextResponse.json({ error: "Missing transcript" }, { status: 400 });
   }
 
   const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "API key not configured" }, { status: 500 });
   }
+
+  const systemPrompt = `You are an elite B2B sales coach. Analyze this negotiation transcript and return ONLY a valid JSON object with no markdown, no backticks, no explanation. Just raw JSON.
+
+Return exactly this structure:
+{
+  "aggregate_score": <number 0-100>,
+  "strengths": ["<strength 1>", "<strength 2>"],
+  "weaknesses": ["<weakness 1>", "<weakness 2>"],
+  "actionable_advice": "<one specific tactical thing to do differently next time>"
+}
+
+Scoring guide:
+- 80-100: Rep held firm on price, used discovery, controlled the call
+- 60-79: Rep showed some skill but had gaps
+- 40-59: Rep made significant errors
+- Below 40: Rep capitulated on price or lost control entirely`;
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
 
@@ -27,11 +43,11 @@ export async function POST(request) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        system_instruction: { parts: [{ text: system }] },
-        contents: messages,
+        system_instruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ role: "user", parts: [{ text: transcript }] }],
         generationConfig: {
-          maxOutputTokens: max_tokens,
-          temperature: 0.7,
+          maxOutputTokens: 500,
+          temperature: 0.3,
         },
       }),
     });
@@ -45,6 +61,7 @@ export async function POST(request) {
     const data = await response.json();
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
     return NextResponse.json({ message: text });
+
   } catch (err) {
     console.error("Coach API handler error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
