@@ -684,7 +684,7 @@ function ScorecardLoading({ personaName }) {
 // Results Card
 function ResultsCard({ scorecard, persona, onTryAgain }) {
   const selectedPersona = PERSONAS[persona]
-  const verdictStyle = getVerdictStyle(scorecard.verdict)
+  const verdictStyle = getVerdictStyle(scorecard.verdict || '')
   const VerdictIcon = verdictStyle.icon
   return (
     <div className="flex-1 flex items-center justify-center p-6">
@@ -750,6 +750,29 @@ function ResultsCard({ scorecard, persona, onTryAgain }) {
               </div>
               <p className="text-sm text-muted-foreground italic">&ldquo;{scorecard.biggest_mistake}&rdquo;</p>
             </div>
+                  {scorecard.qualificationStatus && (
+  <div className="rounded-xl p-4 text-center border" style={{
+    background: `${scorecard.qualificationColor}15`,
+    borderColor: `${scorecard.qualificationColor}40`
+  }}>
+    <p className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Qualification Status</p>
+    <p className="text-lg font-bold mb-1" style={{ color: scorecard.qualificationColor }}>
+      {scorecard.qualificationStatus}
+    </p>
+    <p className="text-xs text-muted-foreground">{scorecard.qualificationDetail}</p>
+    {scorecard.hostilityReached && (
+      <div className="flex items-center justify-center gap-2 mt-3">
+        <div className="w-24 h-1.5 bg-muted rounded-full overflow-hidden">
+          <div className="h-full rounded-full" style={{
+            width: `${scorecard.hostilityReached}%`,
+            background: scorecard.qualificationColor
+          }} />
+        </div>
+        <span className="text-xs text-muted-foreground">{scorecard.hostilityReached}% hostility reached</span>
+      </div>
+    )}
+  </div>
+)}
             <Button onClick={onTryAgain} size="lg" className="w-full bg-[#E63946] hover:bg-[#E63946]/90 h-14 text-lg gap-2">
               <RotateCcw className="w-5 h-5" />Try Again →
             </Button>
@@ -886,30 +909,51 @@ function CoachingTipBar({ messageCount }) {
     </div>
   )
 }
-
+function getQualificationStatus(hostility, score) {
+  if (hostility < 50) return { status: 'Not Qualified', detail: 'Needs higher hostility pressure', color: '#888780' }
+  if (hostility >= 85 && score >= 70) return { status: 'Elite', detail: 'Ready for Fortune 500 procurement', color: '#F5A623' }
+  if (hostility >= 70 && score >= 70) return { status: 'Qualified', detail: 'Ready for live calls', color: '#22C55E' }
+  if (hostility >= 50 && score >= 70) return { status: 'In Progress', detail: 'Strong score, needs more pressure', color: '#6366F1' }
+  return { status: 'Not Qualified', detail: 'Score needs improvement under pressure', color: '#E63946' }
+}
 // Chat Simulator (text mode)
 function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUsed }) {
   const [messages, setMessages] = useState([])
-  const [inputValue, setInputValue] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const [currentScore, setCurrentScore] = useState(50)
-  const [previousScore, setPreviousScore] = useState(50)
-  const [scoreReason, setScoreReason] = useState('Deal starts at neutral — make your pitch.')
-  const [isEndingNegotiation, setIsEndingNegotiation] = useState(false)
-  const [sessionStarted, setSessionStarted] = useState(false)
-  const [showVoiceModal, setShowVoiceModal] = useState(false)
-  const scrollRef = useRef(null)
-  const selectedPersona = PERSONAS[persona]
+const [inputValue, setInputValue] = useState('')
+const [isLoading, setIsLoading] = useState(false)
+const [currentScore, setCurrentScore] = useState(50)
+const [previousScore, setPreviousScore] = useState(50)
+const [scoreReason, setScoreReason] = useState('Deal starts at neutral — make your pitch.')
+const [isEndingNegotiation, setIsEndingNegotiation] = useState(false)
+const [sessionStarted, setSessionStarted] = useState(false)
+const [showVoiceModal, setShowVoiceModal] = useState(false)
+const [currentHostility, setCurrentHostility] = useState(40)
+const [hostilityLabel, setHostilityLabel] = useState('Low')
+const [hostilityReached, setHostilityReached] = useState(40)
+const scrollRef = useRef(null)
+const selectedPersona = PERSONAS[persona]
 
-  useEffect(() => {
-    setMessages([{
-      role: 'assistant',
-      content: selectedPersona.firstMessage,
-      score: 50,
-      reason: 'Opening — they set the tone. Handle this carefully.'
-    }])
-    setScoreReason('Opening — they set the tone. Handle this carefully.')
-  }, [persona])
+ useEffect(() => {
+  setMessages([{
+    role: 'assistant',
+    content: selectedPersona.firstMessage,
+    score: 50,
+    reason: 'Opening — they set the tone. Handle this carefully.'
+  }])
+  setScoreReason('Opening — they set the tone. Handle this carefully.')
+  if (userEmail) {
+    fetch(`/api/benchmark?email=${encodeURIComponent(userEmail)}&persona=${persona}`)
+      .then(r => r.json())
+      .then(data => {
+        const start = data.startingHostility || 40
+        const label = data.hostilityLabel || 'Low'
+        setCurrentHostility(start)
+        setHostilityLabel(label)
+        setHostilityReached(start)
+      })
+      .catch(() => {})
+  }
+}, [persona])
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -932,24 +976,30 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
       const response = await fetch('/api/negotiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          persona,
-          messages: updatedMessages.map(m => ({ role: m.role, content: m.content }))
-        })
+       body: JSON.stringify({
+  persona,
+  messages: updatedMessages.map(m => ({ role: m.role, content: m.content })),
+  currentHostility
+})
       })
       if (!response.ok) throw new Error('Failed to get response')
       const data = await response.json()
-      if (data.message) {
-        setPreviousScore(currentScore)
-        if (typeof data.deal_health_score === 'number') setCurrentScore(data.deal_health_score)
-        if (data.score_reason) setScoreReason(data.score_reason)
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: data.message,
-          score: data.deal_health_score,
-          reason: data.score_reason
-        }])
-      }
+     if (data.message) {
+  setPreviousScore(currentScore)
+  if (typeof data.deal_health_score === 'number') setCurrentScore(data.deal_health_score)
+  if (data.score_reason) setScoreReason(data.score_reason)
+  if (typeof data.currentHostility === 'number') {
+    setCurrentHostility(data.currentHostility)
+    setHostilityLabel(data.hostilityLabel || hostilityLabel)
+    setHostilityReached(prev => Math.max(prev, data.currentHostility))
+  }
+  setMessages(prev => [...prev, {
+    role: 'assistant',
+    content: data.message,
+    score: data.deal_health_score,
+    reason: data.score_reason
+  }])
+}
     } catch (error) {
       console.error('Error:', error)
       setMessages(prev => [...prev, {
@@ -983,12 +1033,23 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
       const data = await response.json()
       await minLoadingTime
       if (data.final_score) {
-        await fetch('/api/sessions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userEmail, persona, messages, scorecard: data, finalScore: data.final_score })
-        })
-        onShowResults(data)
+        const qualification = getQualificationStatus(hostilityReached, data.final_score || currentScore)
+await fetch('/api/sessions', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    userEmail,
+    persona,
+    messages,
+    scorecard: data,
+    finalScore: data.final_score || currentScore,
+    verdict: data.verdict || '',
+    mode: 'text',
+    hostilityReached,
+    qualificationStatus: qualification.status
+  })
+})
+onShowResults({ ...data, hostilityReached, qualificationStatus: qualification.status, qualificationDetail: qualification.detail, qualificationColor: qualification.color })
       } else {
         onShowResults({
           final_score: currentScore,
@@ -1046,13 +1107,32 @@ function ChatSimulator({ persona, userEmail, onBack, onShowResults, onSessionUse
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <div className="text-right">
-              <div className="text-xs text-muted-foreground mb-1">Deal Health</div>
-              <div className="flex items-center gap-2">
-                <ScoreTrend currentScore={currentScore} previousScore={previousScore} />
-                <span className={`text-4xl font-black ${getScoreColor(currentScore)}`}>{currentScore}%</span>
-              </div>
-            </div>
+            <div className="flex items-center gap-6">
+  <div className="text-right">
+    <div className="text-xs text-muted-foreground mb-1">Hostility</div>
+    <div className="flex items-center gap-2">
+      <div className="w-20 h-1.5 bg-muted rounded-full overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-700"
+          style={{
+            width: `${currentHostility}%`,
+            background: currentHostility >= 85 ? '#E63946' : currentHostility >= 70 ? '#F5A623' : currentHostility >= 55 ? '#6366F1' : '#22C55E'
+          }}
+        />
+      </div>
+      <span className="text-xs font-bold" style={{
+        color: currentHostility >= 85 ? '#E63946' : currentHostility >= 70 ? '#F5A623' : currentHostility >= 55 ? '#6366F1' : '#22C55E'
+      }}>{hostilityLabel}</span>
+    </div>
+  </div>
+  <div className="text-right">
+    <div className="text-xs text-muted-foreground mb-1">Deal Health</div>
+    <div className="flex items-center gap-2">
+      <ScoreTrend currentScore={currentScore} previousScore={previousScore} />
+      <span className={`text-4xl font-black ${getScoreColor(currentScore)}`}>{currentScore}%</span>
+    </div>
+  </div>
+</div>
             <Button
               variant="destructive"
               size="sm"
