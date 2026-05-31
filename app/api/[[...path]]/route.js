@@ -124,7 +124,28 @@ const FALLBACK_RESPONSE = {
   deal_health_score: 50,
   score_reason: "Response parsing error — score held steady"
 }
+// Hostility calculation function
+function calculateNextHostility(currentHostility, dealHealthScore) {
+  let adjustment = 0
+  if (dealHealthScore >= 65) adjustment = 5
+  else if (dealHealthScore <= 35) adjustment = 0
+  else adjustment = 0
+  const next = currentHostility + adjustment
+  const clamped = Math.min(90, Math.max(40, next))
+  let label = 'Low'
+  if (clamped >= 85) label = 'Extreme'
+  else if (clamped >= 70) label = 'High'
+  else if (clamped >= 55) label = 'Medium'
+  return { hostility: clamped, hostilityLabel: label }
+}
 
+function getQualificationStatus(hostility, score) {
+  if (hostility < 50) return { status: 'Not Qualified', detail: 'Needs higher hostility pressure', color: 'gray' }
+  if (hostility >= 85 && score >= 70) return { status: 'Elite', detail: 'Ready for Fortune 500 procurement', color: 'gold' }
+  if (hostility >= 70 && score >= 70) return { status: 'Qualified', detail: 'Ready for live calls', color: 'green' }
+  if (hostility >= 50 && score >= 70) return { status: 'In Progress', detail: 'Strong score, needs more pressure', color: 'yellow' }
+  return { status: 'Not Qualified', detail: 'Score needs improvement under pressure', color: 'red' }
+}
 // Route handler function
 async function handleRoute(request, { params }) {
   const { path = [] } = params
@@ -210,7 +231,7 @@ async function handleRoute(request, { params }) {
     // Negotiate endpoint - POST /api/negotiate
     if (route === '/negotiate' && method === 'POST') {
       const body = await request.json()
-      const { persona, messages } = body
+     const { persona, messages, currentHostility = 40 } = body
 
       if (!persona || !PERSONAS[persona]) {
         return handleCORS(NextResponse.json(
@@ -227,7 +248,15 @@ async function handleRoute(request, { params }) {
       }
 
       const selectedPersona = PERSONAS[persona]
-      
+      const hostilityInstruction = currentHostility >= 85
+  ? `\n\nCURRENT HOSTILITY: EXTREME (${currentHostility}%). Be maximally aggressive. Cut them off. Threaten to end the call immediately. Show visible frustration.`
+  : currentHostility >= 70
+  ? `\n\nCURRENT HOSTILITY: HIGH (${currentHostility}%). Be very curt and challenging. Push back hard on everything. Show clear impatience.`
+  : currentHostility >= 55
+  ? `\n\nCURRENT HOSTILITY: MEDIUM (${currentHostility}%). Be professional but skeptical. Challenge weak points firmly.`
+  : `\n\nCURRENT HOSTILITY: LOW (${currentHostility}%). Be evaluating but not yet aggressive. Professional tone.`
+
+const dynamicSystemPrompt = selectedPersona.systemPrompt + hostilityInstruction
       try {
         // Verify API key exists
         if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
@@ -274,21 +303,30 @@ async function handleRoute(request, { params }) {
         console.log('[NEGOTIATE] Calling generateObject with gemini-2.5-flash...')
 
         // Using generateObject instead of streamObject for debugging
-        const result = await generateObject({
-          model: google('gemini-2.5-flash'),
-          schema: NegotiationResponseSchema,
-          system: selectedPersona.systemPrompt,
-          messages: messages.map(m => ({
-            role: m.role,
-            content: m.content
-          })),
-        })
+const result = await generateObject({
+  model: google('gemini-2.5-flash'),
+  schema: NegotiationResponseSchema,
+  system: dynamicSystemPrompt,
+  messages: messages.map(m => ({
+    role: m.role,
+    content: m.content
+  })),
+})
 
         console.log('[NEGOTIATE] generateObject succeeded')
         console.log('[NEGOTIATE] Response:', JSON.stringify(result.object))
 
         // Return the response directly (not streaming)
-        return handleCORS(NextResponse.json(result.object))
+        const nextHostilityData = calculateNextHostility(
+  currentHostility,
+  result.object.deal_health_score || 50
+)
+
+return handleCORS(NextResponse.json({
+  ...result.object,
+  currentHostility: nextHostilityData.hostility,
+  hostilityLabel: nextHostilityData.hostilityLabel
+}))
 
       } catch (apiError) {
         // Detailed error logging
@@ -633,15 +671,17 @@ Evaluate the sales rep's performance and return JSON with:
       try {
         const body = await request.json()
         const session = {
-          id: uuidv4(),
-          userEmail: body.userEmail || '',
-          orgId: body.orgId || null,
-          persona: body.persona || '',
-          finalScore: body.finalScore || 0,
-          verdict: body.scorecard?.verdict || '',
-          mode: body.mode || 'text',
-          createdAt: new Date().toISOString()
-        }
+  id: uuidv4(),
+  userEmail: body.userEmail || '',
+  orgId: body.orgId || null,
+  persona: body.persona || '',
+  finalScore: body.finalScore || 0,
+  verdict: body.scorecard?.verdict || body.verdict || '',
+  mode: body.mode || 'text',
+  hostilityReached: body.hostilityReached || null,
+  qualificationStatus: body.qualificationStatus || null,
+  createdAt: new Date().toISOString()
+}
         const db = await getDb()
         await db.collection('sessions').insertOne(session)
         return handleCORS(NextResponse.json(session))
@@ -736,14 +776,15 @@ Evaluate the sales rep's performance and return JSON with:
           totalReps: reps.length,
           passingReps: reps.filter(r => r.avgScore >= 70).length,
           reps,
-          recentSessions: sessions.slice(0, 10).map(s => ({
-            userEmail: s.userEmail,
-            persona: s.persona,
-            finalScore: s.finalScore,
-            mode: s.mode,
-            createdAt: s.createdAt
-          }))
-        }))
+         recentSessions: sessions.slice(0, 10).map(s => ({
+  userEmail: s.userEmail,
+  persona: s.persona,
+  finalScore: s.finalScore,
+  mode: s.mode,
+  createdAt: s.createdAt,
+  hostilityReached: s.hostilityReached || null,
+  qualificationStatus: s.qualificationStatus || null
+}))
       } catch (error) {
         console.error('Dashboard error:', error)
         return handleCORS(NextResponse.json(
@@ -923,6 +964,35 @@ Write a crisp executive summary. Each feedback field must be under 20 words. Be 
     return handleCORS(NextResponse.json(
       { error: "Boardroom review failed." }, { status: 500 }
     ))
+  }
+}
+    // GET /api/benchmark?email=xxx&persona=xxx
+if (route === '/benchmark' && method === 'GET') {
+  try {
+    const url = new URL(request.url)
+    const email = url.searchParams.get('email')
+    const persona = url.searchParams.get('persona')
+    if (!email) return handleCORS(NextResponse.json({ startingHostility: 40, hostilityLabel: 'Low' }))
+    const db = await getDb()
+    const query = { userEmail: email }
+    if (persona) query.persona = persona
+    const bestSession = await db.collection('sessions')
+      .find({ ...query, hostilityReached: { $exists: true, $ne: null } })
+      .sort({ hostilityReached: -1 })
+      .limit(1)
+      .toArray()
+    if (!bestSession.length || !bestSession[0].hostilityReached) {
+      return handleCORS(NextResponse.json({ startingHostility: 40, hostilityLabel: 'Low' }))
+    }
+    const nextStart = Math.min(90, bestSession[0].hostilityReached + 5)
+    let label = 'Low'
+    if (nextStart >= 85) label = 'Extreme'
+    else if (nextStart >= 70) label = 'High'
+    else if (nextStart >= 55) label = 'Medium'
+    return handleCORS(NextResponse.json({ startingHostility: nextStart, hostilityLabel: label }))
+  } catch (error) {
+    console.error('Benchmark error:', error)
+    return handleCORS(NextResponse.json({ startingHostility: 40, hostilityLabel: 'Low' }))
   }
 }
     // Route not found
