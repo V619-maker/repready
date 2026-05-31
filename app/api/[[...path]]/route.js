@@ -776,7 +776,7 @@ Evaluate the sales rep's performance and return JSON with:
           totalReps: reps.length,
           passingReps: reps.filter(r => r.avgScore >= 70).length,
           reps,
-         recentSessions: sessions.slice(0, 10).map(s => ({
+      recentSessions: sessions.slice(0, 10).map(s => ({
   userEmail: s.userEmail,
   persona: s.persona,
   finalScore: s.finalScore,
@@ -785,6 +785,7 @@ Evaluate the sales rep's performance and return JSON with:
   hostilityReached: s.hostilityReached || null,
   qualificationStatus: s.qualificationStatus || null
 }))
+        }))
       } catch (error) {
         console.error('Dashboard error:', error)
         return handleCORS(NextResponse.json(
