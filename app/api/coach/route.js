@@ -33,9 +33,9 @@ Scoring guide:
     system_instruction: { parts: [{ text: systemPrompt }] },
     contents: [{ role: "user", parts: [{ text: transcript }] }],
     generationConfig: {
-      maxOutputTokens: 500,
-      temperature: 0.3,
-    },
+  maxOutputTokens: 2000,
+  temperature: 0.3,
+},
   });
   try {
     let response;
