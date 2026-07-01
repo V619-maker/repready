@@ -2,24 +2,57 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { useUser } from '@clerk/nextjs';
 import { useConversation, ConversationProvider } from '@elevenlabs/react';
 
 const RICHARD_ID = "agent_8601kmk3maq9f9a9csym74aj7s4e";
 const SANDRA_ID = "agent_0301kmsnhr7tf11b62bvd7vsw9qq";
 const TRIAL_TIME_LIMIT = 90;
 
+const PERSONA_MAP = {
+  [RICHARD_ID]: 'richard',
+  [SANDRA_ID]: 'sandra'
+};
+
+function getHostilityLabel(percent) {
+  if (percent >= 90) return 'EXTREME';
+  if (percent >= 78) return 'HIGH';
+  if (percent >= 60) return 'MEDIUM';
+  return 'LOW';
+}
+
+function getNextHostility(currentPercent, score) {
+  if (score >= 70) {
+    const next = Math.min(90, currentPercent + 10);
+    return next;
+  }
+  return currentPercent;
+}
+
+function getQualificationStatus(hostilityPercent, score) {
+  if (hostilityPercent >= 90 && score >= 70) return 'Elite';
+  if (hostilityPercent >= 78 && score >= 70) return 'Qualified';
+  if (hostilityPercent >= 60 && score >= 70) return 'Developing';
+  if (score >= 70) return 'Getting Started';
+  return 'Not Qualified';
+}
+
 function RepReadyDashboard() {
+  const { user, isLoaded } = useUser();
+  const userEmail = user?.primaryEmailAddress?.emailAddress || '';
+
   const [activeAgent, setActiveAgent] = useState(null);
   const [showAudit, setShowAudit] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false); 
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [timeLeft, setTimeLeft] = useState(TRIAL_TIME_LIMIT);
   const [cutOff, setCutOff] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [creditsDepleted, setCreditsDepleted] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState([]);
+  const [currentHostilityPercent, setCurrentHostilityPercent] = useState(40);
+  const [qualificationStatus, setQualificationStatus] = useState('');
   const transcriptRef = useRef([]);
 
-  // ── Hide the layout header on this full-screen page ──
   useEffect(() => {
     const header = document.querySelector('body > header');
     if (header) header.style.display = 'none';
@@ -37,7 +70,7 @@ function RepReadyDashboard() {
       }
     }
   });
-  
+
   const [recentScore, setRecentScore] = useState(0);
   const [bestScores, setBestScores] = useState({
     [RICHARD_ID]: null,
@@ -52,6 +85,24 @@ function RepReadyDashboard() {
       [SANDRA_ID]: savedSandra ? parseInt(savedSandra) : null
     });
   }, []);
+
+  // Fetch hostility benchmark when agent is selected and user is loaded
+  useEffect(() => {
+    if (!activeAgent || !userEmail) {
+      setCurrentHostilityPercent(40);
+      return;
+    }
+    const persona = PERSONA_MAP[activeAgent];
+    fetch(`/api/benchmark?email=${encodeURIComponent(userEmail)}&persona=${persona}`)
+      .then(r => r.json())
+      .then(data => {
+        const level = data.startingHostility || 40;
+        setCurrentHostilityPercent(level);
+      })
+      .catch(() => {
+        setCurrentHostilityPercent(40);
+      });
+  }, [activeAgent, userEmail]);
 
   useEffect(() => {
     let interval;
@@ -73,16 +124,26 @@ function RepReadyDashboard() {
 
     try {
       const creditCheck = await fetch('/api/deduct-credit', { method: 'POST' });
-      
+
       if (!creditCheck.ok) {
         setCreditsDepleted(true);
         setIsVerifying(false);
         return;
       }
 
-      setTimeLeft(TRIAL_TIME_LIMIT); 
+      setTimeLeft(TRIAL_TIME_LIMIT);
       setCutOff(false);
-      await conversation.startSession({ agentId: activeAgent, connectionType: "webrtc" });
+
+      const hostilityLabel = getHostilityLabel(currentHostilityPercent);
+      const hostilityString = `${hostilityLabel} (${currentHostilityPercent}%)`;
+
+      await conversation.startSession({
+        agentId: activeAgent,
+        connectionType: "webrtc",
+        dynamicVariables: {
+          hostility_level: hostilityString
+        }
+      });
     } catch (error) {
       console.error("Failed to start voice connection:", error);
     }
@@ -91,14 +152,16 @@ function RepReadyDashboard() {
 
   const handleEndCall = async () => {
     await conversation.endSession();
-    handleTerminate(); 
+    handleTerminate();
   };
 
-const handleTerminate = async () => {
+  const handleTerminate = async () => {
     setIsAnalyzing(true);
     const wasCutOff = cutOff;
     const currentAgent = activeAgent;
+    const hostilityAtSession = currentHostilityPercent;
     const minLoadingTime = new Promise(resolve => setTimeout(resolve, 2000));
+
     try {
       const realTranscript = transcriptRef.current.join('\n\n');
       const finalTranscript = realTranscript.trim() ? realTranscript : "No words were spoken during the simulation.";
@@ -121,6 +184,10 @@ const handleTerminate = async () => {
 
       setRecentScore(finalScore);
 
+      const qualification = getQualificationStatus(hostilityAtSession, finalScore);
+      setQualificationStatus(qualification);
+
+      // Save to localStorage
       const currentBest = bestScores[currentAgent];
       if (!currentBest || finalScore > currentBest) {
         localStorage.setItem(`repready_best_${currentAgent}`, finalScore.toString());
@@ -128,6 +195,27 @@ const handleTerminate = async () => {
       }
       localStorage.setItem('repready_latest_debrief', cleanJson);
       localStorage.setItem('repready_latest_transcript', finalTranscript);
+
+      // Save to MongoDB if user is logged in
+      if (userEmail) {
+        const persona = PERSONA_MAP[currentAgent];
+        const nextHostility = getNextHostility(hostilityAtSession, finalScore);
+        await fetch('/api/sessions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userEmail,
+            persona,
+            finalScore,
+            verdict: scoreData.actionable_advice || '',
+            mode: 'voice',
+            hostilityReached: hostilityAtSession,
+            nextHostility,
+            qualificationStatus: qualification
+          })
+        });
+      }
+
       transcriptRef.current = [];
 
     } catch (error) {
@@ -145,6 +233,8 @@ const handleTerminate = async () => {
     const s = seconds % 60;
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
+
+  const hostilityLabel = getHostilityLabel(currentHostilityPercent);
 
   return (
     <div className="w-full min-h-screen bg-[#050505] text-zinc-300 font-mono p-10 relative">
@@ -209,7 +299,7 @@ const handleTerminate = async () => {
 
       {activeAgent && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 md:p-10 backdrop-blur-xl bg-black/95 font-mono text-cyan-400">
-          
+
           {creditsDepleted && (
             <div className="absolute inset-0 bg-[#050505]/95 backdrop-blur-md z-50 flex flex-col items-center justify-center p-10 border border-red-500/30">
               <h3 className="text-red-500 text-3xl font-bold uppercase italic tracking-tighter mb-2">CREDITS DEPLETED</h3>
@@ -222,8 +312,8 @@ const handleTerminate = async () => {
                     UPGRADE NOW
                   </button>
                 </a>
-                <button 
-                  onClick={() => { setCreditsDepleted(false); setActiveAgent(null); }} 
+                <button
+                  onClick={() => { setCreditsDepleted(false); setActiveAgent(null); }}
                   className="px-8 py-3 border border-white/10 text-zinc-400 font-bold uppercase tracking-[0.2em] text-[10px] hover:bg-white/5 hover:text-white transition-all"
                 >
                   RETURN TO DECK
@@ -252,12 +342,12 @@ const handleTerminate = async () => {
                 <div className="flex-1 flex items-center justify-center min-h-[250px] relative mt-4">
                   <div className="w-56 h-56 rounded-full border border-cyan-500/20 relative flex items-center justify-center">
                     <div className="w-40 h-40 rounded-full border border-cyan-500/40 relative">
-                       {conversation.status === 'connected' && (
-                          <div className="absolute inset-0 rounded-full border-t-2 border-cyan-400 animate-[spin_4s_linear_infinite] opacity-60"></div>
-                       )}
+                      {conversation.status === 'connected' && (
+                        <div className="absolute inset-0 rounded-full border-t-2 border-cyan-400 animate-[spin_4s_linear_infinite] opacity-60"></div>
+                      )}
                     </div>
                     <div className="w-20 h-20 rounded-full border border-cyan-500/60 flex items-center justify-center">
-                       <div className={`w-3 h-3 rounded-full ${conversation.status === 'connected' ? 'bg-cyan-400 animate-ping' : 'bg-cyan-800'}`}></div>
+                      <div className={`w-3 h-3 rounded-full ${conversation.status === 'connected' ? 'bg-cyan-400 animate-ping' : 'bg-cyan-800'}`}></div>
                     </div>
                     <div className="absolute inset-0 flex items-center justify-center opacity-30 pointer-events-none">
                       <div className="w-full h-[1px] bg-cyan-500"></div>
@@ -278,11 +368,15 @@ const handleTerminate = async () => {
                 <div>
                   <div className="flex justify-between items-end mb-2">
                     <p className="text-[10px] uppercase tracking-[0.2em] opacity-60 font-bold">Sentiment Analysis</p>
-                    <p className="text-[10px] uppercase tracking-widest text-cyan-400 font-bold">78% HOSTILE</p>
+                    <p className="text-[10px] uppercase tracking-widest text-cyan-400 font-bold">{currentHostilityPercent}% HOSTILE</p>
                   </div>
                   <div className="w-full h-1.5 bg-cyan-950 border border-cyan-500/30 overflow-hidden">
-                    <div className="h-full bg-cyan-400 w-[78%]"></div>
+                    <div
+                      className="h-full bg-cyan-400 transition-all duration-1000"
+                      style={{ width: `${currentHostilityPercent}%` }}
+                    ></div>
                   </div>
+                  <p className="text-[9px] uppercase tracking-widest opacity-40 mt-1">{hostilityLabel} PRESSURE</p>
                 </div>
               </div>
 
@@ -302,9 +396,9 @@ const handleTerminate = async () => {
                     </div>
                   ))}
                   {conversation.status === 'connected' && !conversation.isSpeaking && (
-                     <div className="text-cyan-600 mt-6 leading-relaxed border-l-2 border-cyan-800/50 pl-4 text-xs">
-                       <div className="opacity-60 uppercase tracking-widest animate-pulse">&gt; ANALYZING BEST RESPONSE...</div>
-                     </div>
+                    <div className="text-cyan-600 mt-6 leading-relaxed border-l-2 border-cyan-800/50 pl-4 text-xs">
+                      <div className="opacity-60 uppercase tracking-widest animate-pulse">&gt; ANALYZING BEST RESPONSE...</div>
+                    </div>
                   )}
                   {isAnalyzing && (
                     <div className="text-cyan-400 animate-pulse mt-6 uppercase tracking-widest font-bold">
@@ -321,28 +415,28 @@ const handleTerminate = async () => {
 
             <div className="flex justify-between items-center p-6 border-t border-cyan-500/30 bg-cyan-950/10">
               <div className="flex gap-4">
-                 {conversation.status !== 'connected' ? (
-                   <button
-                     onClick={handleStartCall}
-                     disabled={isVerifying || isAnalyzing}
-                     className="px-8 py-3 bg-cyan-400/10 border border-cyan-400 text-cyan-400 text-[10px] font-bold uppercase tracking-[0.2em] hover:bg-cyan-400 hover:text-black transition-all disabled:opacity-50"
-                   >
-                     {isVerifying ? 'VERIFYING...' : 'INITIATE LINK'}
-                   </button>
-                 ) : (
-                   <button className="px-6 py-2 border border-cyan-500/30 text-[10px] uppercase tracking-[0.2em] hover:bg-cyan-500/10 transition-colors opacity-50">MUTE COMMS</button>
-                 )}
+                {conversation.status !== 'connected' ? (
+                  <button
+                    onClick={handleStartCall}
+                    disabled={isVerifying || isAnalyzing}
+                    className="px-8 py-3 bg-cyan-400/10 border border-cyan-400 text-cyan-400 text-[10px] font-bold uppercase tracking-[0.2em] hover:bg-cyan-400 hover:text-black transition-all disabled:opacity-50"
+                  >
+                    {isVerifying ? 'VERIFYING...' : 'INITIATE LINK'}
+                  </button>
+                ) : (
+                  <button className="px-6 py-2 border border-cyan-500/30 text-[10px] uppercase tracking-[0.2em] hover:bg-cyan-500/10 transition-colors opacity-50">MUTE COMMS</button>
+                )}
               </div>
               {conversation.status === 'connected' ? (
-                <button 
-                  onClick={handleEndCall} 
+                <button
+                  onClick={handleEndCall}
                   className="px-8 py-3 border border-red-500/50 text-red-500 text-[10px] font-bold uppercase tracking-[0.2em] hover:bg-red-500/10 transition-colors"
                 >
                   TERMINATE CONNECTION
                 </button>
               ) : (
-                <button 
-                  onClick={() => setActiveAgent(null)} 
+                <button
+                  onClick={() => setActiveAgent(null)}
                   disabled={isAnalyzing}
                   className="px-6 py-3 border border-transparent text-cyan-500/50 text-[10px] uppercase tracking-[0.2em] hover:border-cyan-500/30 hover:bg-cyan-500/10 transition-all disabled:opacity-0"
                 >
@@ -363,7 +457,7 @@ const handleTerminate = async () => {
             <p className="text-zinc-500 text-[9px] mb-10 uppercase tracking-[0.4em]">
               {cutOff ? 'Upgrade to Pro for Unlimited Call Time' : 'Performance Telemetry Generated'}
             </p>
-            <div className="bg-[#0a0a0a] border border-white/5 p-8 mb-10">
+            <div className="bg-[#0a0a0a] border border-white/5 p-8 mb-6">
               <p className="text-zinc-500 text-[10px] uppercase mb-2 tracking-widest">Aggregate Score</p>
               <p className={`text-7xl font-bold italic tracking-tighter ${cutOff ? 'text-red-500' : 'text-[#22D3EE]'}`}>
                 {recentScore}
@@ -372,14 +466,21 @@ const handleTerminate = async () => {
                 <p className="text-green-400 text-[9px] uppercase tracking-widest mt-4 animate-pulse">New Personal Best!</p>
               )}
             </div>
+            {qualificationStatus && (
+              <div className="mb-6 border border-cyan-500/20 p-4 bg-cyan-950/10">
+                <p className="text-zinc-500 text-[9px] uppercase tracking-widest mb-1">Qualification Status</p>
+                <p className="text-[#22D3EE] text-sm font-bold uppercase tracking-widest">{qualificationStatus}</p>
+                <p className="text-zinc-600 text-[9px] uppercase tracking-widest mt-1">{currentHostilityPercent}% Hostility Reached</p>
+              </div>
+            )}
             <div className="flex gap-4">
               <Link href="/coach" className="flex-1">
                 <button className={`w-full py-4 font-bold uppercase tracking-[0.2em] text-[10px] transition-all ${cutOff ? 'bg-red-500 text-white hover:bg-red-400' : 'bg-[#22D3EE] text-black hover:bg-white'}`}>
                   ANALYZE WITH COACH
                 </button>
               </Link>
-              <button 
-                onClick={() => setShowAudit(false)} 
+              <button
+                onClick={() => setShowAudit(false)}
                 className="flex-1 py-4 border border-white/10 text-white font-bold uppercase tracking-[0.2em] text-[10px] hover:bg-white/5 transition-all"
               >
                 RETURN TO DECK
