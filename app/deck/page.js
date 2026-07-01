@@ -94,8 +94,11 @@ function RepReadyDashboard() {
     handleTerminate(); 
   };
 
-  const handleTerminate = async () => {
+const handleTerminate = async () => {
     setIsAnalyzing(true);
+    const wasCutOff = cutOff;
+    const currentAgent = activeAgent;
+    const minLoadingTime = new Promise(resolve => setTimeout(resolve, 2000));
     try {
       const realTranscript = transcriptRef.current.join('\n\n');
       const finalTranscript = realTranscript.trim() ? realTranscript : "No words were spoken during the simulation.";
@@ -103,30 +106,35 @@ function RepReadyDashboard() {
       const response = await fetch('/api/coach', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript: finalTranscript }) 
+        body: JSON.stringify({ transcript: finalTranscript })
       });
 
-      const data = await response.json()
-const cleanJson = data.message.replace(/```json|```/g, "").trim()
+      const data = await response.json();
+      console.log("[COACH RAW RESPONSE]", data);
+      const rawMessage = data.message || '';
+      const cleanJson = rawMessage.replace(/```json|```/g, '').trim();
       const scoreData = JSON.parse(cleanJson);
-      
-      const finalScore = cutOff ? Math.max(30, (scoreData.aggregate_score || 75) - 20) : (scoreData.aggregate_score || 75);
-      
+
+      const finalScore = wasCutOff
+        ? Math.max(30, (scoreData.aggregate_score || 75) - 20)
+        : (scoreData.aggregate_score || 75);
+
       setRecentScore(finalScore);
 
-      const currentBest = bestScores[activeAgent];
+      const currentBest = bestScores[currentAgent];
       if (!currentBest || finalScore > currentBest) {
-        localStorage.setItem(`repready_best_${activeAgent}`, finalScore.toString());
-        setBestScores(prev => ({ ...prev, [activeAgent]: finalScore }));
+        localStorage.setItem(`repready_best_${currentAgent}`, finalScore.toString());
+        setBestScores(prev => ({ ...prev, [currentAgent]: finalScore }));
       }
       localStorage.setItem('repready_latest_debrief', cleanJson);
-      localStorage.setItem('repready_latest_transcript', finalTranscript); 
+      localStorage.setItem('repready_latest_transcript', finalTranscript);
       transcriptRef.current = [];
-      
+
     } catch (error) {
       console.error("Scoring Error:", error);
-      setRecentScore(60); 
+      setRecentScore(60);
     }
+    await minLoadingTime;
     setIsAnalyzing(false);
     setActiveAgent(null);
     setShowAudit(true);
