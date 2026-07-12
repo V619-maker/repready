@@ -14,17 +14,24 @@ export default function CoachDashboard() {
 
     if (savedDebrief) {
       try {
-        setDebrief(JSON.parse(savedDebrief));
+        const parsed = JSON.parse(savedDebrief);
+        setDebrief(parsed);
       } catch (e) {
         console.error("Failed to parse debrief telemetry");
+        setDebrief(null);
       }
+    } else {
+      setDebrief(null);
     }
+
     if (savedTranscript) {
       setTranscript(savedTranscript);
+    } else {
+      setTranscript('');
     }
+    
     setIsLoading(false);
-  }, []);
-
+  }, [typeof window !== 'undefined' ? window.location.href : '']);
   if (isLoading) {
     return <div className="min-h-screen bg-[#050505] text-[#22D3EE] flex items-center justify-center font-mono text-sm tracking-widest animate-pulse uppercase">Retrieving Telemetry...</div>;
   }
