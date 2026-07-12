@@ -8,8 +8,9 @@ import { MongoClient } from 'mongodb'
 let cachedClient = null
 async function getDb() {
   if (!cachedClient) {
-    cachedClient = new MongoClient(process.env.MONGO_URL)
-    await cachedClient.connect()
+    const client = new MongoClient(process.env.MONGO_URL)
+    await client.connect()
+    cachedClient = client
   }
   return cachedClient.db(process.env.DB_NAME || 'repready')
 }
