@@ -795,6 +795,8 @@ Evaluate the sales rep's performance and return JSON with:
     }
 // Boardroom Review - POST /api/boardroom
 if (route === '/boardroom' && method === 'POST') {
+  // Boardroom Review - POST /api/boardroom
+if (route === '/boardroom' && method === 'POST') {
   try {
     const body = await request.json()
     const { transcript, persona } = body
@@ -815,20 +817,66 @@ if (route === '/boardroom' && method === 'POST') {
       apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
     })
 
-    const ProcurementSchema = z.object({
-      score: z.number().min(0).max(100).describe("Procurement score 0-100"),
-      reasoning: z.string().describe("2-3 sentences explaining the score"),
+    const personaContext = persona === 'richard'
+      ? 'VP Procurement at a logistics firm. CFO-mandated 15% cost reduction. Anchors on price, threatens vendor consolidation, demands Net-90 terms.'
+      : 'IT Director at a financial firm. Blocks on SOC 2, SAML/SSO, and bandwidth. Polite but always has a blocker.'
+
+    // CALL 1 — Combined analyst: procurement + enablement + 6 dimensions
+    const CombinedAnalystSchema = z.object({
+      procurementScore: z.number().min(0).max(100).describe("Procurement score 0-100 based on margin defense and price discipline"),
+      procurementReasoning: z.string().describe("2-3 sentences explaining the procurement score"),
       marginDefense: z.enum(['strong', 'moderate', 'weak']).describe("How well the rep defended margins"),
       discountedEarly: z.boolean().describe("Did the rep offer discounts before establishing value"),
-    })
-
-    const EnablementSchema = z.object({
-      score: z.number().min(0).max(100).describe("Sales enablement score 0-100"),
-      reasoning: z.string().describe("2-3 sentences explaining the score"),
+      enablementScore: z.number().min(0).max(100).describe("Sales enablement score 0-100 based on call technique"),
+      enablementReasoning: z.string().describe("2-3 sentences explaining the enablement score"),
       callControl: z.enum(['strong', 'moderate', 'weak']).describe("How well the rep controlled the call"),
       usedDiscovery: z.boolean().describe("Did the rep use discovery questions before pitching"),
+      dimensions: z.object({
+        discoveryQuality: z.number().min(0).max(100).describe("Did the rep ask the right questions before pitching. 0=no discovery at all, 100=excellent deep discovery"),
+        objectionHandling: z.number().min(0).max(100).describe("Did the rep validate objections before responding. 0=ignored objections, 100=acknowledged and reframed every objection"),
+        priceDefense: z.number().min(0).max(100).describe("Did the rep hold firm on price. 0=caved immediately, 100=held firm and traded value for concessions"),
+        smeKnowledge: z.number().min(0).max(100).describe("Did the rep demonstrate product and industry knowledge. 0=generic pitch, 100=specific credible expertise"),
+        communication: z.number().min(0).max(100).describe("Clarity, pacing, and active listening. 0=rambling and unclear, 100=crisp concise and listened actively"),
+        emotionalResilience: z.number().min(0).max(100).describe("Did the rep stay composed under pressure. 0=crumbled immediately, 100=stayed calm and confident throughout"),
+      }).describe("6-dimension skill scores"),
     })
 
+    const COMBINED_PROMPT = `You are an elite B2B sales performance analyst. Evaluate this sales rep across two dimensions simultaneously: procurement/margin defense AND sales enablement/technique. Also score them across 6 specific skill dimensions.
+
+BUYER CONTEXT: ${personaContext}
+
+PROCUREMENT SCORING — focus on:
+HIGH SCORE: Postponed discount conversation, traded concessions for value, held firm on price, asked about budget before discussing numbers, uncovered cost of delay
+LOW SCORE: Dropped price on first objection, offered verbal discounts before understanding budget, apologized for pricing, agreed to demands without counter-ask
+
+ENABLEMENT SCORING — focus on (Challenger Sale + MEDDPICC):
+HIGH SCORE: Acknowledged objections before responding, asked deep discovery questions, maintained control of next steps, reframed cost to business impact
+LOW SCORE: Became defensive when pushed back, jumped to features without understanding objection, let buyer control the call, responded to every objection with a feature pitch
+
+6 DIMENSION SCORING:
+- Discovery Quality: Did they ask specific questions about current pain, process, impact before pitching?
+- Objection Handling: Did they acknowledge, validate, then reframe each objection?
+- Price Defense: Did they hold their ground on price without apologizing or caving?
+- SME Knowledge: Did they demonstrate specific product and industry knowledge credibly?
+- Communication: Were they clear, concise, and actively listening or rambling and vague?
+- Emotional Resilience: Did they stay calm and confident when the buyer pushed hard?
+
+TRANSCRIPT:
+${transcript}
+
+Be strict and realistic. A rep who caves on price scores below 30 on priceDefense. A rep who never asks a discovery question scores below 20 on discoveryQuality. Do not be generous.`
+
+    const analystResult = await generateObject({
+      model: google('gemini-2.5-flash'),
+      schema: CombinedAnalystSchema,
+      system: COMBINED_PROMPT,
+      prompt: 'Evaluate this sales rep strictly and realistically across all dimensions.',
+    })
+
+    const analyst = analystResult.object
+    const weightedScore = Math.round((analyst.procurementScore * 0.6) + (analyst.enablementScore * 0.4))
+
+    // CALL 2 — Executive summarizer
     const ExecutiveSchema = z.object({
       finalScore: z.number().min(0).max(100).describe("Weighted final score"),
       grade: z.enum(['A', 'B', 'C', 'D', 'F']).describe("Letter grade"),
@@ -838,95 +886,28 @@ if (route === '/boardroom' && method === 'POST') {
       oneThingToFixNext: z.string().describe("One tactical fix for the next session — max 20 words"),
     })
 
-    const personaContext = persona === 'richard'
-      ? 'VP Procurement at a logistics firm. CFO-mandated 15% cost reduction. Anchors on price, threatens vendor consolidation, demands Net-90 terms.'
-      : 'IT Director at a financial firm. Blocks on SOC 2, SAML/SSO, and bandwidth. Polite but always has a blocker.'
-
-    const PROCUREMENT_PROMPT = `You are an elite procurement analyst evaluating a B2B sales rep's performance.
-
-BUYER CONTEXT: ${personaContext}
-
-SCORING CRITERIA:
-
-HIGH SCORE signals (rep did these):
-- Postponed discount conversation until value was established
-- Traded concessions for value ("lower price if 24-month commitment")
-- Uncovered cost of delay ("how does stalling impact Q4 targets?")
-- Held firm on price when challenged without apologizing
-- Asked about budget structure before discussing numbers
-
-LOW SCORE signals (rep did these):
-- Dropped price immediately on first objection
-- Offered verbal discounts before understanding budget ("we can work something out")
-- Apologized for pricing or became defensive about cost
-- Agreed to demands without any counter-ask
-- Never established ROI before entering price discussion
-
-TRANSCRIPT:
-${transcript}
-
-Score strictly on margin defense only. Ignore tone, confidence, or rapport.`
-
-    const ENABLEMENT_PROMPT = `You are a senior sales enablement director evaluating call execution technique.
-
-BUYER CONTEXT: ${personaContext}
-
-SCORING CRITERIA — based on Challenger Sale and MEDDPICC frameworks:
-
-HIGH SCORE signals (rep did these):
-- Acknowledged and validated objections before responding ("It makes sense data residency is a concern")
-- Asked deep discovery questions to find root cause of objections
-- Maintained control of next steps instead of letting buyer end the call
-- Reframed the conversation from cost to business impact
-- Used silence and pauses effectively after making a point
-
-LOW SCORE signals (rep did these):
-- Became defensive or scripted when pushed back
-- Jumped straight to product features without understanding the real objection
-- Let the buyer set the agenda and control the call direction
-- Failed to uncover WHY an objection was raised
-- Responded to every objection with a feature pitch
-
-TRANSCRIPT:
-${transcript}
-
-Score strictly on technique and call structure. Ignore margin or pricing behavior.`
-
-    // Run both analyst agents in parallel
-    const [procurementResult, enablementResult] = await Promise.all([
-      generateObject({
-        model: google('gemini-2.5-flash'),
-        schema: ProcurementSchema,
-        system: PROCUREMENT_PROMPT,
-        prompt: `Evaluate this sales rep's margin defense and pricing discipline. Be strict and realistic.`,
-      }),
-      generateObject({
-        model: google('gemini-2.5-flash'),
-        schema: EnablementSchema,
-        system: ENABLEMENT_PROMPT,
-        prompt: `Evaluate this sales rep's call technique, discovery depth, and objection handling. Be strict and realistic.`,
-      }),
-    ])
-
-    const procScore = procurementResult.object.score
-    const enableScore = enablementResult.object.score
-    const weightedScore = Math.round((procScore * 0.6) + (enableScore * 0.4))
-
-    // Executive Summarizer — third agent ingests both outputs
     const executiveResult = await generateObject({
       model: google('gemini-2.5-flash'),
       schema: ExecutiveSchema,
-      prompt: `You are an executive sales performance reviewer. Two specialist analysts have scored this rep.
+      prompt: `You are an executive sales performance reviewer. A combined analyst has scored this rep.
 
-PROCUREMENT ANALYST SCORE: ${procScore}/100
-Procurement reasoning: ${procurementResult.object.reasoning}
-Margin defense: ${procurementResult.object.marginDefense}
-Discounted early: ${procurementResult.object.discountedEarly}
+PROCUREMENT SCORE: ${analyst.procurementScore}/100
+Reasoning: ${analyst.procurementReasoning}
+Margin defense: ${analyst.marginDefense}
+Discounted early: ${analyst.discountedEarly}
 
-SALES ENABLEMENT ANALYST SCORE: ${enableScore}/100  
-Enablement reasoning: ${enablementResult.object.reasoning}
-Call control: ${enablementResult.object.callControl}
-Used discovery: ${enablementResult.object.usedDiscovery}
+ENABLEMENT SCORE: ${analyst.enablementScore}/100
+Reasoning: ${analyst.enablementReasoning}
+Call control: ${analyst.callControl}
+Used discovery: ${analyst.usedDiscovery}
+
+6 DIMENSION SCORES:
+- Discovery Quality: ${analyst.dimensions.discoveryQuality}/100
+- Objection Handling: ${analyst.dimensions.objectionHandling}/100
+- Price Defense: ${analyst.dimensions.priceDefense}/100
+- SME Knowledge: ${analyst.dimensions.smeKnowledge}/100
+- Communication: ${analyst.dimensions.communication}/100
+- Emotional Resilience: ${analyst.dimensions.emotionalResilience}/100
 
 WEIGHTED FINAL SCORE (60% procurement, 40% enablement): ${weightedScore}/100
 
@@ -936,26 +917,27 @@ Write a crisp executive summary. Each feedback field must be under 20 words. Be 
     })
 
     return handleCORS(NextResponse.json({
-      procurementScore: procScore,
-      enablementScore: enableScore,
+      procurementScore: analyst.procurementScore,
+      enablementScore: analyst.enablementScore,
       finalScore: weightedScore,
       grade: executiveResult.object.grade,
       verdict: executiveResult.object.verdict,
       whatYouDidRight: executiveResult.object.whatYouDidRight,
       whatYouDidWrong: executiveResult.object.whatYouDidWrong,
       oneThingToFixNext: executiveResult.object.oneThingToFixNext,
+      dimensions: analyst.dimensions,
       analysts: {
         procurement: {
-          score: procScore,
-          reasoning: procurementResult.object.reasoning,
-          marginDefense: procurementResult.object.marginDefense,
-          discountedEarly: procurementResult.object.discountedEarly,
+          score: analyst.procurementScore,
+          reasoning: analyst.procurementReasoning,
+          marginDefense: analyst.marginDefense,
+          discountedEarly: analyst.discountedEarly,
         },
         enablement: {
-          score: enableScore,
-          reasoning: enablementResult.object.reasoning,
-          callControl: enablementResult.object.callControl,
-          usedDiscovery: enablementResult.object.usedDiscovery,
+          score: analyst.enablementScore,
+          reasoning: analyst.enablementReasoning,
+          callControl: analyst.callControl,
+          usedDiscovery: analyst.usedDiscovery,
         }
       }
     }))
@@ -967,52 +949,3 @@ Write a crisp executive summary. Each feedback field must be under 20 words. Be 
     ))
   }
 }
-    // GET /api/benchmark?email=xxx&persona=xxx
-if (route === '/benchmark' && method === 'GET') {
-  try {
-    const url = new URL(request.url)
-    const email = url.searchParams.get('email')
-    const persona = url.searchParams.get('persona')
-    if (!email) return handleCORS(NextResponse.json({ startingHostility: 40, hostilityLabel: 'Low' }))
-    const db = await getDb()
-    const query = { userEmail: email }
-    if (persona) query.persona = persona
-    const bestSession = await db.collection('sessions')
-      .find({ ...query, hostilityReached: { $exists: true, $ne: null } })
-      .sort({ hostilityReached: -1 })
-      .limit(1)
-      .toArray()
-    if (!bestSession.length || !bestSession[0].hostilityReached) {
-      return handleCORS(NextResponse.json({ startingHostility: 40, hostilityLabel: 'Low' }))
-    }
-    const nextStart = Math.min(90, bestSession[0].hostilityReached + 5)
-    let label = 'Low'
-    if (nextStart >= 85) label = 'Extreme'
-    else if (nextStart >= 70) label = 'High'
-    else if (nextStart >= 55) label = 'Medium'
-    return handleCORS(NextResponse.json({ startingHostility: nextStart, hostilityLabel: label }))
-  } catch (error) {
-    console.error('Benchmark error:', error)
-    return handleCORS(NextResponse.json({ startingHostility: 40, hostilityLabel: 'Low' }))
-  }
-}
-    // Route not found
-    return handleCORS(NextResponse.json(
-      { error: `Route ${route} not found` },
-      { status: 404 }
-    ))
-  } catch (error) {
-    console.error('API Error:', error)
-    return handleCORS(NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    ))
-  }
-}
-
-// Export all HTTP methods
-export const GET = handleRoute
-export const POST = handleRoute
-export const PUT = handleRoute
-export const DELETE = handleRoute
-export const PATCH = handleRoute
