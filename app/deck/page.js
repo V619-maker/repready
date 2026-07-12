@@ -298,9 +298,14 @@ let boardroomEnablementScore = null;
       <div className="absolute inset-0 opacity-5 pointer-events-none" style={{ backgroundImage: 'linear-gradient(#22D3EE 1px, transparent 1px), linear-gradient(90deg, #22D3EE 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
 
       <div className="max-w-5xl mx-auto relative z-10">
-        <header className="mb-16">
-          <h1 className="text-5xl font-bold text-white uppercase italic tracking-tighter">SCENARIO DECK</h1>
-          <p className="text-[#22D3EE] text-[10px] uppercase tracking-[0.4em] mt-2">Telemetry Active // Select Target</p>
+        <header className="mb-16 flex items-start justify-between">
+          <div>
+            <h1 className="text-5xl font-bold text-white uppercase italic tracking-tighter">SCENARIO DECK</h1>
+            <p className="text-[#22D3EE] text-[10px] uppercase tracking-[0.4em] mt-2">Telemetry Active // Select Target</p>
+          </div>
+          <Link href="/my-stats" className="text-[10px] text-zinc-500 hover:text-[#22D3EE] uppercase tracking-widest transition-colors mt-2">
+            My Stats →
+          </Link>
         </header>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
