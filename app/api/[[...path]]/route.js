@@ -670,7 +670,7 @@ Evaluate the sales rep's performance and return JSON with:
     if (route === '/sessions' && method === 'POST') {
       try {
         const body = await request.json()
-        const session = {
+   const session = {
   id: uuidv4(),
   userEmail: body.userEmail || '',
   orgId: body.orgId || null,
@@ -679,7 +679,12 @@ Evaluate the sales rep's performance and return JSON with:
   verdict: body.scorecard?.verdict || body.verdict || '',
   mode: body.mode || 'text',
   hostilityReached: body.hostilityReached || null,
+  nextHostility: body.nextHostility || null,
   qualificationStatus: body.qualificationStatus || null,
+  grade: body.grade || null,
+  procurementScore: body.procurementScore || null,
+  enablementScore: body.enablementScore || null,
+  dimensions: body.dimensions || null,
   createdAt: new Date().toISOString()
 }
         const db = await getDb()
