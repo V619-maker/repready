@@ -51,6 +51,7 @@ function RepReadyDashboard() {
   const [liveTranscript, setLiveTranscript] = useState([]);
   const [currentHostilityPercent, setCurrentHostilityPercent] = useState(40);
   const [qualificationStatus, setQualificationStatus] = useState('');
+  const [scoringFailed, setScoringFailed] = useState(false);
   const transcriptRef = useRef([]);
 
   useEffect(() => {
@@ -86,7 +87,6 @@ function RepReadyDashboard() {
     });
   }, []);
 
-  // Fetch hostility benchmark when agent is selected and user is loaded
   useEffect(() => {
     if (!activeAgent || !userEmail) {
       setCurrentHostilityPercent(40);
@@ -157,71 +157,115 @@ function RepReadyDashboard() {
 
   const handleTerminate = async () => {
     setIsAnalyzing(true);
+    setScoringFailed(false);
     const wasCutOff = cutOff;
     const currentAgent = activeAgent;
     const hostilityAtSession = currentHostilityPercent;
     const minLoadingTime = new Promise(resolve => setTimeout(resolve, 2000));
 
+    let finalScore = 0;
+    let debriefSaved = false;
+
     try {
       const realTranscript = transcriptRef.current.join('\n\n');
       const finalTranscript = realTranscript.trim() ? realTranscript : "No words were spoken during the simulation.";
+      const persona = PERSONA_MAP[currentAgent];
 
-      const response = await fetch('/api/coach', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript: finalTranscript })
-      });
-
-      const data = await response.json();
-      console.log("[COACH RAW RESPONSE]", data);
-      const rawMessage = data.message || '';
-      const cleanJson = rawMessage.replace(/```json|```/g, '').trim();
-      const scoreData = JSON.parse(cleanJson);
-
-      const finalScore = wasCutOff
-        ? Math.max(30, (scoreData.aggregate_score || 75) - 20)
-        : (scoreData.aggregate_score || 75);
-
-      setRecentScore(finalScore);
-
-      const qualification = getQualificationStatus(hostilityAtSession, finalScore);
-      setQualificationStatus(qualification);
-
-      // Save to localStorage
-      const currentBest = bestScores[currentAgent];
-      if (!currentBest || finalScore > currentBest) {
-        localStorage.setItem(`repready_best_${currentAgent}`, finalScore.toString());
-        setBestScores(prev => ({ ...prev, [currentAgent]: finalScore }));
-      }
-      localStorage.setItem('repready_latest_debrief', cleanJson);
-      localStorage.setItem('repready_latest_transcript', finalTranscript);
-
-      // Save to MongoDB if user is logged in
-      if (userEmail) {
-        const persona = PERSONA_MAP[currentAgent];
-        const nextHostility = getNextHostility(hostilityAtSession, finalScore);
-        await fetch('/api/sessions', {
+      // Try boardroom first
+      try {
+        const boardroomResponse = await fetch('/api/boardroom', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userEmail,
-            persona,
-            finalScore,
-            verdict: scoreData.actionable_advice || '',
-            mode: 'voice',
-            hostilityReached: hostilityAtSession,
-            nextHostility,
-            qualificationStatus: qualification
-          })
+          body: JSON.stringify({ transcript: finalTranscript, persona })
         });
+
+        if (boardroomResponse.ok) {
+          const boardroomData = await boardroomResponse.json();
+          console.log("[BOARDROOM RESPONSE]", boardroomData);
+
+          if (boardroomData.finalScore) {
+            finalScore = wasCutOff
+              ? Math.max(30, boardroomData.finalScore - 20)
+              : boardroomData.finalScore;
+
+            localStorage.setItem('repready_latest_debrief', JSON.stringify(boardroomData));
+            localStorage.setItem('repready_debrief_type', 'boardroom');
+            localStorage.setItem('repready_latest_transcript', finalTranscript);
+            debriefSaved = true;
+          }
+        }
+      } catch (boardroomError) {
+        console.error("Boardroom failed, trying coach fallback:", boardroomError);
+      }
+
+      // Fallback to coach if boardroom failed
+      if (!debriefSaved) {
+        try {
+          const coachResponse = await fetch('/api/coach', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ transcript: finalTranscript })
+          });
+
+          if (coachResponse.ok) {
+            const coachData = await coachResponse.json();
+            const rawMessage = coachData.message || '';
+            const cleanJson = rawMessage.replace(/```json|```/g, '').trim();
+            const scoreData = JSON.parse(cleanJson);
+
+            finalScore = wasCutOff
+              ? Math.max(30, (scoreData.aggregate_score || 0) - 20)
+              : (scoreData.aggregate_score || 0);
+
+            localStorage.setItem('repready_latest_debrief', cleanJson);
+            localStorage.setItem('repready_debrief_type', 'coach');
+            localStorage.setItem('repready_latest_transcript', finalTranscript);
+            debriefSaved = true;
+          }
+        } catch (coachError) {
+          console.error("Coach fallback also failed:", coachError);
+        }
+      }
+
+      if (finalScore > 0) {
+        setRecentScore(finalScore);
+
+        const qualification = getQualificationStatus(hostilityAtSession, finalScore);
+        setQualificationStatus(qualification);
+
+        const currentBest = bestScores[currentAgent];
+        if (!currentBest || finalScore > currentBest) {
+          localStorage.setItem(`repready_best_${currentAgent}`, finalScore.toString());
+          setBestScores(prev => ({ ...prev, [currentAgent]: finalScore }));
+        }
+
+        if (userEmail) {
+          const nextHostility = getNextHostility(hostilityAtSession, finalScore);
+          await fetch('/api/sessions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userEmail,
+              persona,
+              finalScore,
+              mode: 'voice',
+              hostilityReached: hostilityAtSession,
+              nextHostility,
+              qualificationStatus: qualification
+            })
+          });
+        }
+      } else {
+        setScoringFailed(true);
       }
 
       transcriptRef.current = [];
 
     } catch (error) {
       console.error("Scoring Error:", error);
-      setRecentScore(60);
+      setScoringFailed(true);
     }
+
     await minLoadingTime;
     setIsAnalyzing(false);
     setActiveAgent(null);
@@ -460,13 +504,16 @@ function RepReadyDashboard() {
             <div className="bg-[#0a0a0a] border border-white/5 p-8 mb-6">
               <p className="text-zinc-500 text-[10px] uppercase mb-2 tracking-widest">Aggregate Score</p>
               <p className={`text-7xl font-bold italic tracking-tighter ${cutOff ? 'text-red-500' : 'text-[#22D3EE]'}`}>
-                {recentScore}
+                {recentScore > 0 ? recentScore : '—'}
               </p>
+              {scoringFailed && (
+                <p className="text-red-500 text-[9px] uppercase tracking-widest mt-4">Scoring failed — check connection and try again</p>
+              )}
               {recentScore >= (bestScores[activeAgent] || 0) && recentScore > 0 && !cutOff && (
                 <p className="text-green-400 text-[9px] uppercase tracking-widest mt-4 animate-pulse">New Personal Best!</p>
               )}
             </div>
-            {qualificationStatus && (
+            {qualificationStatus && recentScore > 0 && (
               <div className="mb-6 border border-cyan-500/20 p-4 bg-cyan-950/10">
                 <p className="text-zinc-500 text-[9px] uppercase tracking-widest mb-1">Qualification Status</p>
                 <p className="text-[#22D3EE] text-sm font-bold uppercase tracking-widest">{qualificationStatus}</p>
