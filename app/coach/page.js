@@ -3,19 +3,40 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 
+function DimensionBar({ label, score }) {
+  const color = score >= 70 ? '#22D3EE' : score >= 40 ? '#F5A623' : '#E63946'
+  return (
+    <div className="mb-3">
+      <div className="flex justify-between items-center mb-1">
+        <span className="text-[10px] uppercase tracking-widest text-zinc-500">{label}</span>
+        <span className="text-[10px] font-bold text-white">{score}</span>
+      </div>
+      <div className="w-full h-1 bg-white/5 overflow-hidden">
+        <div
+          className="h-full transition-all duration-700"
+          style={{ width: `${score}%`, background: color }}
+        />
+      </div>
+    </div>
+  )
+}
+
 export default function CoachDashboard() {
   const [debrief, setDebrief] = useState(null);
+  const [debriefType, setDebriefType] = useState('coach');
   const [transcript, setTranscript] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const savedDebrief = localStorage.getItem('repready_latest_debrief');
     const savedTranscript = localStorage.getItem('repready_latest_transcript');
+    const savedType = localStorage.getItem('repready_debrief_type') || 'coach';
 
     if (savedDebrief) {
       try {
         const parsed = JSON.parse(savedDebrief);
         setDebrief(parsed);
+        setDebriefType(savedType);
       } catch (e) {
         console.error("Failed to parse debrief telemetry");
         setDebrief(null);
@@ -29,9 +50,10 @@ export default function CoachDashboard() {
     } else {
       setTranscript('');
     }
-    
+
     setIsLoading(false);
   }, [typeof window !== 'undefined' ? window.location.href : '']);
+
   if (isLoading) {
     return <div className="min-h-screen bg-[#050505] text-[#22D3EE] flex items-center justify-center font-mono text-sm tracking-widest animate-pulse uppercase">Retrieving Telemetry...</div>;
   }
@@ -47,6 +69,8 @@ export default function CoachDashboard() {
       </div>
     );
   }
+
+  const isBoardroom = debriefType === 'boardroom';
 
   return (
     <div className="w-full min-h-screen bg-[#050505] text-zinc-300 font-mono p-4 md:p-10 relative">
@@ -66,54 +90,149 @@ export default function CoachDashboard() {
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Column: Scores & Feedback */}
           <div className="lg:col-span-2 space-y-8">
             {debrief && (
               <>
-                <div className="bg-[#0a0a0a] border border-white/5 p-8 flex items-center justify-between">
-                  <div>
-                    <p className="text-zinc-500 text-[10px] uppercase mb-1 tracking-widest">Aggregate Score</p>
-                    <p className="text-6xl font-bold italic tracking-tighter text-[#22D3EE]">
-                      {debrief.aggregate_score || "--"}
-                    </p>
+                {/* Score block */}
+                {isBoardroom ? (
+                  <div className="bg-[#0a0a0a] border border-white/5 p-8">
+                    <div className="flex items-center justify-between mb-6">
+                      <div>
+                        <p className="text-zinc-500 text-[10px] uppercase mb-1 tracking-widest">Final Score</p>
+                        <p className="text-6xl font-bold italic tracking-tighter text-[#22D3EE]">
+                          {debrief.finalScore || "--"}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-zinc-500 text-[10px] uppercase mb-1 tracking-widest">Grade</p>
+                        <p className={`text-6xl font-bold italic tracking-tighter ${
+                          debrief.grade === 'A' ? 'text-green-400' :
+                          debrief.grade === 'B' ? 'text-[#22D3EE]' :
+                          debrief.grade === 'C' ? 'text-[#F5A623]' :
+                          'text-red-500'
+                        }`}>{debrief.grade || "--"}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/5">
+                      <div>
+                        <p className="text-zinc-500 text-[10px] uppercase mb-1 tracking-widest">Procurement Score</p>
+                        <p className="text-2xl font-bold text-white">{debrief.procurementScore || "--"}<span className="text-xs text-zinc-500">/100</span></p>
+                        <p className="text-[9px] text-zinc-600 uppercase tracking-widest mt-1">Margin Defense</p>
+                      </div>
+                      <div>
+                        <p className="text-zinc-500 text-[10px] uppercase mb-1 tracking-widest">Enablement Score</p>
+                        <p className="text-2xl font-bold text-white">{debrief.enablementScore || "--"}<span className="text-xs text-zinc-500">/100</span></p>
+                        <p className="text-[9px] text-zinc-600 uppercase tracking-widest mt-1">Call Technique</p>
+                      </div>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-zinc-500 text-[10px] uppercase mb-1 tracking-widest">Simulation Status</p>
-                    <p className="text-white text-sm font-bold tracking-widest uppercase">TERMINATED</p>
+                ) : (
+                  <div className="bg-[#0a0a0a] border border-white/5 p-8 flex items-center justify-between">
+                    <div>
+                      <p className="text-zinc-500 text-[10px] uppercase mb-1 tracking-widest">Aggregate Score</p>
+                      <p className="text-6xl font-bold italic tracking-tighter text-[#22D3EE]">
+                        {debrief.aggregate_score || "--"}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-zinc-500 text-[10px] uppercase mb-1 tracking-widest">Simulation Status</p>
+                      <p className="text-white text-sm font-bold tracking-widest uppercase">TERMINATED</p>
+                    </div>
                   </div>
-                </div>
+                )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="border border-green-500/20 bg-green-950/5 p-6">
-                    <h3 className="text-green-400 text-[10px] font-bold uppercase tracking-[0.2em] mb-4">Strengths</h3>
-                    <ul className="space-y-3">
-                      {(debrief.strengths || ["Maintained professional tone."]).map((item, i) => (
-                        <li key={i} className="text-sm text-zinc-400 leading-relaxed border-l border-green-500/30 pl-3">{item}</li>
-                      ))}
-                    </ul>
+                {/* Executive verdict */}
+                {isBoardroom && debrief.verdict && (
+                  <div className="border border-white/10 bg-white/5 p-6">
+                    <h3 className="text-white text-[10px] font-bold uppercase tracking-[0.2em] mb-2">Executive Verdict</h3>
+                    <p className="text-sm text-zinc-300 leading-relaxed italic">"{debrief.verdict}"</p>
                   </div>
-                  
-                  <div className="border border-red-500/20 bg-red-950/5 p-6">
-                    <h3 className="text-red-400 text-[10px] font-bold uppercase tracking-[0.2em] mb-4">Critical Weaknesses</h3>
-                    <ul className="space-y-3">
-                      {(debrief.weaknesses || ["Failed to establish firm next steps."]).map((item, i) => (
-                        <li key={i} className="text-sm text-zinc-400 leading-relaxed border-l border-red-500/30 pl-3">{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
+                )}
 
+                {/* What you did right / wrong */}
+                {isBoardroom ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="border border-green-500/20 bg-green-950/5 p-6">
+                      <h3 className="text-green-400 text-[10px] font-bold uppercase tracking-[0.2em] mb-4">What You Did Right</h3>
+                      <p className="text-sm text-zinc-400 leading-relaxed border-l border-green-500/30 pl-3">
+                        {debrief.whatYouDidRight || "—"}
+                      </p>
+                    </div>
+                    <div className="border border-red-500/20 bg-red-950/5 p-6">
+                      <h3 className="text-red-400 text-[10px] font-bold uppercase tracking-[0.2em] mb-4">What You Did Wrong</h3>
+                      <p className="text-sm text-zinc-400 leading-relaxed border-l border-red-500/30 pl-3">
+                        {debrief.whatYouDidWrong || "—"}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="border border-green-500/20 bg-green-950/5 p-6">
+                      <h3 className="text-green-400 text-[10px] font-bold uppercase tracking-[0.2em] mb-4">Strengths</h3>
+                      <ul className="space-y-3">
+                        {(debrief.strengths || ["Maintained professional tone."]).map((item, i) => (
+                          <li key={i} className="text-sm text-zinc-400 leading-relaxed border-l border-green-500/30 pl-3">{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="border border-red-500/20 bg-red-950/5 p-6">
+                      <h3 className="text-red-400 text-[10px] font-bold uppercase tracking-[0.2em] mb-4">Critical Weaknesses</h3>
+                      <ul className="space-y-3">
+                        {(debrief.weaknesses || ["Failed to establish firm next steps."]).map((item, i) => (
+                          <li key={i} className="text-sm text-zinc-400 leading-relaxed border-l border-red-500/30 pl-3">{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+
+                {/* One thing to fix */}
                 <div className="border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-6">
-                  <h3 className="text-[#22D3EE] text-[10px] font-bold uppercase tracking-[0.2em] mb-4">Actionable Advice</h3>
+                  <h3 className="text-[#22D3EE] text-[10px] font-bold uppercase tracking-[0.2em] mb-4">
+                    {isBoardroom ? 'One Thing To Fix Next' : 'Actionable Advice'}
+                  </h3>
                   <p className="text-sm text-zinc-300 leading-relaxed">
-                    {debrief.actionable_advice || "Review the transcript to identify missed buying signals. Focus on tighter discovery questions in your next attempt."}
+                    {isBoardroom
+                      ? (debrief.oneThingToFixNext || "—")
+                      : (debrief.actionable_advice || "Review the transcript to identify missed buying signals.")}
                   </p>
                 </div>
+
+                {/* 6 Dimension Skill Matrix */}
+                {isBoardroom && debrief.dimensions && (
+                  <div className="border border-white/5 bg-[#0a0a0a] p-6">
+                    <h3 className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.2em] mb-6">Skill Matrix</h3>
+                    <DimensionBar label="Discovery Quality" score={debrief.dimensions.discoveryQuality} />
+                    <DimensionBar label="Objection Handling" score={debrief.dimensions.objectionHandling} />
+                    <DimensionBar label="Price Defense" score={debrief.dimensions.priceDefense} />
+                    <DimensionBar label="SME Knowledge" score={debrief.dimensions.smeKnowledge} />
+                    <DimensionBar label="Communication" score={debrief.dimensions.communication} />
+                    <DimensionBar label="Emotional Resilience" score={debrief.dimensions.emotionalResilience} />
+                  </div>
+                )}
+
+                {/* Analyst breakdown */}
+                {isBoardroom && debrief.analysts && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="border border-white/5 bg-[#0a0a0a] p-6">
+                      <h3 className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.2em] mb-4">Procurement Analysis</h3>
+                      <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">Margin Defense</p>
+                      <p className="text-xs text-white font-bold uppercase mb-3">{debrief.analysts.procurement.marginDefense}</p>
+                      <p className="text-xs text-zinc-500 leading-relaxed">{debrief.analysts.procurement.reasoning}</p>
+                    </div>
+                    <div className="border border-white/5 bg-[#0a0a0a] p-6">
+                      <h3 className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.2em] mb-4">Enablement Analysis</h3>
+                      <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">Call Control</p>
+                      <p className="text-xs text-white font-bold uppercase mb-3">{debrief.analysts.enablement.callControl}</p>
+                      <p className="text-xs text-zinc-500 leading-relaxed">{debrief.analysts.enablement.reasoning}</p>
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>
 
-          {/* Right Column: Raw Transcript */}
+          {/* Raw Transcript */}
           <div className="bg-[#020202] border border-white/5 p-6 flex flex-col h-[600px]">
             <h3 className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.2em] mb-6 border-b border-white/5 pb-4">Raw Comm Log</h3>
             <div className="flex-1 overflow-y-auto pr-4 space-y-4 text-xs">
