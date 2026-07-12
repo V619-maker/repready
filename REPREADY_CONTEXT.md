@@ -35,7 +35,7 @@
 | `CLERK_SECRET_KEY` | Clerk server-side auth |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk client-side auth |
 
-**Known issue:** `MONGO_URL` was misconfigured (named `Mongo` instead of `MONGO_URL`) — fixed July 13, 2026. If sessions are returning 500, check this variable name first.
+**Known issue (open):** `MONGO_URL` was renamed from `Mongo` to `MONGO_URL` in Vercel on July 13, 2026, but `/api/sessions` is still returning 500 — the rename alone did not fix it. A caching bug in `getDb()` was fixed July 13 (see Known Issues below) but the underlying connection failure still needs to be confirmed resolved via a live `/api/sessions` POST returning 200. Do not mark this resolved until then.
 
 ---
 
@@ -211,7 +211,7 @@ Takes combined scores → produces finalScore, grade, verdict, whatYouDidRight, 
 
 ## KNOWN ISSUES (fix these before adding new features)
 
-1. **MongoDB sessions not saving** — `/api/sessions` POST returning 500. Root cause: `MONGO_URL` env var misconfigured in Vercel. Fix: confirm `MONGO_URL` (not `Mongo`) is set correctly in repready project env vars and redeploy.
+1. **MongoDB sessions not saving (OPEN — env var rename alone did not fix it)** — `/api/sessions` POST still returning 500 as of July 13, 2026, even after `MONGO_URL` was renamed from `Mongo` and the project was redeployed. Fixed one confirmed contributing bug on July 13: `getDb()` in `app/api/[[...path]]/route.js` cached the `MongoClient` reference before `.connect()` succeeded, so a single failed connection attempt in a warm serverless instance would permanently break every subsequent request in that instance instead of retrying. That's fixed, but the *original* trigger for the connection failure is still unconfirmed — needs the actual Vercel function log for a `/api/sessions` 500 to pin down (likely candidates: Atlas Network Access list missing `0.0.0.0/0`, unencoded special characters in the Mongo password, or stray quotes/whitespace in the env var value). Do not close this out until `/api/sessions` POST returns 200 in production.
 
 2. **Richard says stage directions aloud** — `[impatient]`, `[skeptical]` etc. Root cause: Claude Sonnet 4.6 LLM in ElevenLabs generates stage directions. Fix: switch Richard's LLM to ElevenLabs-hosted model in ElevenLabs dashboard.
 
