@@ -795,8 +795,6 @@ Evaluate the sales rep's performance and return JSON with:
     }
 // Boardroom Review - POST /api/boardroom
 if (route === '/boardroom' && method === 'POST') {
-  // Boardroom Review - POST /api/boardroom
-if (route === '/boardroom' && method === 'POST') {
   try {
     const body = await request.json()
     const { transcript, persona } = body
@@ -948,4 +946,54 @@ Write a crisp executive summary. Each feedback field must be under 20 words. Be 
       { error: "Boardroom review failed." }, { status: 500 }
     ))
   }
+  }
+    // GET /api/benchmark?email=xxx&persona=xxx
+    if (route === '/benchmark' && method === 'GET') {
+      try {
+        const url = new URL(request.url)
+        const email = url.searchParams.get('email')
+        const persona = url.searchParams.get('persona')
+        if (!email) return handleCORS(NextResponse.json({ startingHostility: 40, hostilityLabel: 'Low' }))
+        const db = await getDb()
+        const query = { userEmail: email }
+        if (persona) query.persona = persona
+        const bestSession = await db.collection('sessions')
+          .find({ ...query, hostilityReached: { $exists: true, $ne: null } })
+          .sort({ hostilityReached: -1 })
+          .limit(1)
+          .toArray()
+        if (!bestSession.length || !bestSession[0].hostilityReached) {
+          return handleCORS(NextResponse.json({ startingHostility: 40, hostilityLabel: 'Low' }))
+        }
+        const nextStart = Math.min(90, bestSession[0].hostilityReached + 5)
+        let label = 'Low'
+        if (nextStart >= 85) label = 'Extreme'
+        else if (nextStart >= 70) label = 'High'
+        else if (nextStart >= 55) label = 'Medium'
+        return handleCORS(NextResponse.json({ startingHostility: nextStart, hostilityLabel: label }))
+      } catch (error) {
+        console.error('Benchmark error:', error)
+        return handleCORS(NextResponse.json({ startingHostility: 40, hostilityLabel: 'Low' }))
+      }
+    }
+
+    // Route not found
+    return handleCORS(NextResponse.json(
+      { error: `Route ${route} not found` },
+      { status: 404 }
+    ))
+  } catch (error) {
+    console.error('API Error:', error)
+    return handleCORS(NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    ))
+  }
 }
+
+// Export all HTTP methods
+export const GET = handleRoute
+export const POST = handleRoute
+export const PUT = handleRoute
+export const DELETE = handleRoute
+export const PATCH = handleRoute
