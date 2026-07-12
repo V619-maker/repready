@@ -163,8 +163,12 @@ function RepReadyDashboard() {
     const hostilityAtSession = currentHostilityPercent;
     const minLoadingTime = new Promise(resolve => setTimeout(resolve, 2000));
 
-    let finalScore = 0;
-    let debriefSaved = false;
+ let finalScore = 0;
+let debriefSaved = false;
+let boardroomDimensions = null;
+let boardroomGrade = null;
+let boardroomProcurementScore = null;
+let boardroomEnablementScore = null;
 
     try {
       const realTranscript = transcriptRef.current.join('\n\n');
@@ -184,15 +188,20 @@ function RepReadyDashboard() {
           console.log("[BOARDROOM RESPONSE]", boardroomData);
 
           if (boardroomData.finalScore) {
-            finalScore = wasCutOff
-              ? Math.max(30, boardroomData.finalScore - 20)
-              : boardroomData.finalScore;
+  finalScore = wasCutOff
+    ? Math.max(30, boardroomData.finalScore - 20)
+    : boardroomData.finalScore;
 
-            localStorage.setItem('repready_latest_debrief', JSON.stringify(boardroomData));
-            localStorage.setItem('repready_debrief_type', 'boardroom');
-            localStorage.setItem('repready_latest_transcript', finalTranscript);
-            debriefSaved = true;
-          }
+  boardroomDimensions = boardroomData.dimensions || null;
+  boardroomGrade = boardroomData.grade || null;
+  boardroomProcurementScore = boardroomData.procurementScore || null;
+  boardroomEnablementScore = boardroomData.enablementScore || null;
+
+  localStorage.setItem('repready_latest_debrief', JSON.stringify(boardroomData));
+  localStorage.setItem('repready_debrief_type', 'boardroom');
+  localStorage.setItem('repready_latest_transcript', finalTranscript);
+  debriefSaved = true;
+}
         }
       } catch (boardroomError) {
         console.error("Boardroom failed, trying coach fallback:", boardroomError);
@@ -244,15 +253,19 @@ function RepReadyDashboard() {
           await fetch('/api/sessions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userEmail,
-              persona,
-              finalScore,
-              mode: 'voice',
-              hostilityReached: hostilityAtSession,
-              nextHostility,
-              qualificationStatus: qualification
-            })
+           body: JSON.stringify({
+  userEmail,
+  persona,
+  finalScore,
+  mode: 'voice',
+  hostilityReached: hostilityAtSession,
+  nextHostility,
+  qualificationStatus: qualification,
+  grade: boardroomGrade,
+  procurementScore: boardroomProcurementScore,
+  enablementScore: boardroomEnablementScore,
+  dimensions: boardroomDimensions
+})
           });
         }
       } else {
