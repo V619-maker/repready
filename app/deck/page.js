@@ -117,6 +117,25 @@ function RepReadyDashboard() {
     return () => clearInterval(interval);
   }, [conversation.status, timeLeft]);
 
+  // Task 3: 60-second onboarding overlay for first-time users.
+  // New state + effect only — appended after all existing hooks, unconditional.
+  const [hasZeroSessions, setHasZeroSessions] = useState(false);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+
+  useEffect(() => {
+    if (!userEmail) return;
+    fetch(`/api/sessions?email=${encodeURIComponent(userEmail)}`)
+      .then(r => r.json())
+      .then(data => {
+        const sessions = Array.isArray(data) ? data : [];
+        setHasZeroSessions(sessions.length === 0);
+      })
+      .catch(() => {
+        // Fail open: leave hasZeroSessions false so the overlay never shows
+        // if the fetch is slow or errors — normal deck renders as today.
+      });
+  }, [userEmail]);
+
   const handleStartCall = async () => {
     setIsVerifying(true);
     setCreditsDepleted(false);
@@ -551,6 +570,25 @@ let boardroomEnablementScore = null;
                 RETURN TO DECK
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {hasZeroSessions && !onboardingDismissed && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-6 backdrop-blur-2xl bg-black/95 font-mono">
+          <div className="w-full max-w-2xl border border-[#22D3EE]/30 p-12 bg-[#050505] shadow-[0_0_80px_rgba(34,211,238,0.1)] text-center relative">
+            <h2 className="text-3xl font-bold mb-6 uppercase italic tracking-tighter text-white">
+              First Simulation
+            </h2>
+            <p className="text-zinc-400 text-sm leading-relaxed mb-10">
+              You're about to face Richard Vance, VP Procurement. He has 3 minutes and wants 20% off. Your goal: get a discovery call. Good luck.
+            </p>
+            <button
+              onClick={() => { setOnboardingDismissed(true); setActiveAgent(RICHARD_ID); }}
+              className="w-full py-4 bg-[#22D3EE] text-black font-bold uppercase tracking-[0.2em] text-[10px] hover:bg-white transition-all"
+            >
+              BEGIN FIRST SIMULATION
+            </button>
           </div>
         </div>
       )}

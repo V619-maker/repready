@@ -62,10 +62,10 @@ MY PROGRESS → /my-stats (rep progression)
 
 **Pages that exist:**
 - `app/page.js` — landing page ✅
-- `app/deck/page.js` — main simulator ✅ (1468 lines)
+- `app/deck/page.js` — main simulator ✅ (567 lines; line count in this doc was stale, corrected). Now shows a one-time 60-second onboarding overlay for first-time users (zero MongoDB sessions), auto-assigning Richard Vance and skipping persona selection; returning users see no change.
 - `app/coach/page.js` — post-session debrief ✅
-- `app/my-stats/page.js` — rep progression ✅ live, showing real MongoDB data
-- `app/dashboard/page.js` — manager view ✅ upgraded: qualified/elite rep counts, session-weighted team avg score, team skill matrix with weakest-dimension callout, best-ever rep leaderboard, recent sessions
+- `app/my-stats/page.js` — rep progression ✅ live, showing real MongoDB data. Now includes "last practiced X days ago" and a consecutive-weeks streak counter.
+- `app/dashboard/page.js` — manager view ✅ upgraded: qualified/elite rep counts, session-weighted team avg score, team skill matrix with weakest-dimension callout, best-ever rep leaderboard (with 7-day inactivity warning per rep), recent sessions
 - `app/simulate/page.js` — OLD page, NOT part of user journey, do not touch
 - `app/sign-in/[[...sign-in]]/page.js` — Clerk sign in, redirects to `/deck`
 
@@ -130,7 +130,7 @@ All in `app/api/[[...path]]/route.js` unless noted:
 | `/api/sessions` | GET | Fetch sessions by `?email=` or `?orgId=` |
 | `/api/sessions` | POST | Save a session after completion |
 | `/api/boardroom` | POST | 2-call Gemini pipeline (combined analyst + executive summarizer) |
-| `/api/dashboard` | GET | Org-level aggregate stats by `?orgId=` — team avg score (session-weighted), qualified/elite rep counts, team dimension averages + weakest dimension, per-rep best-ever score/hostility/qualification status, recent sessions |
+| `/api/dashboard` | GET | Org-level aggregate stats by `?orgId=` — team avg score (session-weighted), qualified/elite rep counts, team dimension averages + weakest dimension, per-rep best-ever score/hostility/qualification status/lastSession (most recent `createdAt`), recent sessions |
 | `/api/benchmark` | GET | Fetch next hostility level by `?email=&persona=` |
 | `/api/negotiate` | POST | Text mode only (not used in voice journey) |
 | `/api/coach` | POST | Standalone file — fallback single Gemini call for scoring |
@@ -202,9 +202,9 @@ Takes combined scores → produces finalScore, grade, verdict, whatYouDidRight, 
 | Sprint 2 — Dynamic hostility | ✅ Complete | Hostility passes to Richard via ElevenLabs dynamic variables |
 | Sprint 3 — Boardroom pipeline | ✅ Complete | 2-call Gemini pipeline live, 6 dimensions scoring |
 | Sprint 4 — Stats pages | ✅ Complete | /my-stats live with real data; /dashboard upgraded with qualified/elite counts, team skill matrix, best-ever rep leaderboard |
-| Sprint 5 — Retention mechanics | ⏳ Not started | Streaks, weekly nudges, last-practiced tracking |
+| Sprint 5 — Retention mechanics | ✅ Complete | /my-stats: last-practiced display + weekly streak counter. /dashboard: 7-day inactivity warning on rep leaderboard. Weekly nudges not built (not in scope). |
 | Sprint 6 — CRM integration | ⏳ Not started | Via Nango (nango.dev). Salesforce + HubSpot OAuth. |
-| Sprint 7 — 60-second onboarding | ⏳ Not started | Auto-assign Richard for first session, no choices |
+| Sprint 7 — 60-second onboarding | ✅ Complete | /deck auto-assigns Richard Vance and shows a brief overlay for first-time users (0 MongoDB sessions); returning users unaffected |
 | Sprint 8 — Clerk production keys | ⏳ Not started | Dev keys warning showing in console |
 
 ---

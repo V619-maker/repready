@@ -762,7 +762,8 @@ Evaluate the sales rep's performance and return JSON with:
               sessions: 0,
               bestScore: 0,
               bestHostility: null,
-              bestQualificationStatus: null
+              bestQualificationStatus: null,
+              lastSession: null
             }
           }
           const rep = repMap[s.userEmail]
@@ -775,6 +776,9 @@ Evaluate the sales rep's performance and return JSON with:
             const stageIndex = QUALIFICATION_STAGES.indexOf(s.qualificationStatus)
             const bestIndex = rep.bestQualificationStatus ? QUALIFICATION_STAGES.indexOf(rep.bestQualificationStatus) : -1
             if (stageIndex > bestIndex) rep.bestQualificationStatus = s.qualificationStatus
+          }
+          if (s.createdAt && (rep.lastSession == null || new Date(s.createdAt) > new Date(rep.lastSession))) {
+            rep.lastSession = s.createdAt
           }
         }
 

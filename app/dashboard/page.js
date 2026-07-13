@@ -20,6 +20,13 @@ function timeAgo(dateStr) {
   return `${days}d ago`
 }
 
+const INACTIVITY_THRESHOLD_DAYS = 7
+
+function daysSince(dateStr) {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  return Math.floor(diff / 86400000)
+}
+
 const DIMENSION_LABELS = {
   discoveryQuality: 'Discovery Quality',
   objectionHandling: 'Objection Handling',
@@ -142,14 +149,25 @@ export default function DashboardPage() {
             <div style={{ fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', marginBottom: 20 }}>REP LEADERBOARD</div>
             {!data?.reps?.length ? (
               <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>No sessions yet. Reps appear here after completing a simulation.</p>
-            ) : data.reps.map((rep, i) => (
+            ) : data.reps.map((rep, i) => {
+              const msSinceLastSession = rep.lastSession ? Date.now() - new Date(rep.lastSession).getTime() : null
+              const isInactive = msSinceLastSession != null && msSinceLastSession > INACTIVITY_THRESHOLD_DAYS * 86400000
+              const inactiveDays = rep.lastSession ? daysSince(rep.lastSession) : null
+              return (
               <div key={rep.userEmail} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
                 <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', width: 16 }}>{i + 1}</span>
                 <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(0,200,224,0.1)', border: '1px solid rgba(0,200,224,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#00c8e0', flexShrink: 0 }}>
                   {rep.userEmail[0].toUpperCase()}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rep.userEmail}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rep.userEmail}</span>
+                    {isInactive && (
+                      <span style={{ fontSize: 10, fontWeight: 700, color: '#f5a623', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                        ⚠️ Inactive {inactiveDays}d
+                      </span>
+                    )}
+                  </div>
                   <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>
                     {rep.sessions} session{rep.sessions !== 1 ? 's' : ''}
                     {rep.bestHostility != null ? ` · ${rep.bestHostility}% best hostility` : ''}
@@ -162,7 +180,8 @@ export default function DashboardPage() {
                 </div>
                 <span style={{ fontSize: 14, fontWeight: 900, width: 32, textAlign: 'right', color: getScoreColor(rep.bestScore) }}>{rep.bestScore}</span>
               </div>
-            ))}
+              )
+            })}
           </div>
 
           {/* SECTION 4 — Recent sessions (unchanged) */}
