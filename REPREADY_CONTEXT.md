@@ -65,7 +65,7 @@ MY PROGRESS → /my-stats (rep progression)
 - `app/deck/page.js` — main simulator ✅ (1468 lines)
 - `app/coach/page.js` — post-session debrief ✅
 - `app/my-stats/page.js` — rep progression ✅ live, showing real MongoDB data
-- `app/dashboard/page.js` — manager view ✅ upgraded: qualified/elite rep counts, session-weighted team avg score, team skill matrix with weakest-dimension callout, best-ever rep leaderboard, recent sessions
+- `app/dashboard/page.js` — manager view ✅ upgraded: qualified/elite rep counts, session-weighted team avg score, team skill matrix with weakest-dimension callout, best-ever rep leaderboard (with 7-day inactivity warning per rep), recent sessions
 - `app/simulate/page.js` — OLD page, NOT part of user journey, do not touch
 - `app/sign-in/[[...sign-in]]/page.js` — Clerk sign in, redirects to `/deck`
 
@@ -130,7 +130,7 @@ All in `app/api/[[...path]]/route.js` unless noted:
 | `/api/sessions` | GET | Fetch sessions by `?email=` or `?orgId=` |
 | `/api/sessions` | POST | Save a session after completion |
 | `/api/boardroom` | POST | 2-call Gemini pipeline (combined analyst + executive summarizer) |
-| `/api/dashboard` | GET | Org-level aggregate stats by `?orgId=` — team avg score (session-weighted), qualified/elite rep counts, team dimension averages + weakest dimension, per-rep best-ever score/hostility/qualification status, recent sessions |
+| `/api/dashboard` | GET | Org-level aggregate stats by `?orgId=` — team avg score (session-weighted), qualified/elite rep counts, team dimension averages + weakest dimension, per-rep best-ever score/hostility/qualification status/lastSession (most recent `createdAt`), recent sessions |
 | `/api/benchmark` | GET | Fetch next hostility level by `?email=&persona=` |
 | `/api/negotiate` | POST | Text mode only (not used in voice journey) |
 | `/api/coach` | POST | Standalone file — fallback single Gemini call for scoring |
