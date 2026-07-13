@@ -62,9 +62,9 @@ MY PROGRESS → /my-stats (rep progression)
 
 **Pages that exist:**
 - `app/page.js` — landing page ✅
-- `app/deck/page.js` — main simulator ✅ (1468 lines)
+- `app/deck/page.js` — main simulator ✅ (567 lines; line count in this doc was stale, corrected). Now shows a one-time 60-second onboarding overlay for first-time users (zero MongoDB sessions), auto-assigning Richard Vance and skipping persona selection; returning users see no change.
 - `app/coach/page.js` — post-session debrief ✅
-- `app/my-stats/page.js` — rep progression ✅ live, showing real MongoDB data
+- `app/my-stats/page.js` — rep progression ✅ live, showing real MongoDB data. Now includes "last practiced X days ago" and a consecutive-weeks streak counter.
 - `app/dashboard/page.js` — manager view ✅ upgraded: qualified/elite rep counts, session-weighted team avg score, team skill matrix with weakest-dimension callout, best-ever rep leaderboard (with 7-day inactivity warning per rep), recent sessions
 - `app/simulate/page.js` — OLD page, NOT part of user journey, do not touch
 - `app/sign-in/[[...sign-in]]/page.js` — Clerk sign in, redirects to `/deck`
@@ -202,9 +202,9 @@ Takes combined scores → produces finalScore, grade, verdict, whatYouDidRight, 
 | Sprint 2 — Dynamic hostility | ✅ Complete | Hostility passes to Richard via ElevenLabs dynamic variables |
 | Sprint 3 — Boardroom pipeline | ✅ Complete | 2-call Gemini pipeline live, 6 dimensions scoring |
 | Sprint 4 — Stats pages | ✅ Complete | /my-stats live with real data; /dashboard upgraded with qualified/elite counts, team skill matrix, best-ever rep leaderboard |
-| Sprint 5 — Retention mechanics | ⏳ Not started | Streaks, weekly nudges, last-practiced tracking |
+| Sprint 5 — Retention mechanics | ✅ Complete | /my-stats: last-practiced display + weekly streak counter. /dashboard: 7-day inactivity warning on rep leaderboard. Weekly nudges not built (not in scope). |
 | Sprint 6 — CRM integration | ⏳ Not started | Via Nango (nango.dev). Salesforce + HubSpot OAuth. |
-| Sprint 7 — 60-second onboarding | ⏳ Not started | Auto-assign Richard for first session, no choices |
+| Sprint 7 — 60-second onboarding | ✅ Complete | /deck auto-assigns Richard Vance and shows a brief overlay for first-time users (0 MongoDB sessions); returning users unaffected |
 | Sprint 8 — Clerk production keys | ⏳ Not started | Dev keys warning showing in console |
 
 ---
