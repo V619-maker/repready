@@ -29,6 +29,32 @@ function inferQualificationStatus(hostilityReached, finalScore) {
   return 'Not Qualified'
 }
 
+// Returns the Monday (local midnight) of the week containing `date`.
+function startOfWeekMonday(date) {
+  const d = new Date(date)
+  d.setHours(0, 0, 0, 0)
+  const day = d.getDay() // 0 = Sun, 1 = Mon, ..., 6 = Sat
+  const daysSinceMonday = (day + 6) % 7
+  d.setDate(d.getDate() - daysSinceMonday)
+  return d
+}
+
+// Whole calendar days between `date` and now (local midnight to local midnight).
+function daysSinceToday(date) {
+  const startOfDay = (x) => { const y = new Date(x); y.setHours(0, 0, 0, 0); return y }
+  const msPerDay = 24 * 60 * 60 * 1000
+  return Math.round((startOfDay(new Date()) - startOfDay(date)) / msPerDay)
+}
+
+function hasSessionInWeek(sessions, weekStart) {
+  const weekEnd = new Date(weekStart)
+  weekEnd.setDate(weekEnd.getDate() + 7)
+  return sessions.some(s => {
+    const t = new Date(s.createdAt)
+    return t >= weekStart && t < weekEnd
+  })
+}
+
 function DimensionBar({ label, score }) {
   return (
     <div className="mb-3">
@@ -84,7 +110,22 @@ export default function MyStatsPage() {
       }
     }
 
-    return { latest, currentStage, trend, dimensionSession, byPersona }
+    const lastPracticedDays = latest ? daysSinceToday(new Date(latest.createdAt)) : null
+
+    const thisWeekStart = startOfWeekMonday(new Date())
+    let weekCursor = thisWeekStart
+    if (!hasSessionInWeek(sorted, thisWeekStart)) {
+      weekCursor = new Date(thisWeekStart)
+      weekCursor.setDate(weekCursor.getDate() - 7)
+    }
+    let streakWeeks = 0
+    while (hasSessionInWeek(sorted, weekCursor)) {
+      streakWeeks += 1
+      weekCursor = new Date(weekCursor)
+      weekCursor.setDate(weekCursor.getDate() - 7)
+    }
+
+    return { latest, currentStage, trend, dimensionSession, byPersona, lastPracticedDays, streakWeeks }
   }, [sessions])
 
   if (!isLoaded || (isLoaded && user && sessions === null && !error)) {
@@ -157,6 +198,26 @@ export default function MyStatsPage() {
                   ))}
                 </div>
               )}
+            </div>
+
+            {/* 1.5. Last practiced + weekly streak */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="border border-white/5 bg-[#0a0a0a] p-6">
+                <h3 className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.2em] mb-4">Last Practiced</h3>
+                <p className="text-lg font-bold text-white">
+                  {stats.lastPracticedDays === 0
+                    ? 'Last practiced today'
+                    : stats.lastPracticedDays === 1
+                      ? 'Last practiced 1 day ago'
+                      : `Last practiced ${stats.lastPracticedDays} days ago`}
+                </p>
+              </div>
+              <div className="border border-white/5 bg-[#0a0a0a] p-6">
+                <h3 className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.2em] mb-4">Weekly Streak</h3>
+                <p className="text-lg font-bold" style={{ color: stats.streakWeeks > 0 ? '#22D3EE' : undefined }}>
+                  {stats.streakWeeks > 0 ? `🔥 ${stats.streakWeeks} week streak` : 'No active streak'}
+                </p>
+              </div>
             </div>
 
             {/* 2. Score trend over last 5 sessions */}
