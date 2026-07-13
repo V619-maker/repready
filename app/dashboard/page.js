@@ -20,6 +20,27 @@ function timeAgo(dateStr) {
   return `${days}d ago`
 }
 
+const DIMENSION_LABELS = {
+  discoveryQuality: 'Discovery Quality',
+  objectionHandling: 'Objection Handling',
+  priceDefense: 'Price Defense',
+  smeKnowledge: 'SME Knowledge',
+  communication: 'Communication',
+  emotionalResilience: 'Emotional Resilience',
+}
+const DIMENSION_ORDER = ['discoveryQuality', 'objectionHandling', 'priceDefense', 'smeKnowledge', 'communication', 'emotionalResilience']
+
+const QUALIFICATION_COLORS = {
+  'Not Qualified': 'rgba(255,255,255,0.3)',
+  'Getting Started': '#f5a623',
+  'Developing': '#f5a623',
+  'Qualified': '#00c8e0',
+  'Elite': '#ffd700',
+}
+function getQualificationColor(status) {
+  return QUALIFICATION_COLORS[status] || 'rgba(255,255,255,0.3)'
+}
+
 export default function DashboardPage() {
   const { user, isLoaded } = useUser()
   const router = useRouter()
@@ -68,12 +89,13 @@ export default function DashboardPage() {
 
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '40px' }}>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
+        {/* SECTION 1 — Metric tiles */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 16 }}>
           {[
-            { label: 'AVG TEAM SCORE', value: data?.avgScore ?? '—' },
+            { label: 'QUALIFIED REPS', value: data?.qualifiedReps ?? 0 },
+            { label: 'TEAM AVG SCORE', value: data?.avgScore ?? '—' },
             { label: 'TOTAL SESSIONS', value: data?.totalSessions ?? 0 },
-            { label: 'ACTIVE REPS', value: data?.totalReps ?? 0 },
-            { label: 'PASSING ≥70', value: data?.passingReps ?? 0 },
+            { label: 'ELITE REPS', value: data?.eliteReps ?? 0 },
           ].map((m) => (
             <div key={m.label} style={{ background: '#0d1117', border: '1px solid rgba(0,200,224,0.15)', padding: '20px 24px' }}>
               <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', letterSpacing: '0.15em', marginBottom: 10 }}>{m.label}</div>
@@ -82,8 +104,40 @@ export default function DashboardPage() {
           ))}
         </div>
 
+        {/* SECTION 2 — Team skill matrix */}
+        <div style={{ background: '#0d1117', border: '1px solid rgba(0,200,224,0.15)', padding: 24, marginBottom: 16 }}>
+          <div style={{ fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', marginBottom: 20 }}>TEAM SKILL MATRIX</div>
+          {!data?.dimensionAverages ? (
+            <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>No dimension data yet — this is tracked on sessions run since dimensions scoring was added.</p>
+          ) : (
+            <>
+              {DIMENSION_ORDER.map((key) => {
+                const value = data.dimensionAverages[key]
+                const isWeakest = key === data.weakestDimension
+                return (
+                  <div key={key} style={{ marginBottom: 14 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, color: isWeakest ? '#e84545' : 'rgba(255,255,255,0.6)', letterSpacing: '0.05em' }}>{DIMENSION_LABELS[key]}</span>
+                      <span style={{ fontSize: 11, fontWeight: 900, color: isWeakest ? '#e84545' : '#fff' }}>{value ?? '—'}</span>
+                    </div>
+                    <div style={{ width: '100%', height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+                      <div style={{ width: `${value ?? 0}%`, height: '100%', background: isWeakest ? '#e84545' : '#00c8e0' }} />
+                    </div>
+                  </div>
+                )
+              })}
+              {data.weakestDimension && (
+                <p style={{ marginTop: 16, fontSize: 12, color: '#e84545' }}>
+                  Weakest skill: {DIMENSION_LABELS[data.weakestDimension]}. Focus coaching here.
+                </p>
+              )}
+            </>
+          )}
+        </div>
+
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
 
+          {/* SECTION 3 — Rep leaderboard */}
           <div style={{ background: '#0d1117', border: '1px solid rgba(0,200,224,0.15)', padding: 24 }}>
             <div style={{ fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', marginBottom: 20 }}>REP LEADERBOARD</div>
             {!data?.reps?.length ? (
@@ -96,16 +150,22 @@ export default function DashboardPage() {
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rep.userEmail}</div>
-                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>{rep.sessions} session{rep.sessions !== 1 ? 's' : ''}</div>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>
+                    {rep.sessions} session{rep.sessions !== 1 ? 's' : ''}
+                    {rep.bestHostility != null ? ` · ${rep.bestHostility}% best hostility` : ''}
+                  </div>
+                  {rep.bestQualificationStatus && (
+                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', color: getQualificationColor(rep.bestQualificationStatus) }}>
+                      {rep.bestQualificationStatus.toUpperCase()}
+                    </div>
+                  )}
                 </div>
-                <div style={{ width: 60, height: 2, background: 'rgba(255,255,255,0.1)', borderRadius: 1, overflow: 'hidden' }}>
-                  <div style={{ width: `${rep.avgScore}%`, height: '100%', background: getScoreColor(rep.avgScore) }} />
-                </div>
-                <span style={{ fontSize: 14, fontWeight: 900, width: 32, textAlign: 'right', color: getScoreColor(rep.avgScore) }}>{rep.avgScore}</span>
+                <span style={{ fontSize: 14, fontWeight: 900, width: 32, textAlign: 'right', color: getScoreColor(rep.bestScore) }}>{rep.bestScore}</span>
               </div>
             ))}
           </div>
 
+          {/* SECTION 4 — Recent sessions (unchanged) */}
           <div style={{ background: '#0d1117', border: '1px solid rgba(0,200,224,0.15)', padding: 24 }}>
             <div style={{ fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', marginBottom: 20 }}>RECENT SESSIONS</div>
             {!data?.recentSessions?.length ? (

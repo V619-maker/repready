@@ -35,7 +35,7 @@
 | `CLERK_SECRET_KEY` | Clerk server-side auth |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk client-side auth |
 
-**Known issue (open):** `MONGO_URL` was renamed from `Mongo` to `MONGO_URL` in Vercel on July 13, 2026, but `/api/sessions` is still returning 500 — the rename alone did not fix it. A caching bug in `getDb()` was fixed July 13 (see Known Issues below) but the underlying connection failure still needs to be confirmed resolved via a live `/api/sessions` POST returning 200. Do not mark this resolved until then.
+**Resolved July 13, 2026:** `MONGO_URL` was renamed from `Mongo` to `MONGO_URL` in Vercel, and a `getDb()` connection-caching bug (see git history: `app/api/[[...path]]/route.js`) was fixed. `/api/sessions` POST now confirmed returning 200 in production.
 
 ---
 
@@ -64,8 +64,8 @@ MY PROGRESS → /my-stats (rep progression)
 - `app/page.js` — landing page ✅
 - `app/deck/page.js` — main simulator ✅ (1468 lines)
 - `app/coach/page.js` — post-session debrief ✅
-- `app/my-stats/page.js` — rep progression ✅ (built July 13, may need MongoDB fix to show data)
-- `app/dashboard/page.js` — manager view ✅ (needs upgrade to show skill matrix)
+- `app/my-stats/page.js` — rep progression ✅ live, showing real MongoDB data
+- `app/dashboard/page.js` — manager view ✅ upgraded: qualified/elite rep counts, session-weighted team avg score, team skill matrix with weakest-dimension callout, best-ever rep leaderboard, recent sessions
 - `app/simulate/page.js` — OLD page, NOT part of user journey, do not touch
 - `app/sign-in/[[...sign-in]]/page.js` — Clerk sign in, redirects to `/deck`
 
@@ -130,7 +130,7 @@ All in `app/api/[[...path]]/route.js` unless noted:
 | `/api/sessions` | GET | Fetch sessions by `?email=` or `?orgId=` |
 | `/api/sessions` | POST | Save a session after completion |
 | `/api/boardroom` | POST | 2-call Gemini pipeline (combined analyst + executive summarizer) |
-| `/api/dashboard` | GET | Org-level aggregate stats by `?orgId=` |
+| `/api/dashboard` | GET | Org-level aggregate stats by `?orgId=` — team avg score (session-weighted), qualified/elite rep counts, team dimension averages + weakest dimension, per-rep best-ever score/hostility/qualification status, recent sessions |
 | `/api/benchmark` | GET | Fetch next hostility level by `?email=&persona=` |
 | `/api/negotiate` | POST | Text mode only (not used in voice journey) |
 | `/api/coach` | POST | Standalone file — fallback single Gemini call for scoring |
@@ -201,7 +201,7 @@ Takes combined scores → produces finalScore, grade, verdict, whatYouDidRight, 
 | Sprint 1 — Core journey | ✅ Complete | Landing → /deck → voice → /coach working |
 | Sprint 2 — Dynamic hostility | ✅ Complete | Hostility passes to Richard via ElevenLabs dynamic variables |
 | Sprint 3 — Boardroom pipeline | ✅ Complete | 2-call Gemini pipeline live, 6 dimensions scoring |
-| Sprint 4 — Stats pages | 🔄 In Progress | /my-stats built but not showing data (MongoDB fix needed) |
+| Sprint 4 — Stats pages | ✅ Complete | /my-stats live with real data; /dashboard upgraded with qualified/elite counts, team skill matrix, best-ever rep leaderboard |
 | Sprint 5 — Retention mechanics | ⏳ Not started | Streaks, weekly nudges, last-practiced tracking |
 | Sprint 6 — CRM integration | ⏳ Not started | Via Nango (nango.dev). Salesforce + HubSpot OAuth. |
 | Sprint 7 — 60-second onboarding | ⏳ Not started | Auto-assign Richard for first session, no choices |
@@ -211,21 +211,21 @@ Takes combined scores → produces finalScore, grade, verdict, whatYouDidRight, 
 
 ## KNOWN ISSUES (fix these before adding new features)
 
-1. **MongoDB sessions not saving (OPEN — env var rename alone did not fix it)** — `/api/sessions` POST still returning 500 as of July 13, 2026, even after `MONGO_URL` was renamed from `Mongo` and the project was redeployed. Fixed one confirmed contributing bug on July 13: `getDb()` in `app/api/[[...path]]/route.js` cached the `MongoClient` reference before `.connect()` succeeded, so a single failed connection attempt in a warm serverless instance would permanently break every subsequent request in that instance instead of retrying. That's fixed, but the *original* trigger for the connection failure is still unconfirmed — needs the actual Vercel function log for a `/api/sessions` 500 to pin down (likely candidates: Atlas Network Access list missing `0.0.0.0/0`, unencoded special characters in the Mongo password, or stray quotes/whitespace in the env var value). Do not close this out until `/api/sessions` POST returns 200 in production.
+1. **Richard says stage directions aloud** — `[impatient]`, `[skeptical]` etc. Root cause: Claude Sonnet 4.6 LLM in ElevenLabs generates stage directions. Fix: switch Richard's LLM to ElevenLabs-hosted model in ElevenLabs dashboard.
 
-2. **Richard says stage directions aloud** — `[impatient]`, `[skeptical]` etc. Root cause: Claude Sonnet 4.6 LLM in ElevenLabs generates stage directions. Fix: switch Richard's LLM to ElevenLabs-hosted model in ElevenLabs dashboard.
+2. **Dead code** — duplicate `getQualificationStatus` function in `app/api/[[...path]]/route.js` (search for the function definition). The active one is in `app/deck/page.js`. Safe to delete from route.js.
 
-3. **Dead code** — duplicate `getQualificationStatus` function in `app/api/[[...path]]/route.js` at lines 142-148. The active one is in `app/deck/page.js`. Safe to delete from route.js.
+3. **Clerk dev keys in production** — console warning: "afterSignInUrl is deprecated". Fix: switch to production Clerk keys + replace `afterSignInUrl` with `forceRedirectUrl` in layout.js.
 
-4. **Clerk dev keys in production** — console warning: "afterSignInUrl is deprecated". Fix: switch to production Clerk keys + replace `afterSignInUrl` with `forceRedirectUrl` in layout.js.
+4. **Personal best discrepancy (design choice, not a bug now)** — `/deck` shows personal best from localStorage (device-local). `/my-stats` and `/dashboard` read best-ever score from MongoDB (authoritative, cross-device). Now that MongoDB is confirmed working, these can genuinely disagree if a rep switches devices/browsers — localStorage isn't reliable per the constraints below. Consider migrating `/deck`'s personal-best display to MongoDB too.
 
-5. **Personal best discrepancy** — `/deck` shows personal best from localStorage. `/my-stats` reads from MongoDB. These will disagree until sessions start saving correctly. Fix MongoDB first.
+5. **No server-side auth on `/api/sessions`, `/api/dashboard`, `/api/benchmark`** — these trust `?email=`/`?orgId=` query params with no verification the caller owns that identity/org. Anyone who knows or guesses an email/org domain can read that data. Not yet fixed; flag before touching.
 
 ---
 
 ## P0 PRIORITY (do not deviate from this order)
 
-1. Fix MongoDB — Claude Code diagnoses and fixes `MONGO_URL` issue
+1. ~~Fix MongoDB~~ — ✅ Complete July 13, 2026
 2. Use skills library for all remaining sprints — no more manual back-and-forth
 3. RAG for Richard/Sandra — ElevenLabs Knowledge Base with procurement objection playbooks
 
@@ -236,7 +236,7 @@ Takes combined scores → produces finalScore, grade, verdict, whatYouDidRight, 
 | Tool | Purpose | Status |
 |---|---|---|
 | ElevenLabs | Voice agents (Richard + Sandra) | ✅ Active |
-| MongoDB Atlas | Sessions, benchmarks, org data | ⚠️ Connection broken |
+| MongoDB Atlas | Sessions, benchmarks, org data | ✅ Active |
 | Clerk | Auth, credits in privateMetadata | ✅ Active (dev keys) |
 | Paddle | Payments | ✅ Active — DO NOT TOUCH without flagging |
 | Nango | CRM integration (Sprint 6) | ⏳ Not started |
