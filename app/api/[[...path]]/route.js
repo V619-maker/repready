@@ -751,46 +751,90 @@ Evaluate the sales rep's performance and return JSON with:
           .sort({ createdAt: -1 })
           .toArray()
 
+        const QUALIFICATION_STAGES = ['Not Qualified', 'Getting Started', 'Developing', 'Qualified', 'Elite']
+        const DIMENSION_KEYS = ['discoveryQuality', 'objectionHandling', 'priceDefense', 'smeKnowledge', 'communication', 'emotionalResilience']
+
         const repMap = {}
         for (const s of sessions) {
           if (!repMap[s.userEmail]) {
             repMap[s.userEmail] = {
               userEmail: s.userEmail,
               sessions: 0,
-              totalScore: 0,
-              lastSession: s.createdAt
+              bestScore: 0,
+              bestHostility: null,
+              bestQualificationStatus: null
             }
           }
-          repMap[s.userEmail].sessions++
-          repMap[s.userEmail].totalScore += s.finalScore || 0
-          if (s.createdAt > repMap[s.userEmail].lastSession) {
-            repMap[s.userEmail].lastSession = s.createdAt
+          const rep = repMap[s.userEmail]
+          rep.sessions++
+          if ((s.finalScore || 0) > rep.bestScore) rep.bestScore = s.finalScore || 0
+          if (s.hostilityReached != null && (rep.bestHostility == null || s.hostilityReached > rep.bestHostility)) {
+            rep.bestHostility = s.hostilityReached
+          }
+          if (s.qualificationStatus && QUALIFICATION_STAGES.includes(s.qualificationStatus)) {
+            const stageIndex = QUALIFICATION_STAGES.indexOf(s.qualificationStatus)
+            const bestIndex = rep.bestQualificationStatus ? QUALIFICATION_STAGES.indexOf(rep.bestQualificationStatus) : -1
+            if (stageIndex > bestIndex) rep.bestQualificationStatus = s.qualificationStatus
           }
         }
 
-        const reps = Object.values(repMap).map(r => ({
-          ...r,
-          avgScore: r.sessions > 0 ? Math.round(r.totalScore / r.sessions) : 0
-        })).sort((a, b) => b.avgScore - a.avgScore)
+        const reps = Object.values(repMap).sort((a, b) => b.bestScore - a.bestScore)
+        const qualifiedReps = reps.filter(r => r.bestQualificationStatus === 'Qualified' || r.bestQualificationStatus === 'Elite').length
+        const eliteReps = reps.filter(r => r.bestQualificationStatus === 'Elite').length
+
+        const totalSessions = sessions.length
+        const scoreSum = sessions.reduce((sum, s) => sum + (s.finalScore || 0), 0)
+        const avgScore = totalSessions > 0 ? Math.round(scoreSum / totalSessions) : 0
+
+        const dimensionSums = {}
+        const dimensionCounts = {}
+        for (const key of DIMENSION_KEYS) { dimensionSums[key] = 0; dimensionCounts[key] = 0 }
+        for (const s of sessions) {
+          if (s.dimensions && typeof s.dimensions === 'object') {
+            for (const key of DIMENSION_KEYS) {
+              if (typeof s.dimensions[key] === 'number') {
+                dimensionSums[key] += s.dimensions[key]
+                dimensionCounts[key]++
+              }
+            }
+          }
+        }
+
+        let dimensionAverages = null
+        let weakestDimension = null
+        if (DIMENSION_KEYS.some(key => dimensionCounts[key] > 0)) {
+          dimensionAverages = {}
+          for (const key of DIMENSION_KEYS) {
+            dimensionAverages[key] = dimensionCounts[key] > 0 ? Math.round(dimensionSums[key] / dimensionCounts[key]) : null
+          }
+          let minVal = Infinity
+          for (const key of DIMENSION_KEYS) {
+            if (dimensionAverages[key] != null && dimensionAverages[key] < minVal) {
+              minVal = dimensionAverages[key]
+              weakestDimension = key
+            }
+          }
+        }
 
         return handleCORS(NextResponse.json({
           orgId,
-          totalSessions: sessions.length,
-          avgScore: reps.length > 0
-            ? Math.round(reps.reduce((sum, r) => sum + r.avgScore, 0) / reps.length)
-            : 0,
+          totalSessions,
+          avgScore,
           totalReps: reps.length,
-          passingReps: reps.filter(r => r.avgScore >= 70).length,
+          qualifiedReps,
+          eliteReps,
+          dimensionAverages,
+          weakestDimension,
           reps,
-      recentSessions: sessions.slice(0, 10).map(s => ({
-  userEmail: s.userEmail,
-  persona: s.persona,
-  finalScore: s.finalScore,
-  mode: s.mode,
-  createdAt: s.createdAt,
-  hostilityReached: s.hostilityReached || null,
-  qualificationStatus: s.qualificationStatus || null
-}))
+          recentSessions: sessions.slice(0, 10).map(s => ({
+            userEmail: s.userEmail,
+            persona: s.persona,
+            finalScore: s.finalScore,
+            mode: s.mode,
+            createdAt: s.createdAt,
+            hostilityReached: s.hostilityReached || null,
+            qualificationStatus: s.qualificationStatus || null
+          }))
         }))
       } catch (error) {
         console.error('Dashboard error:', error)
