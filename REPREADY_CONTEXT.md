@@ -1,6 +1,6 @@
 # REPREADY_CONTEXT.md
 # Single source of truth for RepReady — updated after every sprint task
-# Last updated: July 13, 2026
+# Last updated: July 14, 2026
 
 ---
 
@@ -62,7 +62,6 @@ MY PROGRESS → /my-stats (rep progression)
 
 **Pages that exist:**
 - `app/page.js` — landing page ✅
-- `app/deck/page.js` — main simulator ✅ (567 lines; line count in this doc was stale, corrected). Shows a one-time 60-second onboarding overlay for first-time users (zero MongoDB sessions), auto-assigning Richard Vance and skipping persona selection; returning users see no change. `handleStartCall` now also best-effort injects a `rep_history` dynamic variable (see ElevenLabs Agents section) for reps at ≥50% hostility with 2+ prior sessions against that persona — never blocks or delays call start beyond a 3s cap.
 - `app/coach/page.js` — post-session debrief ✅
 - `app/my-stats/page.js` — rep progression ✅ live, showing real MongoDB data. Now includes "last practiced X days ago" and a consecutive-weeks streak counter.
 - `app/dashboard/page.js` — manager view ✅ upgraded: qualified/elite rep counts, session-weighted team avg score, team skill matrix with weakest-dimension callout, best-ever rep leaderboard (with 7-day inactivity warning per rep), recent sessions
@@ -96,6 +95,8 @@ This has NOT been applied to the live ElevenLabs agent yet — do it manually in
 
 **Richard's first message:** "Richard Chen. Look, I've got something on my desk right now so make this fast. What've you got?"
 
+**DPDP retention — ElevenLabs conversation history (manual action, not automated):** the app's own session records (MongoDB) are retained 90 days per the consent text and privacy policy, but ElevenLabs separately retains conversation/call history in its own dashboard, which this codebase does not control or auto-delete. Until an automated deletion job exists, someone must manually delete ElevenLabs conversation history older than 90 days on a recurring basis (e.g. monthly) via the ElevenLabs dashboard. Add this to a recurring ops checklist — there is no code-side reminder for it.
+
 ---
 
 ## MONGODB SCHEMA
@@ -125,11 +126,14 @@ This has NOT been applied to the live ElevenLabs agent yet — do it manually in
     communication: Number,
     emotionalResilience: Number
   },
+  consentGiven: Boolean,       // DPDP consent overlay — true if rep accepted before this session, nullable
+  consentTimestamp: String,    // ISO timestamp of consent acceptance, nullable
   createdAt: String           // ISO timestamp
 }
 ```
 
 **Note:** `dimensions` is nullable — older sessions may not have it. Always handle null case.
+**Note:** `consentGiven`/`consentTimestamp` are nullable — sessions saved before the DPDP consent overlay (Sprint 9) don't have them.
 
 ---
 
@@ -219,6 +223,8 @@ Takes combined scores → produces finalScore, grade, verdict, whatYouDidRight, 
 | Sprint 6 — CRM integration | ⏳ Not started | Via Nango (nango.dev). Salesforce + HubSpot OAuth. |
 | Sprint 7 — 60-second onboarding | ✅ Complete | /deck auto-assigns Richard Vance and shows a brief overlay for first-time users (0 MongoDB sessions); returning users unaffected |
 | Sprint 8 — Clerk production keys | ⏳ Not started | Dev keys warning showing in console |
+| Sprint 9 — DPDP Act compliance (Task 1) | ✅ Complete | `/deck` shows a per-session consent overlay (above the existing call-modal) before every voice session; `consentGiven`/`consentTimestamp` piggyback on the existing end-of-session `POST /api/sessions` call — no new network call at session-start. Backend stores both fields as nullable. |
+| Sprint 9 — DPDP Act compliance (Task 2) | ✅ Complete | `app/privacy/page.js` updated: explicit voice recording/transcript/scores/email data collection, MongoDB Atlas (Mumbai, India) named as storage processor alongside ElevenLabs/Gemini, explicit 90-day retention section, deletion-request and privacy-question contact routed to `privacy@repready.site`, new Grievance Redressal section (DPDP Act 2023) with 30-day response commitment. Sections renumbered 1–11; `sales@repready.site` no longer used anywhere on this page. |
 
 ---
 

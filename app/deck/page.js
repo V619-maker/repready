@@ -136,6 +136,20 @@ function RepReadyDashboard() {
       });
   }, [userEmail]);
 
+  // Task 1: DPDP Act consent overlay — per-session consent gate.
+  // New state + effect only — appended after all existing hooks.
+  const [consentGiven, setConsentGiven] = useState(false);
+  const [consentTimestamp, setConsentTimestamp] = useState(null);
+  const [consentChecked, setConsentChecked] = useState(false);
+
+  useEffect(() => {
+    if (activeAgent) {
+      setConsentGiven(false);
+      setConsentTimestamp(null);
+      setConsentChecked(false);
+    }
+  }, [activeAgent]);
+
   const handleStartCall = async () => {
     setIsVerifying(true);
     setCreditsDepleted(false);
@@ -310,7 +324,9 @@ let boardroomEnablementScore = null;
   grade: boardroomGrade,
   procurementScore: boardroomProcurementScore,
   enablementScore: boardroomEnablementScore,
-  dimensions: boardroomDimensions
+  dimensions: boardroomDimensions,
+  consentGiven,
+  consentTimestamp
 })
           });
         }
@@ -329,6 +345,8 @@ let boardroomEnablementScore = null;
     setIsAnalyzing(false);
     setActiveAgent(null);
     setShowAudit(true);
+    setConsentGiven(false);
+    setConsentChecked(false);
   };
 
   const formatTime = (seconds) => {
@@ -421,7 +439,7 @@ let boardroomEnablementScore = null;
                   </button>
                 </a>
                 <button
-                  onClick={() => { setCreditsDepleted(false); setActiveAgent(null); }}
+                  onClick={() => { setCreditsDepleted(false); setActiveAgent(null); setConsentGiven(false); setConsentChecked(false); }}
                   className="px-8 py-3 border border-white/10 text-zinc-400 font-bold uppercase tracking-[0.2em] text-[10px] hover:bg-white/5 hover:text-white transition-all"
                 >
                   RETURN TO DECK
@@ -544,7 +562,7 @@ let boardroomEnablementScore = null;
                 </button>
               ) : (
                 <button
-                  onClick={() => setActiveAgent(null)}
+                  onClick={() => { setActiveAgent(null); setConsentGiven(false); setConsentChecked(false); }}
                   disabled={isAnalyzing}
                   className="px-6 py-3 border border-transparent text-cyan-500/50 text-[10px] uppercase tracking-[0.2em] hover:border-cyan-500/30 hover:bg-cyan-500/10 transition-all disabled:opacity-0"
                 >
@@ -552,6 +570,38 @@ let boardroomEnablementScore = null;
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {activeAgent && !consentGiven && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-6 backdrop-blur-2xl bg-black/95 font-mono">
+          <div className="w-full max-w-2xl border border-[#22D3EE]/30 p-12 bg-[#050505] shadow-[0_0_80px_rgba(34,211,238,0.1)] text-center relative">
+            <h2 className="text-3xl font-bold mb-6 uppercase italic tracking-tighter text-white">
+              Consent Required
+            </h2>
+            <p className="text-zinc-400 text-sm leading-relaxed mb-10">
+              This session will be recorded and analysed by AI to generate your performance score and coaching feedback. Voice data is processed by ElevenLabs and Google Gemini. Session data is stored for 90 days in Mumbai, India.
+            </p>
+            <label className="flex items-center justify-center gap-3 mb-10 cursor-pointer text-zinc-300 text-[10px] uppercase tracking-widest">
+              <input
+                type="checkbox"
+                checked={consentChecked}
+                onChange={(e) => setConsentChecked(e.target.checked)}
+                className="w-4 h-4 accent-[#22D3EE]"
+              />
+              I understand and consent to proceed
+            </label>
+            <button
+              onClick={() => {
+                setConsentGiven(true);
+                setConsentTimestamp(new Date().toISOString());
+              }}
+              disabled={!consentChecked}
+              className="w-full py-4 bg-[#22D3EE] text-black font-bold uppercase tracking-[0.2em] text-[10px] hover:bg-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Continue
+            </button>
           </div>
         </div>
       )}
