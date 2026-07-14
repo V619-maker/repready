@@ -686,6 +686,8 @@ Evaluate the sales rep's performance and return JSON with:
   procurementScore: body.procurementScore || null,
   enablementScore: body.enablementScore || null,
   dimensions: body.dimensions || null,
+  consentGiven: body.consentGiven ?? null,
+  consentTimestamp: body.consentTimestamp ?? null,
   createdAt: new Date().toISOString()
 }
         const db = await getDb()

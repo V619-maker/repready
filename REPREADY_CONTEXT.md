@@ -1,6 +1,6 @@
 # REPREADY_CONTEXT.md
 # Single source of truth for RepReady — updated after every sprint task
-# Last updated: July 13, 2026
+# Last updated: July 14, 2026
 
 ---
 
@@ -113,11 +113,14 @@ MY PROGRESS → /my-stats (rep progression)
     communication: Number,
     emotionalResilience: Number
   },
+  consentGiven: Boolean,       // DPDP consent overlay — true if rep accepted before this session, nullable
+  consentTimestamp: String,    // ISO timestamp of consent acceptance, nullable
   createdAt: String           // ISO timestamp
 }
 ```
 
 **Note:** `dimensions` is nullable — older sessions may not have it. Always handle null case.
+**Note:** `consentGiven`/`consentTimestamp` are nullable — sessions saved before the DPDP consent overlay (Sprint 9) don't have them.
 
 ---
 
@@ -206,6 +209,7 @@ Takes combined scores → produces finalScore, grade, verdict, whatYouDidRight, 
 | Sprint 6 — CRM integration | ⏳ Not started | Via Nango (nango.dev). Salesforce + HubSpot OAuth. |
 | Sprint 7 — 60-second onboarding | ✅ Complete | /deck auto-assigns Richard Vance and shows a brief overlay for first-time users (0 MongoDB sessions); returning users unaffected |
 | Sprint 8 — Clerk production keys | ⏳ Not started | Dev keys warning showing in console |
+| Sprint 9 — DPDP Act compliance (Task 1) | ✅ Complete | `/deck` shows a per-session consent overlay (above the existing call-modal) before every voice session; `consentGiven`/`consentTimestamp` piggyback on the existing end-of-session `POST /api/sessions` call — no new network call at session-start. Backend stores both fields as nullable. |
 
 ---
 
