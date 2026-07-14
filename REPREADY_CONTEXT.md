@@ -62,7 +62,7 @@ MY PROGRESS → /my-stats (rep progression)
 
 **Pages that exist:**
 - `app/page.js` — landing page ✅
-- `app/deck/page.js` — main simulator ✅ (567 lines; line count in this doc was stale, corrected). Now shows a one-time 60-second onboarding overlay for first-time users (zero MongoDB sessions), auto-assigning Richard Vance and skipping persona selection; returning users see no change.
+- `app/deck/page.js` — main simulator ✅ (567 lines; line count in this doc was stale, corrected). Shows a one-time 60-second onboarding overlay for first-time users (zero MongoDB sessions), auto-assigning Richard Vance and skipping persona selection; returning users see no change. Also shows a DPDP consent overlay before every voice session (not just first-time) — see Sprint 9.
 - `app/coach/page.js` — post-session debrief ✅
 - `app/my-stats/page.js` — rep progression ✅ live, showing real MongoDB data. Now includes "last practiced X days ago" and a consecutive-weeks streak counter.
 - `app/dashboard/page.js` — manager view ✅ upgraded: qualified/elite rep counts, session-weighted team avg score, team skill matrix with weakest-dimension callout, best-ever rep leaderboard (with 7-day inactivity warning per rep), recent sessions
@@ -83,6 +83,8 @@ MY PROGRESS → /my-stats (rep progression)
 **Dynamic variable:** `{{hostility_level}}` — passed via `startSession()` dynamicVariables. Values: `LOW (40%)`, `MEDIUM (60%)`, `HIGH (78%)`, `EXTREME (90%)`
 
 **Richard's first message:** "Richard Chen. Look, I've got something on my desk right now so make this fast. What've you got?"
+
+**DPDP retention — ElevenLabs conversation history (manual action, not automated):** the app's own session records (MongoDB) are retained 90 days per the consent text and privacy policy, but ElevenLabs separately retains conversation/call history in its own dashboard, which this codebase does not control or auto-delete. Until an automated deletion job exists, someone must manually delete ElevenLabs conversation history older than 90 days on a recurring basis (e.g. monthly) via the ElevenLabs dashboard. Add this to a recurring ops checklist — there is no code-side reminder for it.
 
 ---
 
