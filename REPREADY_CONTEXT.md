@@ -210,6 +210,7 @@ Takes combined scores → produces finalScore, grade, verdict, whatYouDidRight, 
 | Sprint 7 — 60-second onboarding | ✅ Complete | /deck auto-assigns Richard Vance and shows a brief overlay for first-time users (0 MongoDB sessions); returning users unaffected |
 | Sprint 8 — Clerk production keys | ⏳ Not started | Dev keys warning showing in console |
 | Sprint 9 — DPDP Act compliance (Task 1) | ✅ Complete | `/deck` shows a per-session consent overlay (above the existing call-modal) before every voice session; `consentGiven`/`consentTimestamp` piggyback on the existing end-of-session `POST /api/sessions` call — no new network call at session-start. Backend stores both fields as nullable. |
+| Sprint 9 — DPDP Act compliance (Task 2) | ✅ Complete | `app/privacy/page.js` updated: explicit voice recording/transcript/scores/email data collection, MongoDB Atlas (Mumbai, India) named as storage processor alongside ElevenLabs/Gemini, explicit 90-day retention section, deletion-request and privacy-question contact routed to `privacy@repready.site`, new Grievance Redressal section (DPDP Act 2023) with 30-day response commitment. Sections renumbered 1–11; `sales@repready.site` no longer used anywhere on this page. |
 
 ---
 
