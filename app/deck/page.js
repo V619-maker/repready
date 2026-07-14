@@ -161,12 +161,15 @@ function RepReadyDashboard() {
       };
 
       if (userEmail && currentHostilityPercent >= 50) {
+        const repMemoryController = new AbortController();
+        const repMemoryTimeout = setTimeout(() => repMemoryController.abort(), 3000);
         try {
           const persona = PERSONA_MAP[activeAgent];
           const repMemoryResponse = await fetch('/api/rep-memory', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userEmail, persona })
+            body: JSON.stringify({ userEmail, persona }),
+            signal: repMemoryController.signal
           });
 
           if (repMemoryResponse.ok) {
@@ -177,6 +180,8 @@ function RepReadyDashboard() {
           }
         } catch (repMemoryError) {
           console.error("Rep memory fetch failed:", repMemoryError);
+        } finally {
+          clearTimeout(repMemoryTimeout);
         }
       }
 
