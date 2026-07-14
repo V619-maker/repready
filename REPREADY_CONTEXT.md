@@ -62,7 +62,6 @@ MY PROGRESS → /my-stats (rep progression)
 
 **Pages that exist:**
 - `app/page.js` — landing page ✅
-- `app/deck/page.js` — main simulator ✅ (567 lines; line count in this doc was stale, corrected). Shows a one-time 60-second onboarding overlay for first-time users (zero MongoDB sessions), auto-assigning Richard Vance and skipping persona selection; returning users see no change. Also shows a DPDP consent overlay before every voice session (not just first-time) — see Sprint 9.
 - `app/coach/page.js` — post-session debrief ✅
 - `app/my-stats/page.js` — rep progression ✅ live, showing real MongoDB data. Now includes "last practiced X days ago" and a consecutive-weeks streak counter.
 - `app/dashboard/page.js` — manager view ✅ upgraded: qualified/elite rep counts, session-weighted team avg score, team skill matrix with weakest-dimension callout, best-ever rep leaderboard (with 7-day inactivity warning per rep), recent sessions
@@ -80,7 +79,19 @@ MY PROGRESS → /my-stats (rep progression)
 
 **Richard's current LLM:** Claude Sonnet 4.6 (known issue: says stage directions aloud like `[impatient]` — fix by switching to ElevenLabs-hosted LLM or Gemini 2.5 Flash in ElevenLabs dashboard)
 
-**Dynamic variable:** `{{hostility_level}}` — passed via `startSession()` dynamicVariables. Values: `LOW (40%)`, `MEDIUM (60%)`, `HIGH (78%)`, `EXTREME (90%)`
+**Dynamic variables passed via `startSession()` dynamicVariables:**
+- `{{hostility_level}}` — always present. Values: `LOW (40%)`, `MEDIUM (60%)`, `HIGH (78%)`, `EXTREME (90%)`
+- `{{rep_history}}` — added July 2026, **conditionally present**. Only included when: the rep is signed in, current hostility ≥50%, and `/api/rep-memory` finds 2+ prior sessions for that rep+persona and successfully generates a summary via Gemini 2.5 Flash. When any of those isn't true, the key is entirely absent from dynamicVariables (not an empty string) — **Richard's prompt must handle `{{rep_history}}` being unset/blank gracefully** (see "ACTION NEEDED" below).
+
+**ACTION NEEDED (manual, ElevenLabs dashboard — not done by this repo):** Richard's system prompt needs an addition to actually use `{{rep_history}}`. Add this block to his prompt, positioned near the top alongside his other context/persona setup (before the scoring rules section):
+
+```
+REP HISTORY (if provided): {{rep_history}}
+
+If REP HISTORY above contains a summary, use it to inform how you engage this rep — reference their known patterns naturally in your dialogue (e.g. push harder on a tactic they haven't tried, or call out a weakness they've shown before) without ever stating "the system told me" or otherwise breaking character. If REP HISTORY is blank or missing, ignore this instruction entirely and proceed as you would for any rep with no history — do not mention its absence.
+```
+
+This has NOT been applied to the live ElevenLabs agent yet — do it manually in the ElevenLabs dashboard, then verify a real session with a rep who has 2+ prior sessions actually changes Richard's behavior before considering this feature complete end-to-end. Sandra's prompt does not need this change (rep-memory currently applies to both personas' API calls, but this action item only covers Richard per the original ask — extend to Sandra separately if desired).
 
 **Richard's first message:** "Richard Chen. Look, I've got something on my desk right now so make this fast. What've you got?"
 
@@ -137,6 +148,7 @@ All in `app/api/[[...path]]/route.js` unless noted:
 | `/api/boardroom` | POST | 2-call Gemini pipeline (combined analyst + executive summarizer) |
 | `/api/dashboard` | GET | Org-level aggregate stats by `?orgId=` — team avg score (session-weighted), qualified/elite rep counts, team dimension averages + weakest dimension, per-rep best-ever score/hostility/qualification status/lastSession (most recent `createdAt`), recent sessions |
 | `/api/benchmark` | GET | Fetch next hostility level by `?email=&persona=` |
+| `/api/rep-memory` | POST | `{ userEmail, persona }` → last-5-session Gemini summary of rep patterns for the AI buyer to use. `{ hasHistory: false }` if <2 sessions or on any failure (never a 500). Nothing is stored — regenerated fresh every call. |
 | `/api/negotiate` | POST | Text mode only (not used in voice journey) |
 | `/api/coach` | POST | Standalone file — fallback single Gemini call for scoring |
 | `/api/deduct-credit` | POST | Standalone file — Clerk credit deduction |
@@ -226,7 +238,7 @@ Takes combined scores → produces finalScore, grade, verdict, whatYouDidRight, 
 
 4. **Personal best discrepancy (design choice, not a bug now)** — `/deck` shows personal best from localStorage (device-local). `/my-stats` and `/dashboard` read best-ever score from MongoDB (authoritative, cross-device). Now that MongoDB is confirmed working, these can genuinely disagree if a rep switches devices/browsers — localStorage isn't reliable per the constraints below. Consider migrating `/deck`'s personal-best display to MongoDB too.
 
-5. **No server-side auth on `/api/sessions`, `/api/dashboard`, `/api/benchmark`** — these trust `?email=`/`?orgId=` query params with no verification the caller owns that identity/org. Anyone who knows or guesses an email/org domain can read that data. Not yet fixed; flag before touching.
+5. **No server-side auth on `/api/sessions`, `/api/dashboard`, `/api/benchmark`, `/api/rep-memory`** — these trust `?email=`/`?orgId=`/body `userEmail` with no verification the caller owns that identity/org. Anyone who knows or guesses an email/org domain can read that data (or, for `/api/rep-memory`, trigger a Gemini call against arbitrary session history). Not yet fixed; flag before touching.
 
 ---
 
@@ -234,7 +246,7 @@ Takes combined scores → produces finalScore, grade, verdict, whatYouDidRight, 
 
 1. ~~Fix MongoDB~~ — ✅ Complete July 13, 2026
 2. Use skills library for all remaining sprints — no more manual back-and-forth
-3. RAG for Richard/Sandra — ElevenLabs Knowledge Base with procurement objection playbooks
+3. RAG for Richard/Sandra — code side ✅ complete, but built differently than originally scoped: instead of an ElevenLabs Knowledge Base upload, it's a `POST /api/rep-memory` endpoint that summarizes a rep's last 5 sessions (from MongoDB, via Gemini 2.5 Flash) and injects it as a `{{rep_history}}` dynamic variable at call start. **Still needs a manual ElevenLabs dashboard edit to Richard's system prompt** — see "ACTION NEEDED" under ElevenLabs Agents above. Not yet wired into Sandra's prompt.
 
 ---
 

@@ -1033,6 +1033,97 @@ Write a crisp executive summary. Each feedback field must be under 20 words. Be 
       }
     }
 
+    // Rep memory - POST /api/rep-memory
+    if (route === '/rep-memory' && method === 'POST') {
+      try {
+        const body = await request.json()
+        const { userEmail, persona } = body
+        if (!userEmail || !persona) {
+          return handleCORS(NextResponse.json({ hasHistory: false }, { status: 400 }))
+        }
+
+        const db = await getDb()
+        const sessions = await db.collection('sessions')
+          .find({ userEmail, persona })
+          .sort({ createdAt: -1 })
+          .limit(5)
+          .toArray()
+
+        if (sessions.length < 2) {
+          return handleCORS(NextResponse.json({ hasHistory: false }))
+        }
+
+        const DIMENSION_LABELS = {
+          discoveryQuality: 'discovery',
+          objectionHandling: 'objections',
+          priceDefense: 'price',
+          smeKnowledge: 'sme',
+          communication: 'comm',
+          emotionalResilience: 'resilience'
+        }
+
+        const sessionLines = sessions.map(s => {
+          const date = s.createdAt ? String(s.createdAt).slice(0, 10) : 'unknown date'
+          let line = `${date}: score ${s.finalScore ?? 0}/100, grade ${s.grade || 'N/A'}, hostility ${s.hostilityReached ?? 0}%, status ${s.qualificationStatus || 'Unknown'}`
+          if (s.dimensions) {
+            const dims = Object.entries(DIMENSION_LABELS)
+              .map(([key, label]) => `${label} ${s.dimensions[key] ?? 0}`)
+              .join(', ')
+            line += `, dimensions: ${dims}`
+          }
+          return line
+        }).join('\n')
+
+        const prompt = `You are analyzing a sales rep's practice history.
+Summarize their patterns in 3 sentences maximum for
+their AI buyer opponent to use. Focus on:
+what tactics they rely on, where they consistently fail,
+what they haven't tried yet. Be specific with scores.
+Sessions: ${sessionLines}`
+
+        const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY
+        if (!apiKey) {
+          console.error('Rep memory error: GOOGLE_GENERATIVE_AI_API_KEY not set')
+          return handleCORS(NextResponse.json({ hasHistory: false }))
+        }
+
+        let repHistory = ''
+        try {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: prompt }] }],
+              generationConfig: {
+                maxOutputTokens: 300,
+                temperature: 0.3,
+              },
+            }),
+          })
+          if (!response.ok) {
+            const err = await response.text()
+            console.error('Rep memory Gemini API error:', err)
+            return handleCORS(NextResponse.json({ hasHistory: false }))
+          }
+          const data = await response.json()
+          repHistory = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+        } catch (geminiError) {
+          console.error('Rep memory Gemini fetch error:', geminiError)
+          return handleCORS(NextResponse.json({ hasHistory: false }))
+        }
+
+        if (!repHistory.trim()) {
+          return handleCORS(NextResponse.json({ hasHistory: false }))
+        }
+
+        return handleCORS(NextResponse.json({ hasHistory: true, repHistory: repHistory.trim() }))
+      } catch (error) {
+        console.error('Rep memory error:', error)
+        return handleCORS(NextResponse.json({ hasHistory: false }))
+      }
+    }
+
     // Route not found
     return handleCORS(NextResponse.json(
       { error: `Route ${route} not found` },
