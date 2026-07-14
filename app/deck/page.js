@@ -318,6 +318,8 @@ let boardroomEnablementScore = null;
     setIsAnalyzing(false);
     setActiveAgent(null);
     setShowAudit(true);
+    setConsentGiven(false);
+    setConsentChecked(false);
   };
 
   const formatTime = (seconds) => {
