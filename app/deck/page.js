@@ -412,7 +412,7 @@ let boardroomEnablementScore = null;
                   </button>
                 </a>
                 <button
-                  onClick={() => { setCreditsDepleted(false); setActiveAgent(null); }}
+                  onClick={() => { setCreditsDepleted(false); setActiveAgent(null); setConsentGiven(false); setConsentChecked(false); }}
                   className="px-8 py-3 border border-white/10 text-zinc-400 font-bold uppercase tracking-[0.2em] text-[10px] hover:bg-white/5 hover:text-white transition-all"
                 >
                   RETURN TO DECK
@@ -535,7 +535,7 @@ let boardroomEnablementScore = null;
                 </button>
               ) : (
                 <button
-                  onClick={() => setActiveAgent(null)}
+                  onClick={() => { setActiveAgent(null); setConsentGiven(false); setConsentChecked(false); }}
                   disabled={isAnalyzing}
                   className="px-6 py-3 border border-transparent text-cyan-500/50 text-[10px] uppercase tracking-[0.2em] hover:border-cyan-500/30 hover:bg-cyan-500/10 transition-all disabled:opacity-0"
                 >
