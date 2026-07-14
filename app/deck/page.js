@@ -156,12 +156,34 @@ function RepReadyDashboard() {
       const hostilityLabel = getHostilityLabel(currentHostilityPercent);
       const hostilityString = `${hostilityLabel} (${currentHostilityPercent}%)`;
 
+      const dynamicVariables = {
+        hostility_level: hostilityString
+      };
+
+      if (userEmail && currentHostilityPercent >= 50) {
+        try {
+          const persona = PERSONA_MAP[activeAgent];
+          const repMemoryResponse = await fetch('/api/rep-memory', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userEmail, persona })
+          });
+
+          if (repMemoryResponse.ok) {
+            const repMemoryData = await repMemoryResponse.json();
+            if (repMemoryData.hasHistory === true && repMemoryData.repHistory) {
+              dynamicVariables.rep_history = repMemoryData.repHistory;
+            }
+          }
+        } catch (repMemoryError) {
+          console.error("Rep memory fetch failed:", repMemoryError);
+        }
+      }
+
       await conversation.startSession({
         agentId: activeAgent,
         connectionType: "webrtc",
-        dynamicVariables: {
-          hostility_level: hostilityString
-        }
+        dynamicVariables
       });
     } catch (error) {
       console.error("Failed to start voice connection:", error);
