@@ -1,6 +1,7 @@
 export const metadata = {
   title: 'Privacy Policy — RepReady',
   description: 'RepReady privacy policy. How we collect, use, and protect your data.',
+  alternates: { canonical: 'https://repready.site/privacy' },
 }
 
 export default function PrivacyPage() {

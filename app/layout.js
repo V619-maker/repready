@@ -3,8 +3,9 @@ import './globals.css';
 import Link from 'next/link';
 
 export const metadata = {
-  title: 'RepReady — AI B2B Sales Negotiation Simulator for Sales Teams',
-  description: 'RepReady gives B2B sales reps live, voice-to-voice negotiation practice against hostile AI buyers. Real-time coaching, deal health scoring, and frame-control analysis. Start free.',
+  metadataBase: new URL('https://repready.site'),
+  title: 'RepReady — AI Sales Negotiation Simulator for Teams',
+  description: 'RepReady gives B2B sales reps live, voice-to-voice negotiation practice against hostile AI buyers, with real-time coaching and deal health scoring per rep.',
   keywords: 'AI sales training, B2B sales negotiation simulator, sales roleplay AI, sales coaching software, sales rep practice tool',
   robots: 'index, follow',
   authors: [{ name: 'RepReady' }],
@@ -35,7 +36,6 @@ export default function RootLayout({ children }) {
             href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700&family=JetBrains+Mono:wght@400&family=Sora:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap"
             rel="stylesheet"
           />
-          <link rel="canonical" href="https://repready.site/" />
           <script
             type="application/ld+json"
             dangerouslySetInnerHTML={{

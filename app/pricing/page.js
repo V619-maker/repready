@@ -4,6 +4,7 @@ import { Check, ChevronDown } from 'lucide-react'
 export const metadata = {
   title: 'Pricing — RepReady AI Sales Negotiation Simulator',
   description: 'Simple per-seat pricing for RepReady. Start free, no credit card required. Volume discounts at 15+ seats. Processed via Paddle for India and globally.',
+  alternates: { canonical: 'https://repready.site/pricing' },
 }
 
 const pricingTiers = [

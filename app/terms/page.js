@@ -1,6 +1,7 @@
 export const metadata = {
   title: 'Terms of Service — RepReady',
   description: 'RepReady terms of service. Your agreement with RepReady.',
+  alternates: { canonical: 'https://repready.site/terms' },
 }
 
 export default function TermsPage() {
