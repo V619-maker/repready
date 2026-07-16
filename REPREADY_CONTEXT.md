@@ -225,6 +225,7 @@ Takes combined scores → produces finalScore, grade, verdict, whatYouDidRight, 
 | Sprint 8 — Clerk production keys | ⏳ Not started | Dev keys warning showing in console |
 | Sprint 9 — DPDP Act compliance (Task 1) | ✅ Complete | `/deck` shows a per-session consent overlay (above the existing call-modal) before every voice session; `consentGiven`/`consentTimestamp` piggyback on the existing end-of-session `POST /api/sessions` call — no new network call at session-start. Backend stores both fields as nullable. |
 | Sprint 9 — DPDP Act compliance (Task 2) | ✅ Complete | `app/privacy/page.js` updated: explicit voice recording/transcript/scores/email data collection, MongoDB Atlas (Mumbai, India) named as storage processor alongside ElevenLabs/Gemini, explicit 90-day retention section, deletion-request and privacy-question contact routed to `privacy@repready.site`, new Grievance Redressal section (DPDP Act 2023) with 30-day response commitment. Sections renumbered 1–11; `sales@repready.site` no longer used anywhere on this page. |
+| Sprint 10 — SEO foundation | ✅ Complete | Added `app/robots.js` + `app/sitemap.js` (both 404'd before — likely why the site wasn't indexing). Fixed a site-wide bug: every page rendered an identical, duplicated `<link rel="canonical">` hardcoded in `app/layout.js`, always pointing to the homepage even on `/pricing`/`/privacy`/`/terms` — removed the hardcoded tag, gave those 3 pages correct per-page canonicals. Removed `images.unoptimized: true` from `next.config.js` (was disabling Vercel's image optimization). Trimmed homepage title/description into optimal length. `og-image.png` is still missing (referenced in OG/Twitter meta, 404s) — needs a real design asset, not fixed. `/deck`, `/my-stats`, `/dashboard`, `/coach` still can't have their own page metadata (Client Components) — needs a server/client split, not attempted. |
 
 ---
 
@@ -239,6 +240,10 @@ Takes combined scores → produces finalScore, grade, verdict, whatYouDidRight, 
 4. **Personal best discrepancy (design choice, not a bug now)** — `/deck` shows personal best from localStorage (device-local). `/my-stats` and `/dashboard` read best-ever score from MongoDB (authoritative, cross-device). Now that MongoDB is confirmed working, these can genuinely disagree if a rep switches devices/browsers — localStorage isn't reliable per the constraints below. Consider migrating `/deck`'s personal-best display to MongoDB too.
 
 5. **No server-side auth on `/api/sessions`, `/api/dashboard`, `/api/benchmark`, `/api/rep-memory`** — these trust `?email=`/`?orgId=`/body `userEmail` with no verification the caller owns that identity/org. Anyone who knows or guesses an email/org domain can read that data (or, for `/api/rep-memory`, trigger a Gemini call against arbitrary session history). Not yet fixed; flag before touching.
+
+6. **`og-image.png` missing** — referenced in OG/Twitter meta tags in `app/layout.js` but doesn't exist in `public/` (404s). Broken social share preview image. Needs a real 1200×630 branded design asset.
+
+7. **`/deck`, `/my-stats`, `/dashboard`, `/coach` can't have their own page metadata** — all four are Client Components (`'use client'`), and Next.js App Router forbids `metadata` exports in Client Components. They inherit the homepage's title/description/canonical from `app/layout.js`. Fixing this needs a server-component wrapper + client child split per page — deliberately not attempted on `/deck` given the standing rule to never restructure that file's structure.
 
 ---
 
