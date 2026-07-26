@@ -4,6 +4,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { generateObject } from 'ai'
 import { z } from 'zod'
 import { MongoClient } from 'mongodb'
+import { auth, currentUser } from '@clerk/nextjs/server'
 
 let cachedClient = null
 async function getDb() {
@@ -13,6 +14,15 @@ async function getDb() {
     cachedClient = client
   }
   return cachedClient.db(process.env.DB_NAME || 'repready')
+}
+
+// Resolves the requester's email from the Clerk session only — never from a
+// query param or request body. Returns null if there is no authenticated session.
+async function getAuthedEmail() {
+  const { userId } = await auth()
+  if (!userId) return null
+  const user = await currentUser()
+  return user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress || null
 }
 
 // Helper function to handle CORS
@@ -702,15 +712,18 @@ Evaluate the sales rep's performance and return JSON with:
       }
     }
 
-    // Get sessions by user - GET /api/sessions?email=xxx
+    // Get sessions by the authenticated user - GET /api/sessions
+    // (a legacy ?email= param may still be present on the request but is ignored — the
+    // authenticated Clerk session is the only source of identity here)
     if (route === '/sessions' && method === 'GET') {
       try {
-        const url = new URL(request.url)
-        const email = url.searchParams.get('email')
-        if (!email) return handleCORS(NextResponse.json([]))
+        const authedEmail = await getAuthedEmail()
+        if (!authedEmail) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
         const db = await getDb()
         const sessions = await db.collection('sessions')
-          .find({ userEmail: email })
+          .find({ userEmail: authedEmail })
           .sort({ createdAt: -1 })
           .limit(50)
           .toArray()
@@ -739,13 +752,21 @@ Evaluate the sales rep's performance and return JSON with:
       }
     }
 
-    // Manager dashboard - GET /api/dashboard?orgId=xxx
+    // Manager dashboard - GET /api/dashboard
+    // orgId is always derived from the authenticated user's own email domain — a
+    // client-supplied ?orgId= is ignored so no one can view another org's data by
+    // guessing a domain. NOTE: any authenticated user in an org can currently view
+    // that org's aggregate dashboard — there is no rep-vs-manager role check yet
+    // (see REPREADY_CONTEXT.md Known Issues).
     if (route === '/dashboard' && method === 'GET') {
       try {
-        const url = new URL(request.url)
-        const orgId = url.searchParams.get('orgId')
+        const authedEmail = await getAuthedEmail()
+        if (!authedEmail) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const orgId = authedEmail.split('@')[1]
         if (!orgId) return handleCORS(NextResponse.json(
-          { error: "orgId required" }, { status: 400 }
+          { error: "Unable to determine organization from account email" }, { status: 400 }
         ))
         const db = await getDb()
         const sessions = await db.collection('sessions')
@@ -1003,15 +1024,17 @@ Write a crisp executive summary. Each feedback field must be under 20 words. Be 
     ))
   }
   }
-    // GET /api/benchmark?email=xxx&persona=xxx
+    // GET /api/benchmark?persona=xxx — scoped to the authenticated user only
     if (route === '/benchmark' && method === 'GET') {
       try {
+        const authedEmail = await getAuthedEmail()
+        if (!authedEmail) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
         const url = new URL(request.url)
-        const email = url.searchParams.get('email')
         const persona = url.searchParams.get('persona')
-        if (!email) return handleCORS(NextResponse.json({ startingHostility: 40, hostilityLabel: 'Low' }))
         const db = await getDb()
-        const query = { userEmail: email }
+        const query = { userEmail: authedEmail }
         if (persona) query.persona = persona
         const bestSession = await db.collection('sessions')
           .find({ ...query, hostilityReached: { $exists: true, $ne: null } })
@@ -1034,12 +1057,23 @@ Write a crisp executive summary. Each feedback field must be under 20 words. Be 
     }
 
     // Rep memory - POST /api/rep-memory
+    // Most urgent of the four to authenticate: this endpoint triggers a billed
+    // Gemini call, so a mismatched/spoofed userEmail is rejected outright rather
+    // than silently substituted, per the explicit request body contract.
     if (route === '/rep-memory' && method === 'POST') {
       try {
+        const authedEmail = await getAuthedEmail()
+        if (!authedEmail) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+
         const body = await request.json()
         const { userEmail, persona } = body
         if (!userEmail || !persona) {
           return handleCORS(NextResponse.json({ hasHistory: false }, { status: 400 }))
+        }
+        if (userEmail.toLowerCase() !== authedEmail.toLowerCase()) {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
         }
 
         const db = await getDb()
