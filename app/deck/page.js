@@ -326,7 +326,8 @@ let boardroomEnablementScore = null;
   enablementScore: boardroomEnablementScore,
   dimensions: boardroomDimensions,
   consentGiven,
-  consentTimestamp
+  consentTimestamp,
+  orgId: userEmail ? userEmail.split('@')[1] : null
 })
           });
         }
