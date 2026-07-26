@@ -128,8 +128,8 @@ export default function Home() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&display=swap');
 
-        .reveal { opacity: 0; transform: translateY(28px); transition: opacity 0.7s ease, transform 0.7s ease; }
-        .reveal.is-visible { opacity: 1; transform: translateY(0); }
+        .reveal { opacity: 1; transform: translateY(28px); transition: transform 0.7s ease; }
+        .reveal.is-visible { transform: translateY(0); }
 
         @keyframes rr-cyan-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(34,211,238,0.4); } 50% { box-shadow: 0 0 0 14px rgba(34,211,238,0); } }
         .rr-cyan-btn { animation: rr-cyan-pulse 2.6s ease-in-out infinite; }
