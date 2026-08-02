@@ -14,6 +14,15 @@ const ZINC = '#A1A1AA';
 
 const BOOK_DEMO_URL = 'https://cal.com/vrushal-kitke-lg9txr/30min';
 
+// Fabricated example activity lines for the hero ticker — a static, looping
+// visual signal of product activity, not a live feed. No DB query involved.
+const ACTIVITY_LINES = [
+  'Rep scored 74 vs. Richard · 2m ago',
+  'Objection Handling flagged weak · 5m ago',
+  'New session started vs. Sandra · 8m ago',
+  'Rep reached Qualified status · 12m ago',
+];
+
 /* ---------- shared hooks / small building blocks ---------- */
 
 function useRevealOnScroll() {
@@ -79,8 +88,8 @@ function SkillBar({ label, pct, weak }) {
   }, []);
 
   return (
-    <div ref={ref} style={{ marginBottom: 20 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+    <div ref={ref} style={{ marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
         <span style={{ fontSize: 12, color: '#fff', letterSpacing: '0.05em', fontWeight: 600 }}>{label}</span>
         <span style={{ fontFamily: FONT_MONO, fontSize: 12, fontWeight: 700, color: weak ? RED : CYAN }}>{pct}%</span>
       </div>
@@ -134,6 +143,9 @@ export default function Home() {
         @keyframes rr-cyan-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(34,211,238,0.4); } 50% { box-shadow: 0 0 0 14px rgba(34,211,238,0); } }
         .rr-cyan-btn { animation: rr-cyan-pulse 2.6s ease-in-out infinite; }
 
+        @keyframes rr-ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+        .rr-ticker-track { animation: rr-ticker 24s linear infinite; }
+
         .rr-grid-2 { display: grid; grid-template-columns: 1fr 1fr; }
         .rr-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); }
         .rr-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); }
@@ -155,12 +167,12 @@ export default function Home() {
       </nav>
 
       {/* SECTION 1 — Hero */}
-      <section style={{ position: 'relative', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '120px 24px 80px' }}>
-        <div style={{ maxWidth: 820 }}>
-          <h1 style={{ fontFamily: FONT_HEAD, fontSize: 'clamp(36px, 6vw, 68px)', fontWeight: 700, color: '#fff', letterSpacing: '-0.02em', lineHeight: 1.1, marginBottom: 28 }}>
+      <section style={{ position: 'relative', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '140px 24px 100px' }}>
+        <div style={{ maxWidth: 880 }}>
+          <h1 style={{ fontFamily: FONT_HEAD, fontSize: 'clamp(44px, 7.5vw, 84px)', fontWeight: 700, color: '#fff', letterSpacing: '-0.03em', lineHeight: 1.02, marginBottom: 36 }}>
             Find out which skill is costing your team deals — before next quarter does.
           </h1>
-          <p style={{ fontSize: 17, color: ZINC, maxWidth: 620, margin: '0 auto 40px', lineHeight: 1.7 }}>
+          <p style={{ fontSize: 17, color: ZINC, maxWidth: 620, margin: '0 auto 48px', lineHeight: 1.7 }}>
             RepReady runs your reps against hostile AI buyers and returns a skill diagnostic after session one. Voice-only. Scored across 6 dimensions.
           </p>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'center' }}>
@@ -171,13 +183,22 @@ export default function Home() {
               Reps: Try it free →
             </Link>
           </div>
+          <div style={{ marginTop: 64, maxWidth: 460, marginLeft: 'auto', marginRight: 'auto', overflow: 'hidden', WebkitMaskImage: 'linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent)', maskImage: 'linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent)' }}>
+            <div className="rr-ticker-track" style={{ display: 'flex', gap: 40, width: 'max-content' }}>
+              {[...ACTIVITY_LINES, ...ACTIVITY_LINES].map((line, i) => (
+                <span key={i} style={{ fontFamily: FONT_MONO, fontSize: 11, color: ZINC, letterSpacing: '0.02em', whiteSpace: 'nowrap', opacity: 0.65 }}>
+                  <span style={{ color: CYAN, marginRight: 6 }}>●</span>{line}
+                </span>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
       {/* SECTION 2 — Skill matrix */}
-      <section className="reveal" style={{ padding: '100px 24px', background: '#0d0d0d', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+      <section className="reveal" style={{ padding: '120px 24px', background: '#0d0d0d', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
         <div style={{ maxWidth: 720, margin: '0 auto' }}>
-          <h2 style={{ fontFamily: FONT_HEAD, fontSize: 'clamp(24px, 3.5vw, 40px)', fontWeight: 700, color: '#fff', textAlign: 'center', marginBottom: 56 }}>Session 1 tells you exactly where your team is leaking deals.</h2>
+          <h2 style={{ fontFamily: FONT_HEAD, fontSize: 'clamp(24px, 3.5vw, 40px)', fontWeight: 700, color: '#fff', textAlign: 'center', marginBottom: 48 }}>Session 1 tells you exactly where your team is leaking deals.</h2>
           <div>
             {teamSkills.map((s) => (
               <SkillBar key={s.label} label={s.label} pct={s.pct} weak={s.weak} />
@@ -195,10 +216,20 @@ export default function Home() {
       </section>
 
       {/* SECTION 3 — Real session report */}
-      <section id="session-report" className="reveal" style={{ padding: '100px 24px' }}>
+      <section id="session-report" className="reveal" style={{ padding: '120px 24px' }}>
         <div style={{ maxWidth: 780, margin: '0 auto' }}>
-          <h2 style={{ fontFamily: FONT_HEAD, fontSize: 'clamp(24px, 3.5vw, 40px)', fontWeight: 700, color: '#fff', textAlign: 'center', marginBottom: 48 }}>This is what your VP of Sales gets after session one.</h2>
-          <div style={{ border: '1px solid rgba(255,255,255,0.1)', background: '#0d0d0d', padding: 32 }}>
+          <h2 style={{ fontFamily: FONT_HEAD, fontSize: 'clamp(24px, 3.5vw, 40px)', fontWeight: 700, color: '#fff', textAlign: 'center', marginBottom: 12 }}>This is what your VP of Sales gets after session one.</h2>
+          <p style={{ fontSize: 11, color: ZINC, textAlign: 'center', marginBottom: 40, opacity: 0.7 }}>Illustrative example</p>
+          <div style={{ border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '11px 16px', background: '#050505', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <span style={{ width: 9, height: 9, borderRadius: '50%', background: 'rgba(255,255,255,0.16)', display: 'inline-block' }} />
+                <span style={{ width: 9, height: 9, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'inline-block' }} />
+                <span style={{ width: 9, height: 9, borderRadius: '50%', background: 'rgba(255,255,255,0.24)', display: 'inline-block' }} />
+              </div>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: ZINC, opacity: 0.5, letterSpacing: '0.02em' }}>session-report — repready.site</span>
+            </div>
+            <div style={{ background: '#0d0d0d', padding: 32 }}>
             <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: ZINC, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 24 }}>
               Rep: Anonymous Rep · Persona: Richard Vance · Date: July 2026
             </div>
@@ -238,16 +269,17 @@ export default function Home() {
             <Link href="/coach" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: CYAN, fontSize: 12, fontWeight: 900, letterSpacing: '0.15em', textTransform: 'uppercase', textDecoration: 'none' }}>
               See full coach report →
             </Link>
+            </div>
           </div>
         </div>
       </section>
 
       {/* SECTION 4 — Demo (failure and win) */}
-      <section className="reveal" style={{ padding: '100px 24px', background: '#0d0d0d', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+      <section className="reveal" style={{ padding: '120px 24px', background: '#0d0d0d', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
         <div style={{ maxWidth: 1080, margin: '0 auto' }}>
           <h2 style={{ fontFamily: FONT_HEAD, fontSize: 'clamp(24px, 3.5vw, 40px)', fontWeight: 700, color: '#fff', textAlign: 'center', marginBottom: 56 }}>Watch Richard destroy a bad pitch. Then watch the same rep win.</h2>
           <div className="rr-grid-2" style={{ gap: 24, marginBottom: 32 }}>
-            <div style={{ border: `1px solid ${RED}`, background: '#0A0A0A', padding: 28 }}>
+            <div style={{ border: `1px solid ${RED}`, background: '#0A0A0A', padding: 28, boxShadow: '0 16px 40px rgba(239,68,68,0.08)' }}>
               <div style={{ fontFamily: FONT_MONO, fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: RED, textTransform: 'uppercase', marginBottom: 20 }}>Bad Rep</div>
               <div style={{ fontSize: 13, color: ZINC, lineHeight: 1.9, marginBottom: 24 }}>
                 <p style={{ marginBottom: 10 }}><span style={{ color: '#fff', fontWeight: 700 }}>[Richard]</span> "You've got 3 minutes. What's your number?"</p>
@@ -258,7 +290,7 @@ export default function Home() {
               </div>
               <div style={{ fontFamily: FONT_HEAD, fontSize: 24, fontWeight: 700, color: RED }}>31/100 <span style={{ fontSize: 16, color: ZINC }}>Grade: F</span></div>
             </div>
-            <div style={{ border: `1px solid ${GREEN}`, background: '#0A0A0A', padding: 28 }}>
+            <div style={{ border: `1px solid ${GREEN}`, background: '#0A0A0A', padding: 28, boxShadow: '0 16px 40px rgba(34,197,94,0.08)' }}>
               <div style={{ fontFamily: FONT_MONO, fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: GREEN, textTransform: 'uppercase', marginBottom: 20 }}>Same Rep, Session 4</div>
               <div style={{ fontSize: 13, color: ZINC, lineHeight: 1.9, marginBottom: 24 }}>
                 <p style={{ marginBottom: 10 }}><span style={{ color: '#fff', fontWeight: 700 }}>[Richard]</span> "You've got 3 minutes. What's your number."</p>
@@ -276,13 +308,13 @@ export default function Home() {
       </section>
 
       {/* SECTION 5 — Pricing */}
-      <section id="pricing" className="reveal" style={{ padding: '100px 24px', background: '#0A0A0A' }}>
+      <section id="pricing" className="reveal" style={{ padding: '130px 24px', background: '#0A0A0A' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 20 }}>
             <h2 style={{ fontFamily: FONT_HEAD, fontSize: 'clamp(26px, 4vw, 44px)', fontWeight: 700, color: '#fff', marginBottom: 12 }}>Transparent pricing. No surprises.</h2>
             <p style={{ fontSize: 14, color: ZINC }}>Unlike US competitors, we show you the number.</p>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, margin: '32px 0 56px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, margin: '32px 0 64px' }}>
             <span style={{ fontSize: 12, color: annual ? ZINC : '#fff', fontWeight: 700 }}>Monthly</span>
             <button
               onClick={() => setAnnual((a) => !a)}
@@ -293,11 +325,11 @@ export default function Home() {
             </button>
             <span style={{ fontSize: 12, color: annual ? '#fff' : ZINC, fontWeight: 700 }}>Annual <span style={{ color: CYAN }}>(Save 20%)</span></span>
           </div>
-          <div className="rr-grid-4" style={{ gap: 20 }}>
+          <div className="rr-grid-4" style={{ gap: 24 }}>
             {plans.map((plan) => {
               const price = plan.monthly === null ? null : (annual ? plan.annualPrice : plan.monthly);
               return (
-                <div key={plan.name} style={{ position: 'relative', border: `1px solid ${plan.badge ? CYAN : 'rgba(255,255,255,0.1)'}`, background: '#0d0d0d', padding: 28 }}>
+                <div key={plan.name} style={{ position: 'relative', border: `1px solid ${plan.badge ? CYAN : 'rgba(255,255,255,0.1)'}`, background: '#0d0d0d', padding: plan.badge ? 34 : 28, boxShadow: plan.badge ? '0 20px 50px rgba(34,211,238,0.12)' : 'none' }}>
                   {plan.badge && (
                     <div style={{ position: 'absolute', top: -12, left: 28, background: CYAN, color: '#000', fontSize: 10, fontWeight: 900, letterSpacing: '0.1em', padding: '4px 12px' }}>{plan.badge}</div>
                   )}
