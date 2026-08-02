@@ -364,20 +364,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* TRUST SIGNALS — placeholder content, needs real founder details before this
-          is production-visible. See PR description. */}
-      <section className="reveal" style={{ padding: '80px 24px', background: '#0d0d0d', borderTop: '1px solid rgba(255,255,255,0.06)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <div style={{ maxWidth: 640, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 24 }}>
-          <div style={{ width: 64, height: 64, borderRadius: '50%', flexShrink: 0, border: '1px dashed rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: FONT_MONO, fontSize: 9, color: ZINC, textAlign: 'center', lineHeight: 1.3, padding: 4 }}>
-            [FOUNDER PHOTO]
-          </div>
-          <div>
-            <div style={{ fontFamily: FONT_HEAD, fontSize: 15, fontWeight: 700, color: '#fff', marginBottom: 4 }}>[FOUNDER NAME]</div>
-            <p style={{ fontSize: 13, color: ZINC, lineHeight: 1.6 }}>[FOUNDER BIO — one line]</p>
-          </div>
-        </div>
-      </section>
-
       {/* SECTION 6 — Final CTA */}
       <section className="reveal" style={{ padding: '140px 24px', background: '#050505', borderTop: '1px solid rgba(34,211,238,0.15)', textAlign: 'center' }}>
         <div style={{ maxWidth: 600, margin: '0 auto' }}>
