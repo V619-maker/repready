@@ -134,7 +134,7 @@ export default function Home() {
 
   return (
     <div style={{ position: 'relative', minHeight: '100vh', background: '#0A0A0A', fontFamily: FONT_BODY, color: '#fff', overflowX: 'hidden' }}>
-      <style>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&display=swap');
 
         .reveal { opacity: 1; transform: translateY(28px); transition: transform 0.7s ease; }
@@ -153,7 +153,7 @@ export default function Home() {
         @media (max-width: 860px) {
           .rr-grid-2, .rr-grid-3, .rr-grid-4 { grid-template-columns: 1fr !important; }
         }
-      `}</style>
+      ` }} />
 
       {/* Nav */}
       <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 64, background: 'rgba(10,10,10,0.9)', borderBottom: `1px solid rgba(34,211,238,0.15)`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 32px', zIndex: 200, backdropFilter: 'blur(12px)' }}>
