@@ -7,11 +7,29 @@ import { useConversation, ConversationProvider } from '@elevenlabs/react';
 
 const RICHARD_ID = "agent_8601kmk3maq9f9a9csym74aj7s4e";
 const SANDRA_ID = "agent_0301kmsnhr7tf11b62bvd7vsw9qq";
+// PLACEHOLDER — not a real ElevenLabs agent ID. Replace before merging: starting
+// a session against Priya will fail (or connect to nothing) until the real
+// agent_* ID from the ElevenLabs dashboard is swapped in here.
+const PRIYA_ID = "agent_PLACEHOLDER_PRIYA_TBD";
+// PLACEHOLDER — not a real ElevenLabs agent ID. Same caveat as PRIYA_ID above.
+const RAKESH_ID = "agent_PLACEHOLDER_RAKESH_TBD";
 const TRIAL_TIME_LIMIT = 90;
 
 const PERSONA_MAP = {
   [RICHARD_ID]: 'richard',
-  [SANDRA_ID]: 'sandra'
+  [SANDRA_ID]: 'sandra',
+  [PRIYA_ID]: 'priya',
+  [RAKESH_ID]: 'rakesh'
+};
+
+// Display labels for the live-call transcript speaker tag. Keyed by agent ID
+// so it generalizes past the old Richard/Sandra binary — extend this (not an
+// if/else) whenever a new persona is added.
+const PERSONA_DISPLAY_NAME = {
+  [RICHARD_ID]: 'VANCE',
+  [SANDRA_ID]: 'CHEN',
+  [PRIYA_ID]: 'MALHOTRA',
+  [RAKESH_ID]: 'IYER'
 };
 
 function getHostilityLabel(percent) {
@@ -75,15 +93,21 @@ function RepReadyDashboard() {
   const [recentScore, setRecentScore] = useState(0);
   const [bestScores, setBestScores] = useState({
     [RICHARD_ID]: null,
-    [SANDRA_ID]: null
+    [SANDRA_ID]: null,
+    [PRIYA_ID]: null,
+    [RAKESH_ID]: null
   });
 
   useEffect(() => {
     const savedRichard = localStorage.getItem(`repready_best_${RICHARD_ID}`);
     const savedSandra = localStorage.getItem(`repready_best_${SANDRA_ID}`);
+    const savedPriya = localStorage.getItem(`repready_best_${PRIYA_ID}`);
+    const savedRakesh = localStorage.getItem(`repready_best_${RAKESH_ID}`);
     setBestScores({
       [RICHARD_ID]: savedRichard ? parseInt(savedRichard) : null,
-      [SANDRA_ID]: savedSandra ? parseInt(savedSandra) : null
+      [SANDRA_ID]: savedSandra ? parseInt(savedSandra) : null,
+      [PRIYA_ID]: savedPriya ? parseInt(savedPriya) : null,
+      [RAKESH_ID]: savedRakesh ? parseInt(savedRakesh) : null
     });
   }, []);
 
@@ -421,6 +445,68 @@ let boardroomEnablementScore = null;
               START SIMULATION
             </button>
           </div>
+
+          {/* Priya Card — NEW persona. Photo asset (/Priya.png) doesn't exist yet;
+              falls back to initials if it 404s so the card never shows a broken
+              image icon. Role/title is a placeholder pending real persona details. */}
+          <div className="border border-white/5 bg-[#0a0a0a] hover:border-[#22D3EE]/40 transition-all flex flex-col group">
+            <div className="p-8 flex gap-6 flex-1">
+              <div className="w-24 h-32 shrink-0 border border-white/10 overflow-hidden flex items-center justify-center bg-white/5">
+                <img
+                  src="/Priya.png"
+                  alt="Priya Malhotra"
+                  className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500"
+                  onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex'; }}
+                />
+                <span className="hidden w-full h-full items-center justify-center text-2xl font-bold text-zinc-500">PM</span>
+              </div>
+              <div className="flex flex-col justify-center">
+                <h2 className="text-2xl font-bold text-white uppercase tracking-tight">Priya Malhotra</h2>
+                <p className="text-[#22D3EE] text-[10px] uppercase tracking-widest font-bold mt-1 mb-4">Role — TBD</p>
+                <div className="mt-auto">
+                  <p className="text-[9px] text-zinc-600 uppercase tracking-widest mb-1">Personal Best</p>
+                  {bestScores[PRIYA_ID] ? (
+                    <p className="text-xl font-bold text-white">{bestScores[PRIYA_ID]}<span className="text-xs text-zinc-500">/100</span></p>
+                  ) : (
+                    <p className="text-xs font-bold text-zinc-600 tracking-widest">UNTESTED</p>
+                  )}
+                </div>
+              </div>
+            </div>
+            <button onClick={() => setActiveAgent(PRIYA_ID)} className="w-full py-4 border-t border-white/5 text-white text-[10px] font-bold uppercase tracking-[0.3em] hover:bg-white/5 transition-all">
+              START SIMULATION
+            </button>
+          </div>
+
+          {/* Rakesh Card — NEW persona. Same placeholder caveats as Priya's card above. */}
+          <div className="border border-white/5 bg-[#0a0a0a] hover:border-[#22D3EE]/40 transition-all flex flex-col group">
+            <div className="p-8 flex gap-6 flex-1">
+              <div className="w-24 h-32 shrink-0 border border-white/10 overflow-hidden flex items-center justify-center bg-white/5">
+                <img
+                  src="/Rakesh.png"
+                  alt="Rakesh Iyer"
+                  className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500"
+                  onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex'; }}
+                />
+                <span className="hidden w-full h-full items-center justify-center text-2xl font-bold text-zinc-500">RI</span>
+              </div>
+              <div className="flex flex-col justify-center">
+                <h2 className="text-2xl font-bold text-white uppercase tracking-tight">Rakesh Iyer</h2>
+                <p className="text-[#22D3EE] text-[10px] uppercase tracking-widest font-bold mt-1 mb-4">Role — TBD</p>
+                <div className="mt-auto">
+                  <p className="text-[9px] text-zinc-600 uppercase tracking-widest mb-1">Personal Best</p>
+                  {bestScores[RAKESH_ID] ? (
+                    <p className="text-xl font-bold text-white">{bestScores[RAKESH_ID]}<span className="text-xs text-zinc-500">/100</span></p>
+                  ) : (
+                    <p className="text-xs font-bold text-zinc-600 tracking-widest">UNTESTED</p>
+                  )}
+                </div>
+              </div>
+            </div>
+            <button onClick={() => setActiveAgent(RAKESH_ID)} className="w-full py-4 border-t border-white/5 text-white text-[10px] font-bold uppercase tracking-[0.3em] hover:bg-white/5 transition-all">
+              START SIMULATION
+            </button>
+          </div>
         </div>
       </div>
 
@@ -518,7 +604,7 @@ let boardroomEnablementScore = null;
                   {liveTranscript.map((msg, i) => (
                     <div key={i} className={`leading-relaxed ${msg.speaker === 'System' ? 'text-cyan-600' : msg.speaker === 'Prospect' ? 'text-red-400' : 'text-cyan-400'}`}>
                       <span className="font-bold opacity-80 uppercase tracking-widest">
-                        [{msg.speaker === 'Prospect' ? (activeAgent === RICHARD_ID ? 'VANCE' : 'CHEN') : msg.speaker === 'Rep' ? 'YOU' : 'SYSTEM'}]
+                        [{msg.speaker === 'Prospect' ? (PERSONA_DISPLAY_NAME[activeAgent] || 'PROSPECT') : msg.speaker === 'Rep' ? 'YOU' : 'SYSTEM'}]
                       </span> {msg.text}
                     </div>
                   ))}
