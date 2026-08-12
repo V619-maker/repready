@@ -892,9 +892,19 @@ if (route === '/boardroom' && method === 'POST') {
       apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
     })
 
-    const personaContext = persona === 'richard'
-      ? 'VP Procurement at a logistics firm. CFO-mandated 15% cost reduction. Anchors on price, threatens vendor consolidation, demands Net-90 terms.'
-      : 'IT Director at a financial firm. Blocks on SOC 2, SAML/SSO, and bandwidth. Polite but always has a blocker.'
+    // Buyer context fed to the Gemini boardroom analyst — keyed by persona so it
+    // generalizes past the old richard/sandra binary (previously `persona ===
+    // 'richard' ? ... : ...`, which silently scored every other persona, including
+    // new ones, as if they were Sandra). PLACEHOLDER text for priya/rakesh below —
+    // replace with their real buyer scenario once their system prompts are final,
+    // so boardroom scoring judges rep performance against the right context.
+    const PERSONA_CONTEXT = {
+      richard: 'VP Procurement at a logistics firm. CFO-mandated 15% cost reduction. Anchors on price, threatens vendor consolidation, demands Net-90 terms.',
+      sandra: 'IT Director at a financial firm. Blocks on SOC 2, SAML/SSO, and bandwidth. Polite but always has a blocker.',
+      priya: 'PLACEHOLDER — buyer context TBD, pending real persona details.',
+      rakesh: 'PLACEHOLDER — buyer context TBD, pending real persona details.'
+    }
+    const personaContext = PERSONA_CONTEXT[persona] || 'Enterprise buyer evaluating a B2B software purchase.'
 
     // CALL 1 — Combined analyst: procurement + enablement + 6 dimensions
     const CombinedAnalystSchema = z.object({
