@@ -80,8 +80,15 @@ function RepReadyDashboard() {
     onMessage: (message) => {
       if (message.message) {
         const speaker = message.source === 'user' ? 'Rep' : 'Prospect';
-        transcriptRef.current.push(`${speaker}: ${message.message}`);
-        setLiveTranscript(prev => [...prev, { speaker, text: message.message }]);
+        // Some agent voices occasionally emit leading stage-direction markup
+        // (e.g. "<Rakesh Iyer>[Warmly]") as literal text instead of treating
+        // it as internal delivery guidance. Strip that before it reaches the
+        // transcript, the live UI, or the scoring pipeline.
+        const cleanText = message.message
+          .replace(/^(?:\s*(?:<[^>]*>|\[[^\]]*\])\s*)+/, '')
+          .trim();
+        transcriptRef.current.push(`${speaker}: ${cleanText}`);
+        setLiveTranscript(prev => [...prev, { speaker, text: cleanText }]);
       }
     }
   });
