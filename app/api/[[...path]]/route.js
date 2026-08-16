@@ -4,7 +4,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { generateObject } from 'ai'
 import { z } from 'zod'
 import { MongoClient } from 'mongodb'
-import { auth, currentUser } from '@clerk/nextjs/server'
+import { auth, currentUser, clerkClient } from '@clerk/nextjs/server'
 
 let cachedClient = null
 async function getDb() {
@@ -23,6 +23,30 @@ async function getAuthedEmail() {
   if (!userId) return null
   const user = await currentUser()
   return user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress || null
+}
+
+// Reads role/plan/persona-selection from Clerk publicMetadata. Defaults are
+// deliberately non-restrictive: no user currently has these fields set, so
+// until they're set manually (or via a future billing webhook), everyone
+// keeps exactly the access they have today — role defaults to 'rep' (the
+// least-privileged, so nobody accidentally sees another rep's data), but
+// planTier defaults to null, which means "unrestricted" (all 4 personas
+// unlocked) rather than defaulting to the most restrictive tier. This
+// avoids silently downgrading access for anyone until billing is actually
+// wired up to set a real tier per user.
+async function getAuthedUser() {
+  const { userId } = await auth()
+  if (!userId) return null
+  const user = await currentUser()
+  const email = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress || null
+  const meta = user?.publicMetadata || {}
+  return {
+    userId,
+    email,
+    role: meta.role === 'manager' ? 'manager' : 'rep',
+    planTier: meta.planTier || null,
+    selectedPersonas: Array.isArray(meta.selectedPersonas) ? meta.selectedPersonas : []
+  }
 }
 
 // Helper function to handle CORS
@@ -755,22 +779,27 @@ Evaluate the sales rep's performance and return JSON with:
     // Manager dashboard - GET /api/dashboard
     // orgId is always derived from the authenticated user's own email domain — a
     // client-supplied ?orgId= is ignored so no one can view another org's data by
-    // guessing a domain. NOTE: any authenticated user in an org can currently view
-    // that org's aggregate dashboard — there is no rep-vs-manager role check yet
-    // (see REPREADY_CONTEXT.md Known Issues).
+    // guessing a domain. Role gating: managers see the full org aggregate; reps
+    // (the default for everyone until manually promoted in Clerk) see only their
+    // own sessions. No one currently has role: 'manager' set, so this is a real
+    // behavior change from before — anyone who was relying on seeing the org-wide
+    // view will need role: 'manager' added to their Clerk publicMetadata.
     if (route === '/dashboard' && method === 'GET') {
       try {
-        const authedEmail = await getAuthedEmail()
-        if (!authedEmail) {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
           return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
         }
-        const orgId = authedEmail.split('@')[1]
+        const orgId = authedUser.email.split('@')[1]
         if (!orgId) return handleCORS(NextResponse.json(
           { error: "Unable to determine organization from account email" }, { status: 400 }
         ))
         const db = await getDb()
+        const sessionQuery = authedUser.role === 'manager'
+          ? { orgId: orgId }
+          : { orgId: orgId, userEmail: authedUser.email }
         const sessions = await db.collection('sessions')
-          .find({ orgId: orgId })
+          .find(sessionQuery)
           .sort({ createdAt: -1 })
           .toArray()
 
@@ -867,6 +896,80 @@ Evaluate the sales rep's performance and return JSON with:
         console.error('Dashboard error:', error)
         return handleCORS(NextResponse.json(
           { error: "Failed to load dashboard." }, { status: 500 }
+        ))
+      }
+    }
+
+    // Persona access - GET /api/persona-access
+    // Returns which of the 4 personas this user can access. If planTier is
+    // unset (true for everyone right now), all 4 are unlocked — enforcement
+    // only activates once a real planTier is set on a user's Clerk account.
+    // Growth/Scale/Enterprise are unrestricted; only 'starter' is limited.
+    const ALL_PERSONAS = ['richard', 'sandra', 'priya', 'rakesh']
+    if (route === '/persona-access' && method === 'GET') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const unlocked = authedUser.planTier === 'starter'
+          ? authedUser.selectedPersonas
+          : ALL_PERSONAS
+        return handleCORS(NextResponse.json({
+          planTier: authedUser.planTier,
+          unlocked
+        }))
+      } catch (error) {
+        console.error('Persona-access GET error:', error)
+        return handleCORS(NextResponse.json(
+          { error: "Failed to load persona access." }, { status: 500 }
+        ))
+      }
+    }
+
+    // Persona access - POST /api/persona-access
+    // Locks in a persona choice for Starter-tier users (any 2 of 4, first
+    // come). No-ops for non-starter users since they're already unrestricted.
+    // Once 2 are locked in, a third distinct choice is rejected with a clear
+    // error rather than silently failing.
+    if (route === '/persona-access' && method === 'POST') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const body = await request.json()
+        const { personaId } = body
+        if (!personaId || !ALL_PERSONAS.includes(personaId)) {
+          return handleCORS(NextResponse.json({ error: "Invalid persona." }, { status: 400 }))
+        }
+
+        if (authedUser.planTier !== 'starter') {
+          return handleCORS(NextResponse.json({ planTier: authedUser.planTier, unlocked: ALL_PERSONAS }))
+        }
+
+        if (authedUser.selectedPersonas.includes(personaId)) {
+          return handleCORS(NextResponse.json({ planTier: 'starter', unlocked: authedUser.selectedPersonas }))
+        }
+
+        if (authedUser.selectedPersonas.length >= 2) {
+          return handleCORS(NextResponse.json(
+            { error: "Your plan includes 2 personas. Upgrade to unlock the rest.", unlocked: authedUser.selectedPersonas },
+            { status: 403 }
+          ))
+        }
+
+        const updatedSelection = [...authedUser.selectedPersonas, personaId]
+        const client = await clerkClient()
+        await client.users.updateUserMetadata(authedUser.userId, {
+          publicMetadata: { selectedPersonas: updatedSelection }
+        })
+
+        return handleCORS(NextResponse.json({ planTier: 'starter', unlocked: updatedSelection }))
+      } catch (error) {
+        console.error('Persona-access POST error:', error)
+        return handleCORS(NextResponse.json(
+          { error: "Failed to update persona access." }, { status: 500 }
         ))
       }
     }
