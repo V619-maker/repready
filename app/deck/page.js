@@ -7,12 +7,8 @@ import { useConversation, ConversationProvider } from '@elevenlabs/react';
 
 const RICHARD_ID = "agent_8601kmk3maq9f9a9csym74aj7s4e";
 const SANDRA_ID = "agent_0301kmsnhr7tf11b62bvd7vsw9qq";
-// PLACEHOLDER — not a real ElevenLabs agent ID. Replace before merging: starting
-// a session against Priya will fail (or connect to nothing) until the real
-// agent_* ID from the ElevenLabs dashboard is swapped in here.
-const PRIYA_ID = "agent_PLACEHOLDER_PRIYA_TBD";
-// PLACEHOLDER — not a real ElevenLabs agent ID. Same caveat as PRIYA_ID above.
-const RAKESH_ID = "agent_PLACEHOLDER_RAKESH_TBD";
+const PRIYA_ID = "agent_5701kzmwc61jfq59zjnvrvb1pxmt";
+const RAKESH_ID = "agent_4901m021sybbenebrf04zntdad30";
 const TRIAL_TIME_LIMIT = 90;
 
 const PERSONA_MAP = {
