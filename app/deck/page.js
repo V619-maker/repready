@@ -741,13 +741,39 @@ let boardroomEnablementScore = null;
               First Simulation
             </h2>
             <p className="text-zinc-400 text-sm leading-relaxed mb-10">
-              You're about to face Richard Vance, VP Procurement. He has 3 minutes and wants 20% off. Your goal: get a discovery call. Good luck.
+              Choose who you want to face first.
             </p>
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                onClick={() => { setOnboardingDismissed(true); setActiveAgent(RICHARD_ID); }}
+                className="py-4 border border-white/10 text-white font-bold uppercase tracking-[0.15em] text-[10px] hover:border-[#22D3EE]/40 hover:bg-white/5 transition-all"
+              >
+                Richard Vance
+              </button>
+              <button
+                onClick={() => { setOnboardingDismissed(true); setActiveAgent(SANDRA_ID); }}
+                className="py-4 border border-white/10 text-white font-bold uppercase tracking-[0.15em] text-[10px] hover:border-[#22D3EE]/40 hover:bg-white/5 transition-all"
+              >
+                Sandra Chen
+              </button>
+              <button
+                onClick={() => { setOnboardingDismissed(true); setActiveAgent(PRIYA_ID); }}
+                className="py-4 border border-white/10 text-white font-bold uppercase tracking-[0.15em] text-[10px] hover:border-[#22D3EE]/40 hover:bg-white/5 transition-all"
+              >
+                Priya Malhotra
+              </button>
+              <button
+                onClick={() => { setOnboardingDismissed(true); setActiveAgent(RAKESH_ID); }}
+                className="py-4 border border-white/10 text-white font-bold uppercase tracking-[0.15em] text-[10px] hover:border-[#22D3EE]/40 hover:bg-white/5 transition-all"
+              >
+                Rakesh Iyer
+              </button>
+            </div>
             <button
-              onClick={() => { setOnboardingDismissed(true); setActiveAgent(RICHARD_ID); }}
-              className="w-full py-4 bg-[#22D3EE] text-black font-bold uppercase tracking-[0.2em] text-[10px] hover:bg-white transition-all"
+              onClick={() => setOnboardingDismissed(true)}
+              className="mt-8 text-zinc-500 text-[9px] uppercase tracking-widest hover:text-white transition-colors"
             >
-              BEGIN FIRST SIMULATION
+              Skip — I'll pick from the deck
             </button>
           </div>
         </div>
