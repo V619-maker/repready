@@ -28,7 +28,7 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-   <ClerkProvider afterSignInUrl="/deck">
+   <ClerkProvider forceRedirectUrl="/deck">
       <html lang="en">
         <head>
           <link rel="preconnect" href="https://fonts.googleapis.com" />

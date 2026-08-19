@@ -895,14 +895,13 @@ if (route === '/boardroom' && method === 'POST') {
     // Buyer context fed to the Gemini boardroom analyst — keyed by persona so it
     // generalizes past the old richard/sandra binary (previously `persona ===
     // 'richard' ? ... : ...`, which silently scored every other persona, including
-    // new ones, as if they were Sandra). PLACEHOLDER text for priya/rakesh below —
-    // replace with their real buyer scenario once their system prompts are final,
-    // so boardroom scoring judges rep performance against the right context.
+    // new ones, as if they were Sandra). Priya/Rakesh now have real buyer context
+    // matching their ElevenLabs system prompts, replacing the earlier placeholder.
     const PERSONA_CONTEXT = {
       richard: 'VP Procurement at a logistics firm. CFO-mandated 15% cost reduction. Anchors on price, threatens vendor consolidation, demands Net-90 terms.',
       sandra: 'IT Director at a financial firm. Blocks on SOC 2, SAML/SSO, and bandwidth. Polite but always has a blocker.',
-      priya: 'PLACEHOLDER — buyer context TBD, pending real persona details.',
-      rakesh: 'PLACEHOLDER — buyer context TBD, pending real persona details.'
+      priya: 'VP Procurement at an NBFC in India. Warm, relationship-first negotiator who builds rapport before grinding on price. Prioritizes long-term vendor relationships and trust, but pushes hard for discounts once comfortable, often after the rep has let their guard down.',
+      rakesh: 'AVP - Digital Transformation at a PSU-adjacent insurer in India. Genuinely curious and engaged with digital initiatives, broadly fluent in general SaaS evaluation territory (implementation, integration, security, ROI), but has no final sign-off authority. Never gives a firm yes or no; warmly defers real commitment to his organization\'s digital transformation committee.'
     }
     const personaContext = PERSONA_CONTEXT[persona] || 'Enterprise buyer evaluating a B2B software purchase.'
 
