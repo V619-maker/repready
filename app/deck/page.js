@@ -163,6 +163,51 @@ function RepReadyDashboard() {
       });
   }, [userEmail]);
 
+  // Plan-tier persona access. planTier is null for every current user until
+  // billing sets it, so personaAccess.unlocked defaults to null too, which
+  // isLocked() below treats as "nothing is locked" — same fail-open pattern
+  // as hasZeroSessions above. Only Starter-tier accounts see any lock state.
+  const [personaAccess, setPersonaAccess] = useState(null);
+
+  useEffect(() => {
+    fetch('/api/persona-access')
+      .then(r => r.json())
+      .then(data => setPersonaAccess(data))
+      .catch(() => {
+        // Fail open: personaAccess stays null, isLocked() treats everything
+        // as unlocked, deck behaves exactly as it did before this feature.
+      });
+  }, []);
+
+  const isLocked = (personaKey) => {
+    if (!personaAccess || personaAccess.planTier !== 'starter') return false;
+    return !(personaAccess.unlocked || []).includes(personaKey);
+  };
+
+  const handleSelectPersona = async (agentId) => {
+    const personaKey = PERSONA_MAP[agentId];
+    if (!isLocked(personaKey)) {
+      setActiveAgent(agentId);
+      return;
+    }
+    try {
+      const res = await fetch('/api/persona-access', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ personaId: personaKey })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "This persona isn't included in your current plan.");
+        return;
+      }
+      setPersonaAccess(data);
+      setActiveAgent(agentId);
+    } catch (e) {
+      alert("Couldn't verify plan access — please try again.");
+    }
+  };
+
   // Task 1: DPDP Act consent overlay — per-session consent gate.
   // New state + effect only — appended after all existing hooks.
   const [consentGiven, setConsentGiven] = useState(false);
@@ -420,8 +465,8 @@ let boardroomEnablementScore = null;
                 </div>
               </div>
             </div>
-            <button onClick={() => setActiveAgent(RICHARD_ID)} className="w-full py-4 border-t border-white/5 text-white text-[10px] font-bold uppercase tracking-[0.3em] hover:bg-white/5 transition-all">
-              START SIMULATION
+            <button onClick={() => handleSelectPersona(RICHARD_ID)} className="w-full py-4 border-t border-white/5 text-white text-[10px] font-bold uppercase tracking-[0.3em] hover:bg-white/5 transition-all">
+              {isLocked('richard') ? 'LOCKED — UPGRADE TO UNLOCK' : 'START SIMULATION'}
             </button>
           </div>
 
@@ -444,8 +489,8 @@ let boardroomEnablementScore = null;
                 </div>
               </div>
             </div>
-            <button onClick={() => setActiveAgent(SANDRA_ID)} className="w-full py-4 border-t border-white/5 text-white text-[10px] font-bold uppercase tracking-[0.3em] hover:bg-white/5 transition-all">
-              START SIMULATION
+            <button onClick={() => handleSelectPersona(SANDRA_ID)} className="w-full py-4 border-t border-white/5 text-white text-[10px] font-bold uppercase tracking-[0.3em] hover:bg-white/5 transition-all">
+              {isLocked('sandra') ? 'LOCKED — UPGRADE TO UNLOCK' : 'START SIMULATION'}
             </button>
           </div>
 
@@ -476,8 +521,8 @@ let boardroomEnablementScore = null;
                 </div>
               </div>
             </div>
-            <button onClick={() => setActiveAgent(PRIYA_ID)} className="w-full py-4 border-t border-white/5 text-white text-[10px] font-bold uppercase tracking-[0.3em] hover:bg-white/5 transition-all">
-              START SIMULATION
+            <button onClick={() => handleSelectPersona(PRIYA_ID)} className="w-full py-4 border-t border-white/5 text-white text-[10px] font-bold uppercase tracking-[0.3em] hover:bg-white/5 transition-all">
+              {isLocked('priya') ? 'LOCKED — UPGRADE TO UNLOCK' : 'START SIMULATION'}
             </button>
           </div>
 
@@ -506,8 +551,8 @@ let boardroomEnablementScore = null;
                 </div>
               </div>
             </div>
-            <button onClick={() => setActiveAgent(RAKESH_ID)} className="w-full py-4 border-t border-white/5 text-white text-[10px] font-bold uppercase tracking-[0.3em] hover:bg-white/5 transition-all">
-              START SIMULATION
+            <button onClick={() => handleSelectPersona(RAKESH_ID)} className="w-full py-4 border-t border-white/5 text-white text-[10px] font-bold uppercase tracking-[0.3em] hover:bg-white/5 transition-all">
+              {isLocked('rakesh') ? 'LOCKED — UPGRADE TO UNLOCK' : 'START SIMULATION'}
             </button>
           </div>
         </div>
@@ -752,25 +797,25 @@ let boardroomEnablementScore = null;
             </p>
             <div className="grid grid-cols-2 gap-4">
               <button
-                onClick={() => { setOnboardingDismissed(true); setActiveAgent(RICHARD_ID); }}
+                onClick={() => { setOnboardingDismissed(true); handleSelectPersona(RICHARD_ID); }}
                 className="py-4 border border-white/10 text-white font-bold uppercase tracking-[0.15em] text-[10px] hover:border-[#22D3EE]/40 hover:bg-white/5 transition-all"
               >
                 Richard Vance
               </button>
               <button
-                onClick={() => { setOnboardingDismissed(true); setActiveAgent(SANDRA_ID); }}
+                onClick={() => { setOnboardingDismissed(true); handleSelectPersona(SANDRA_ID); }}
                 className="py-4 border border-white/10 text-white font-bold uppercase tracking-[0.15em] text-[10px] hover:border-[#22D3EE]/40 hover:bg-white/5 transition-all"
               >
                 Sandra Chen
               </button>
               <button
-                onClick={() => { setOnboardingDismissed(true); setActiveAgent(PRIYA_ID); }}
+                onClick={() => { setOnboardingDismissed(true); handleSelectPersona(PRIYA_ID); }}
                 className="py-4 border border-white/10 text-white font-bold uppercase tracking-[0.15em] text-[10px] hover:border-[#22D3EE]/40 hover:bg-white/5 transition-all"
               >
                 Priya Malhotra
               </button>
               <button
-                onClick={() => { setOnboardingDismissed(true); setActiveAgent(RAKESH_ID); }}
+                onClick={() => { setOnboardingDismissed(true); handleSelectPersona(RAKESH_ID); }}
                 className="py-4 border border-white/10 text-white font-bold uppercase tracking-[0.15em] text-[10px] hover:border-[#22D3EE]/40 hover:bg-white/5 transition-all"
               >
                 Rakesh Iyer
