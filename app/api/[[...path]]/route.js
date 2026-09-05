@@ -259,6 +259,44 @@ function getQualificationStatus(hostility, score) {
   if (hostility >= 50 && score >= 70) return { status: 'In Progress', detail: 'Strong score, needs more pressure', color: 'yellow' }
   return { status: 'Not Qualified', detail: 'Score needs improvement under pressure', color: 'red' }
 }
+
+// Groups an org's sessions into one row per rep — shared by GET /api/dashboard and
+// GET /api/admin/reps so the two can't silently drift out of sync. Only ever sees
+// reps who have submitted at least one session: there's no separate users
+// collection and no Clerk-org-membership query anywhere in this codebase, so a rep
+// who signed up but never ran a session won't appear from either caller.
+const QUALIFICATION_STAGES = ['Not Qualified', 'Getting Started', 'Developing', 'Qualified', 'Elite']
+function groupRepsFromSessions(sessions) {
+  const repMap = {}
+  for (const s of sessions) {
+    if (!repMap[s.userEmail]) {
+      repMap[s.userEmail] = {
+        userEmail: s.userEmail,
+        sessions: 0,
+        bestScore: 0,
+        bestHostility: null,
+        bestQualificationStatus: null,
+        lastSession: null
+      }
+    }
+    const rep = repMap[s.userEmail]
+    rep.sessions++
+    if ((s.finalScore || 0) > rep.bestScore) rep.bestScore = s.finalScore || 0
+    if (s.hostilityReached != null && (rep.bestHostility == null || s.hostilityReached > rep.bestHostility)) {
+      rep.bestHostility = s.hostilityReached
+    }
+    if (s.qualificationStatus && QUALIFICATION_STAGES.includes(s.qualificationStatus)) {
+      const stageIndex = QUALIFICATION_STAGES.indexOf(s.qualificationStatus)
+      const bestIndex = rep.bestQualificationStatus ? QUALIFICATION_STAGES.indexOf(rep.bestQualificationStatus) : -1
+      if (stageIndex > bestIndex) rep.bestQualificationStatus = s.qualificationStatus
+    }
+    if (s.createdAt && (rep.lastSession == null || new Date(s.createdAt) > new Date(rep.lastSession))) {
+      rep.lastSession = s.createdAt
+    }
+  }
+  return Object.values(repMap).sort((a, b) => b.bestScore - a.bestScore)
+}
+
 // Route handler function
 async function handleRoute(request, { params }) {
   const { path = [] } = params
@@ -934,38 +972,9 @@ Evaluate the sales rep's performance and return JSON with:
           .sort({ createdAt: -1 })
           .toArray()
 
-        const QUALIFICATION_STAGES = ['Not Qualified', 'Getting Started', 'Developing', 'Qualified', 'Elite']
         const DIMENSION_KEYS = ['discoveryQuality', 'objectionHandling', 'priceDefense', 'smeKnowledge', 'communication', 'emotionalResilience']
 
-        const repMap = {}
-        for (const s of sessions) {
-          if (!repMap[s.userEmail]) {
-            repMap[s.userEmail] = {
-              userEmail: s.userEmail,
-              sessions: 0,
-              bestScore: 0,
-              bestHostility: null,
-              bestQualificationStatus: null,
-              lastSession: null
-            }
-          }
-          const rep = repMap[s.userEmail]
-          rep.sessions++
-          if ((s.finalScore || 0) > rep.bestScore) rep.bestScore = s.finalScore || 0
-          if (s.hostilityReached != null && (rep.bestHostility == null || s.hostilityReached > rep.bestHostility)) {
-            rep.bestHostility = s.hostilityReached
-          }
-          if (s.qualificationStatus && QUALIFICATION_STAGES.includes(s.qualificationStatus)) {
-            const stageIndex = QUALIFICATION_STAGES.indexOf(s.qualificationStatus)
-            const bestIndex = rep.bestQualificationStatus ? QUALIFICATION_STAGES.indexOf(rep.bestQualificationStatus) : -1
-            if (stageIndex > bestIndex) rep.bestQualificationStatus = s.qualificationStatus
-          }
-          if (s.createdAt && (rep.lastSession == null || new Date(s.createdAt) > new Date(rep.lastSession))) {
-            rep.lastSession = s.createdAt
-          }
-        }
-
-        const reps = Object.values(repMap).sort((a, b) => b.bestScore - a.bestScore)
+        const reps = groupRepsFromSessions(sessions)
         const qualifiedReps = reps.filter(r => r.bestQualificationStatus === 'Qualified' || r.bestQualificationStatus === 'Elite').length
         const eliteReps = reps.filter(r => r.bestQualificationStatus === 'Elite').length
 
@@ -1027,6 +1036,148 @@ Evaluate the sales rep's performance and return JSON with:
         console.error('Dashboard error:', error)
         return handleCORS(NextResponse.json(
           { error: "Failed to load dashboard." }, { status: 500 }
+        ))
+      }
+    }
+
+    // List reps for the self-serve admin panel - GET /api/admin/reps
+    // Manager-only. Replaces the founder manually hand-editing Clerk metadata to
+    // promote/demote reps — see POST /api/admin/reps below for the write side.
+    // Reuses groupRepsFromSessions() (shared with GET /api/dashboard above) rather
+    // than re-deriving the org's rep list a second way.
+    if (route === '/admin/reps' && method === 'GET') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        if (authedUser.role !== 'manager') {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+        const orgId = authedUser.email.split('@')[1]
+        if (!orgId) return handleCORS(NextResponse.json(
+          { error: "Unable to determine organization from account email" }, { status: 400 }
+        ))
+        const db = await getDb()
+        const sessions = await db.collection('sessions').find({ orgId }).toArray()
+        const reps = groupRepsFromSessions(sessions)
+
+        // Batch-resolve each rep's current role from Clerk (publicMetadata is the
+        // only source of truth for role — never trust anything from the sessions
+        // collection for this, since POST /api/sessions is unauthenticated and
+        // doesn't guarantee userEmail is a real Clerk identity). limit must be
+        // passed explicitly: Clerk's list endpoints default to 10 and would
+        // otherwise silently truncate roles for orgs with more than 10 reps.
+        const client = await clerkClient()
+        const { data: clerkUsers } = reps.length
+          ? await client.users.getUserList({
+              emailAddress: reps.map(r => r.userEmail),
+              limit: Math.max(reps.length, 1)
+            })
+          : { data: [] }
+        const roleByEmail = new Map()
+        for (const cu of clerkUsers) {
+          const email = cu.primaryEmailAddress?.emailAddress || cu.emailAddresses?.[0]?.emailAddress
+          if (!email) continue
+          // Same role definition as getAuthedUser() above — keep these in sync.
+          const role = cu.publicMetadata?.role === 'manager' ? 'manager' : 'rep'
+          roleByEmail.set(email.toLowerCase(), { clerkUserId: cu.id, role })
+        }
+
+        const repsWithRole = reps.map(r => {
+          const match = roleByEmail.get(r.userEmail.toLowerCase())
+          return {
+            ...r,
+            clerkUserId: match?.clerkUserId ?? null,
+            // null (not 'rep') means "no matching Clerk account found" — the UI
+            // must treat this as unresolved/disabled, not silently default it.
+            role: match?.role ?? null
+          }
+        })
+
+        return handleCORS(NextResponse.json({ orgId, reps: repsWithRole }))
+      } catch (error) {
+        console.error('Admin reps GET error:', error)
+        return handleCORS(NextResponse.json(
+          { error: "Failed to load reps." }, { status: 500 }
+        ))
+      }
+    }
+
+    // Promote/demote a rep - POST /api/admin/reps
+    // Body: { targetEmail, newRole: 'rep' | 'manager' }. Manager-only, and only
+    // within the caller's own org. Writes only the `role` key via Clerk's
+    // updateUserMetadata, which PATCH-merges publicMetadata at the top level (does
+    // not touch planTier/selectedPersonas) — confirmed against the installed
+    // @clerk/backend SDK source, not assumed. This is the only place in the app
+    // that sets role: 'manager' on anyone; getAuthedUser()'s read side (defaults
+    // to 'rep' when unset) is untouched, so nothing changes for existing users
+    // until a manager explicitly acts here.
+    //
+    // Known, accepted risk: orgId is email.split('@')[1] everywhere in this app,
+    // with no allowlist of real business domains. A manager whose account is on a
+    // shared consumer domain (e.g. gmail.com) could promote/demote another
+    // same-domain user who happens to have a session — this endpoint only extends
+    // an exposure the rest of the app (e.g. /api/dashboard) already has as
+    // view-only. Explicit decision: ship as-is rather than invent new scope (a
+    // domain blocklist, or real org modeling) that wasn't asked for.
+    if (route === '/admin/reps' && method === 'POST') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        if (authedUser.role !== 'manager') {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+
+        const body = await request.json()
+        const targetEmail = typeof body.targetEmail === 'string' ? body.targetEmail.trim() : ''
+        const newRole = body.newRole
+        if (!targetEmail || (newRole !== 'rep' && newRole !== 'manager')) {
+          return handleCORS(NextResponse.json(
+            { error: "targetEmail and newRole ('rep' or 'manager') are required." }, { status: 400 }
+          ))
+        }
+
+        if (targetEmail.toLowerCase() === authedUser.email.toLowerCase()) {
+          return handleCORS(NextResponse.json(
+            { error: "You cannot change your own role." }, { status: 403 }
+          ))
+        }
+
+        // Domain check on the raw submitted string, before any Clerk call — cheap
+        // reject, and means a wrong-org probe gets an identical 403 whether or not
+        // the target email even exists (only a same-domain, nonexistent email ever
+        // reaches the 404 branch below).
+        const orgId = authedUser.email.split('@')[1]?.toLowerCase()
+        const targetDomain = targetEmail.split('@')[1]?.toLowerCase()
+        if (!orgId || !targetDomain || targetDomain !== orgId) {
+          return handleCORS(NextResponse.json(
+            { error: "Target user is not in your organization." }, { status: 403 }
+          ))
+        }
+
+        const client = await clerkClient()
+        const { data } = await client.users.getUserList({ emailAddress: [targetEmail] })
+        if (!data.length) {
+          return handleCORS(NextResponse.json({ error: "User not found." }, { status: 404 }))
+        }
+        const targetUser = data[0]
+
+        await client.users.updateUserMetadata(targetUser.id, {
+          publicMetadata: { role: newRole }
+        })
+
+        return handleCORS(NextResponse.json({
+          userEmail: targetEmail,
+          clerkUserId: targetUser.id,
+          role: newRole
+        }))
+      } catch (error) {
+        console.error('Admin reps POST error:', error)
+        return handleCORS(NextResponse.json(
+          { error: "Failed to update role." }, { status: 500 }
         ))
       }
     }

@@ -56,6 +56,17 @@ export default function DashboardPage() {
   const [error, setError] = useState('')
 
   const orgId = user?.primaryEmailAddress?.emailAddress?.split('@')[1] || null
+  const selfEmail = user?.primaryEmailAddress?.emailAddress?.toLowerCase() || null
+
+  // publicMetadata (unlike privateMetadata) is exposed to the client by Clerk, so
+  // this is safe to read directly — the server independently re-checks role on
+  // every /api/admin/reps call, this is only what gates rendering the section.
+  const isManager = user?.publicMetadata?.role === 'manager'
+  const [adminReps, setAdminReps] = useState([])
+  const [adminLoading, setAdminLoading] = useState(true)
+  const [adminError, setAdminError] = useState('')
+  const [pendingEmail, setPendingEmail] = useState(null)
+  const [rowErrors, setRowErrors] = useState({})
 
   useEffect(() => {
     if (!isLoaded) return
@@ -66,6 +77,45 @@ export default function DashboardPage() {
       .then(d => { setData(d); setLoading(false) })
       .catch(() => { setError('Failed to load dashboard.'); setLoading(false) })
   }, [isLoaded, user, orgId])
+
+  // Reps never fire this request at all — not just "fire it and get a 403 back" —
+  // so there is zero behavior change for a rep account beyond one client-side
+  // publicMetadata.role read.
+  useEffect(() => {
+    if (!isLoaded || !user || !isManager) { setAdminLoading(false); return }
+    setAdminLoading(true)
+    fetch('/api/admin/reps')
+      .then(async r => {
+        const json = await r.json()
+        if (!r.ok) throw new Error(json.error || 'Failed to load reps.')
+        setAdminReps(json.reps || [])
+        setAdminLoading(false)
+      })
+      .catch(e => { setAdminError(e.message); setAdminLoading(false) })
+  }, [isLoaded, user, isManager])
+
+  async function handleRoleChange(rep) {
+    const newRole = rep.role === 'manager' ? 'rep' : 'manager'
+    setPendingEmail(rep.userEmail)
+    setRowErrors(prev => ({ ...prev, [rep.userEmail]: '' }))
+    try {
+      const res = await fetch('/api/admin/reps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetEmail: rep.userEmail, newRole })
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to update role.')
+      // Only ever mutate local state from the server's confirmed response — never
+      // optimistically, so a failed request can never leave the displayed role out
+      // of sync with what's actually stored.
+      setAdminReps(prev => prev.map(r => r.userEmail === rep.userEmail ? { ...r, role: json.role } : r))
+    } catch (e) {
+      setRowErrors(prev => ({ ...prev, [rep.userEmail]: e.message }))
+    } finally {
+      setPendingEmail(null)
+    }
+  }
 
   if (!isLoaded || loading) return (
     <div style={{ minHeight: '100vh', background: '#0a0d14', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -201,6 +251,75 @@ export default function DashboardPage() {
             ))}
           </div>
         </div>
+
+        {/* SECTION 5 — Team management (manager-only, self-serve promote/demote) */}
+        {isManager && (
+          <div style={{ background: '#0d1117', border: '1px solid rgba(0,200,224,0.15)', padding: 24, marginBottom: 16 }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>TEAM MANAGEMENT</div>
+            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 20 }}>
+              Only reps with at least one completed session appear here.
+            </p>
+            {adminLoading ? (
+              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>Loading team…</p>
+            ) : adminError ? (
+              <p style={{ color: '#e84545', fontSize: 13 }}>{adminError}</p>
+            ) : !adminReps.length ? (
+              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>No reps yet. They'll appear here after completing a simulation.</p>
+            ) : adminReps.map((rep, i) => {
+              // rep.userEmail can be '' — POST /api/sessions is unauthenticated and
+              // stores body.userEmail as-is (Known Issue 5a in REPREADY_CONTEXT.md,
+              // out of scope here), so a crafted session can produce an empty-email
+              // row. Guard the display rather than assume a real address.
+              const displayEmail = rep.userEmail || '(unknown)'
+              const isSelf = !!rep.userEmail && rep.userEmail.toLowerCase() === selfEmail
+              const isUnresolved = rep.role == null
+              const isPending = pendingEmail === rep.userEmail
+              const roleLabel = isUnresolved ? 'UNRESOLVED' : rep.role.toUpperCase()
+              const roleColor = isUnresolved ? '#f5a623' : rep.role === 'manager' ? '#00c8e0' : 'rgba(255,255,255,0.4)'
+              return (
+                <div key={rep.userEmail || `unknown-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                  <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(0,200,224,0.1)', border: '1px solid rgba(0,200,224,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#00c8e0', flexShrink: 0 }}>
+                    {displayEmail[0].toUpperCase()}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayEmail}</div>
+                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>
+                      {rep.sessions} session{rep.sessions !== 1 ? 's' : ''}
+                    </div>
+                    {rowErrors[rep.userEmail] && (
+                      <div style={{ fontSize: 10, color: '#e84545', marginTop: 2 }}>{rowErrors[rep.userEmail]}</div>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', color: roleColor, width: 70, textAlign: 'right' }}>
+                    {roleLabel}
+                  </span>
+                  {isSelf ? (
+                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.05em', width: 110, textAlign: 'right' }}>THIS IS YOU</span>
+                  ) : (
+                    <button
+                      onClick={() => handleRoleChange(rep)}
+                      disabled={isUnresolved || isPending}
+                      style={{
+                        width: 110,
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: '0.05em',
+                        fontFamily: 'monospace',
+                        background: 'transparent',
+                        border: `1px solid ${rep.role === 'manager' ? 'rgba(245,166,35,0.4)' : 'rgba(0,200,224,0.4)'}`,
+                        color: isUnresolved || isPending ? 'rgba(255,255,255,0.2)' : rep.role === 'manager' ? '#f5a623' : '#00c8e0',
+                        padding: '6px 8px',
+                        cursor: isUnresolved || isPending ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {isPending ? 'UPDATING…' : rep.role === 'manager' ? 'DEMOTE TO REP' : 'MAKE MANAGER'}
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
 
         <div style={{ border: '1px solid rgba(0,200,224,0.1)', padding: '12px 16px', fontSize: 11, color: 'rgba(255,255,255,0.3)', lineHeight: 1.6 }}>
           SESSION DATA · MONGODB ATLAS MUMBAI · NEVER USED TO TRAIN AI · DPDP ACT 2023 COMPLIANT · DELETE: privacy@repready.site
