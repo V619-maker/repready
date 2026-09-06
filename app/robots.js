@@ -3,7 +3,7 @@ export default function robots() {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: ['/api/', '/deck', '/coach', '/my-stats', '/dashboard', '/sign-in', '/simulate'],
+      disallow: ['/api/', '/deck', '/coach', '/my-stats', '/dashboard', '/sign-in', '/simulate', '/demo'],
     },
     sitemap: 'https://repready.site/sitemap.xml',
   }

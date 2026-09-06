@@ -389,6 +389,7 @@ let boardroomEnablementScore = null;
   userEmail,
   persona,
   finalScore,
+  transcript: finalTranscript,
   mode: 'voice',
   hostilityReached: hostilityAtSession,
   nextHostility,

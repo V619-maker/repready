@@ -49,6 +49,84 @@ async function getAuthedUser() {
   }
 }
 
+// Shared transcript scoring — the same Gemini "combined analyst" call used by
+// POST /api/boardroom (call 1) and, as of the Sprint 27 audit fix, as a
+// server-side sanity check on POST /api/sessions before trusting a
+// client-submitted score (see Known Issue 0b in REPREADY_CONTEXT.md).
+// Keeping this in one place means the two can never silently drift apart —
+// the forgery check scores against the exact same rubric a real boardroom
+// review would use, not a second, different opinion.
+//
+// Buyer context is keyed by persona so it generalizes past the old
+// richard/sandra binary. Priya/Rakesh have real buyer context matching
+// their ElevenLabs system prompts.
+const PERSONA_CONTEXT = {
+  richard: 'VP Procurement at a logistics firm. CFO-mandated 15% cost reduction. Anchors on price, threatens vendor consolidation, demands Net-90 terms.',
+  sandra: 'IT Director at a financial firm. Blocks on SOC 2, SAML/SSO, and bandwidth. Polite but always has a blocker.',
+  priya: 'VP Procurement at an NBFC in India. Warm, relationship-first negotiator who builds rapport before grinding on price. Prioritizes long-term vendor relationships and trust, but pushes hard for discounts once comfortable, often after the rep has let their guard down.',
+  rakesh: 'AVP - Digital Transformation at a PSU-adjacent insurer in India. Genuinely curious and engaged with digital initiatives, broadly fluent in general SaaS evaluation territory (implementation, integration, security, ROI), but has no final sign-off authority. Never gives a firm yes or no; warmly defers real commitment to his organization\'s digital transformation committee.'
+}
+
+const CombinedAnalystSchema = z.object({
+  procurementScore: z.number().min(0).max(100).describe("Procurement score 0-100 based on margin defense and price discipline"),
+  procurementReasoning: z.string().describe("2-3 sentences explaining the procurement score"),
+  marginDefense: z.enum(['strong', 'moderate', 'weak']).describe("How well the rep defended margins"),
+  discountedEarly: z.boolean().describe("Did the rep offer discounts before establishing value"),
+  enablementScore: z.number().min(0).max(100).describe("Sales enablement score 0-100 based on call technique"),
+  enablementReasoning: z.string().describe("2-3 sentences explaining the enablement score"),
+  callControl: z.enum(['strong', 'moderate', 'weak']).describe("How well the rep controlled the call"),
+  usedDiscovery: z.boolean().describe("Did the rep use discovery questions before pitching"),
+  dimensions: z.object({
+    discoveryQuality: z.number().min(0).max(100).describe("Did the rep ask the right questions before pitching. 0=no discovery at all, 100=excellent deep discovery"),
+    objectionHandling: z.number().min(0).max(100).describe("Did the rep validate objections before responding. 0=ignored objections, 100=acknowledged and reframed every objection"),
+    priceDefense: z.number().min(0).max(100).describe("Did the rep hold firm on price. 0=caved immediately, 100=held firm and traded value for concessions"),
+    smeKnowledge: z.number().min(0).max(100).describe("Did the rep demonstrate product and industry knowledge. 0=generic pitch, 100=specific credible expertise"),
+    communication: z.number().min(0).max(100).describe("Clarity, pacing, and active listening. 0=rambling and unclear, 100=crisp concise and listened actively"),
+    emotionalResilience: z.number().min(0).max(100).describe("Did the rep stay composed under pressure. 0=crumbled immediately, 100=stayed calm and confident throughout"),
+  }).describe("6-dimension skill scores"),
+})
+
+function buildCombinedAnalystPrompt(transcript, personaContext) {
+  return `You are an elite B2B sales performance analyst. Evaluate this sales rep across two dimensions simultaneously: procurement/margin defense AND sales enablement/technique. Also score them across 6 specific skill dimensions.
+
+BUYER CONTEXT: ${personaContext}
+
+PROCUREMENT SCORING — focus on:
+HIGH SCORE: Postponed discount conversation, traded concessions for value, held firm on price, asked about budget before discussing numbers, uncovered cost of delay
+LOW SCORE: Dropped price on first objection, offered verbal discounts before understanding budget, apologized for pricing, agreed to demands without counter-ask
+
+ENABLEMENT SCORING — focus on (Challenger Sale + MEDDPICC):
+HIGH SCORE: Acknowledged objections before responding, asked deep discovery questions, maintained control of next steps, reframed cost to business impact
+LOW SCORE: Became defensive when pushed back, jumped to features without understanding objection, let buyer control the call, responded to every objection with a feature pitch
+
+6 DIMENSION SCORING:
+- Discovery Quality: Did they ask specific questions about current pain, process, impact before pitching?
+- Objection Handling: Did they acknowledge, validate, then reframe each objection?
+- Price Defense: Did they hold their ground on price without apologizing or caving?
+- SME Knowledge: Did they demonstrate specific product and industry knowledge credibly?
+- Communication: Were they clear, concise, and actively listening or rambling and vague?
+- Emotional Resilience: Did they stay calm and confident when the buyer pushed hard?
+
+TRANSCRIPT:
+${transcript}
+
+Be strict and realistic. A rep who caves on price scores below 30 on priceDefense. A rep who never asks a discovery question scores below 20 on discoveryQuality. Do not be generous.`
+}
+
+async function scoreTranscript(transcript, persona) {
+  const google = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY })
+  const personaContext = PERSONA_CONTEXT[persona] || 'Enterprise buyer evaluating a B2B software purchase.'
+  const result = await generateObject({
+    model: google('gemini-2.5-flash'),
+    schema: CombinedAnalystSchema,
+    system: buildCombinedAnalystPrompt(transcript, personaContext),
+    prompt: 'Evaluate this sales rep strictly and realistically across all dimensions.',
+  })
+  const analyst = result.object
+  const weightedScore = Math.round((analyst.procurementScore * 0.6) + (analyst.enablementScore * 0.4))
+  return { ...analyst, weightedScore }
+}
+
 // Helper function to handle CORS
 function handleCORS(response) {
   response.headers.set('Access-Control-Allow-Origin', process.env.CORS_ORIGINS || '*')
@@ -181,6 +259,44 @@ function getQualificationStatus(hostility, score) {
   if (hostility >= 50 && score >= 70) return { status: 'In Progress', detail: 'Strong score, needs more pressure', color: 'yellow' }
   return { status: 'Not Qualified', detail: 'Score needs improvement under pressure', color: 'red' }
 }
+
+// Groups an org's sessions into one row per rep — shared by GET /api/dashboard and
+// GET /api/admin/reps so the two can't silently drift out of sync. Only ever sees
+// reps who have submitted at least one session: there's no separate users
+// collection and no Clerk-org-membership query anywhere in this codebase, so a rep
+// who signed up but never ran a session won't appear from either caller.
+const QUALIFICATION_STAGES = ['Not Qualified', 'Getting Started', 'Developing', 'Qualified', 'Elite']
+function groupRepsFromSessions(sessions) {
+  const repMap = {}
+  for (const s of sessions) {
+    if (!repMap[s.userEmail]) {
+      repMap[s.userEmail] = {
+        userEmail: s.userEmail,
+        sessions: 0,
+        bestScore: 0,
+        bestHostility: null,
+        bestQualificationStatus: null,
+        lastSession: null
+      }
+    }
+    const rep = repMap[s.userEmail]
+    rep.sessions++
+    if ((s.finalScore || 0) > rep.bestScore) rep.bestScore = s.finalScore || 0
+    if (s.hostilityReached != null && (rep.bestHostility == null || s.hostilityReached > rep.bestHostility)) {
+      rep.bestHostility = s.hostilityReached
+    }
+    if (s.qualificationStatus && QUALIFICATION_STAGES.includes(s.qualificationStatus)) {
+      const stageIndex = QUALIFICATION_STAGES.indexOf(s.qualificationStatus)
+      const bestIndex = rep.bestQualificationStatus ? QUALIFICATION_STAGES.indexOf(rep.bestQualificationStatus) : -1
+      if (stageIndex > bestIndex) rep.bestQualificationStatus = s.qualificationStatus
+    }
+    if (s.createdAt && (rep.lastSession == null || new Date(s.createdAt) > new Date(rep.lastSession))) {
+      rep.lastSession = s.createdAt
+    }
+  }
+  return Object.values(repMap).sort((a, b) => b.bestScore - a.bestScore)
+}
+
 // Route handler function
 async function handleRoute(request, { params }) {
   const { path = [] } = params
@@ -702,9 +818,55 @@ Evaluate the sales rep's performance and return JSON with:
     }
 
     // Save session - POST /api/sessions
+    //
+    // Score-forgery guard (Sprint 27 audit, Known Issue 0b): this endpoint has no
+    // auth (see Known Issue 5a — a separate, still-open fix) and previously stored
+    // body.finalScore/dimensions/procurementScore/enablementScore verbatim, so
+    // anyone who could see the request shape — trivial, it's client JS — could POST
+    // a fabricated "Elite, 100/100" session for any rep's email and poison their
+    // stats, the org dashboard, and the leaderboard. This doesn't add auth (that's
+    // issue 5a's job), but it does mean a forged score has to survive an
+    // independent Gemini re-scoring of a transcript that actually supports it — a
+    // much higher bar than editing a JSON body.
+    //
+    // transcript is now required specifically so this can't be bypassed by simply
+    // omitting it. NOTE: this breaks session-saving from app/simulate/page.js,
+    // which never sent a transcript field to this endpoint. /simulate is
+    // documented as an old page not part of the user journey ("do not touch" —
+    // REPREADY_CONTEXT.md), so this is an accepted, explicitly-flagged side effect,
+    // not an oversight: closing the forgery hole on the real product journey
+    // matters more than keeping a legacy, unlinked page's save path working.
     if (route === '/sessions' && method === 'POST') {
       try {
         const body = await request.json()
+
+        const transcript = typeof body.transcript === 'string' ? body.transcript.trim() : ''
+        if (!transcript) {
+          return handleCORS(NextResponse.json(
+            { error: "transcript required to verify score" }, { status: 400 }
+          ))
+        }
+
+        const claimedScore = Number(body.finalScore) || 0
+        const SCORE_TOLERANCE = 20 // headroom for LLM run-to-run variance and the coach-fallback path's different scoring methodology
+        try {
+          const verified = await scoreTranscript(transcript, body.persona)
+          if (claimedScore > verified.weightedScore + SCORE_TOLERANCE) {
+            console.warn('Rejected session save — claimed score exceeds what the transcript supports', {
+              userEmail: body.userEmail, persona: body.persona, claimedScore, verifiedScore: verified.weightedScore
+            })
+            return handleCORS(NextResponse.json(
+              { error: "Score does not match transcript." }, { status: 400 }
+            ))
+          }
+        } catch (verifyError) {
+          // Fail OPEN on infra errors (Gemini down/timeout) — an outage in this
+          // verification call shouldn't cost a legitimate rep their real session.
+          // This does mean the forgery guard is soft during a Gemini outage; a
+          // known, accepted trade-off, not an oversight.
+          console.error('Score verification call failed, saving unverified:', verifyError)
+        }
+
    const session = {
   id: uuidv4(),
   userEmail: body.userEmail || '',
@@ -758,16 +920,23 @@ Evaluate the sales rep's performance and return JSON with:
       }
     }
 
-    // Delete sessions for a user - DELETE /api/sessions?email=xxx
+    // Delete the authenticated user's own sessions - DELETE /api/sessions
+    // Previously took an unauthenticated ?email= query param — anyone who knew or
+    // guessed an email could wipe that rep's entire session history (Known Issue
+    // 5a). Now scoped to the caller's own authenticated email only, matching the
+    // auth pattern already used by GET /sessions, /dashboard, /benchmark, and
+    // /rep-memory — any ?email= on the request is ignored. Deliberately did not
+    // add a manager-can-delete-org-sessions path: that's a materially bigger blast
+    // radius (bulk-deleting other people's data) that deserves its own product
+    // decision, not a default assumed while closing an auth hole.
     if (route === '/sessions' && method === 'DELETE') {
       try {
-        const url = new URL(request.url)
-        const email = url.searchParams.get('email')
-        if (!email) return handleCORS(NextResponse.json(
-          { error: "Email required" }, { status: 400 }
-        ))
+        const authedEmail = await getAuthedEmail()
+        if (!authedEmail) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
         const db = await getDb()
-        await db.collection('sessions').deleteMany({ userEmail: email })
+        await db.collection('sessions').deleteMany({ userEmail: authedEmail })
         return handleCORS(NextResponse.json({ success: true }))
       } catch (error) {
         return handleCORS(NextResponse.json(
@@ -803,38 +972,9 @@ Evaluate the sales rep's performance and return JSON with:
           .sort({ createdAt: -1 })
           .toArray()
 
-        const QUALIFICATION_STAGES = ['Not Qualified', 'Getting Started', 'Developing', 'Qualified', 'Elite']
         const DIMENSION_KEYS = ['discoveryQuality', 'objectionHandling', 'priceDefense', 'smeKnowledge', 'communication', 'emotionalResilience']
 
-        const repMap = {}
-        for (const s of sessions) {
-          if (!repMap[s.userEmail]) {
-            repMap[s.userEmail] = {
-              userEmail: s.userEmail,
-              sessions: 0,
-              bestScore: 0,
-              bestHostility: null,
-              bestQualificationStatus: null,
-              lastSession: null
-            }
-          }
-          const rep = repMap[s.userEmail]
-          rep.sessions++
-          if ((s.finalScore || 0) > rep.bestScore) rep.bestScore = s.finalScore || 0
-          if (s.hostilityReached != null && (rep.bestHostility == null || s.hostilityReached > rep.bestHostility)) {
-            rep.bestHostility = s.hostilityReached
-          }
-          if (s.qualificationStatus && QUALIFICATION_STAGES.includes(s.qualificationStatus)) {
-            const stageIndex = QUALIFICATION_STAGES.indexOf(s.qualificationStatus)
-            const bestIndex = rep.bestQualificationStatus ? QUALIFICATION_STAGES.indexOf(rep.bestQualificationStatus) : -1
-            if (stageIndex > bestIndex) rep.bestQualificationStatus = s.qualificationStatus
-          }
-          if (s.createdAt && (rep.lastSession == null || new Date(s.createdAt) > new Date(rep.lastSession))) {
-            rep.lastSession = s.createdAt
-          }
-        }
-
-        const reps = Object.values(repMap).sort((a, b) => b.bestScore - a.bestScore)
+        const reps = groupRepsFromSessions(sessions)
         const qualifiedReps = reps.filter(r => r.bestQualificationStatus === 'Qualified' || r.bestQualificationStatus === 'Elite').length
         const eliteReps = reps.filter(r => r.bestQualificationStatus === 'Elite').length
 
@@ -896,6 +1036,148 @@ Evaluate the sales rep's performance and return JSON with:
         console.error('Dashboard error:', error)
         return handleCORS(NextResponse.json(
           { error: "Failed to load dashboard." }, { status: 500 }
+        ))
+      }
+    }
+
+    // List reps for the self-serve admin panel - GET /api/admin/reps
+    // Manager-only. Replaces the founder manually hand-editing Clerk metadata to
+    // promote/demote reps — see POST /api/admin/reps below for the write side.
+    // Reuses groupRepsFromSessions() (shared with GET /api/dashboard above) rather
+    // than re-deriving the org's rep list a second way.
+    if (route === '/admin/reps' && method === 'GET') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        if (authedUser.role !== 'manager') {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+        const orgId = authedUser.email.split('@')[1]
+        if (!orgId) return handleCORS(NextResponse.json(
+          { error: "Unable to determine organization from account email" }, { status: 400 }
+        ))
+        const db = await getDb()
+        const sessions = await db.collection('sessions').find({ orgId }).toArray()
+        const reps = groupRepsFromSessions(sessions)
+
+        // Batch-resolve each rep's current role from Clerk (publicMetadata is the
+        // only source of truth for role — never trust anything from the sessions
+        // collection for this, since POST /api/sessions is unauthenticated and
+        // doesn't guarantee userEmail is a real Clerk identity). limit must be
+        // passed explicitly: Clerk's list endpoints default to 10 and would
+        // otherwise silently truncate roles for orgs with more than 10 reps.
+        const client = await clerkClient()
+        const { data: clerkUsers } = reps.length
+          ? await client.users.getUserList({
+              emailAddress: reps.map(r => r.userEmail),
+              limit: Math.max(reps.length, 1)
+            })
+          : { data: [] }
+        const roleByEmail = new Map()
+        for (const cu of clerkUsers) {
+          const email = cu.primaryEmailAddress?.emailAddress || cu.emailAddresses?.[0]?.emailAddress
+          if (!email) continue
+          // Same role definition as getAuthedUser() above — keep these in sync.
+          const role = cu.publicMetadata?.role === 'manager' ? 'manager' : 'rep'
+          roleByEmail.set(email.toLowerCase(), { clerkUserId: cu.id, role })
+        }
+
+        const repsWithRole = reps.map(r => {
+          const match = roleByEmail.get(r.userEmail.toLowerCase())
+          return {
+            ...r,
+            clerkUserId: match?.clerkUserId ?? null,
+            // null (not 'rep') means "no matching Clerk account found" — the UI
+            // must treat this as unresolved/disabled, not silently default it.
+            role: match?.role ?? null
+          }
+        })
+
+        return handleCORS(NextResponse.json({ orgId, reps: repsWithRole }))
+      } catch (error) {
+        console.error('Admin reps GET error:', error)
+        return handleCORS(NextResponse.json(
+          { error: "Failed to load reps." }, { status: 500 }
+        ))
+      }
+    }
+
+    // Promote/demote a rep - POST /api/admin/reps
+    // Body: { targetEmail, newRole: 'rep' | 'manager' }. Manager-only, and only
+    // within the caller's own org. Writes only the `role` key via Clerk's
+    // updateUserMetadata, which PATCH-merges publicMetadata at the top level (does
+    // not touch planTier/selectedPersonas) — confirmed against the installed
+    // @clerk/backend SDK source, not assumed. This is the only place in the app
+    // that sets role: 'manager' on anyone; getAuthedUser()'s read side (defaults
+    // to 'rep' when unset) is untouched, so nothing changes for existing users
+    // until a manager explicitly acts here.
+    //
+    // Known, accepted risk: orgId is email.split('@')[1] everywhere in this app,
+    // with no allowlist of real business domains. A manager whose account is on a
+    // shared consumer domain (e.g. gmail.com) could promote/demote another
+    // same-domain user who happens to have a session — this endpoint only extends
+    // an exposure the rest of the app (e.g. /api/dashboard) already has as
+    // view-only. Explicit decision: ship as-is rather than invent new scope (a
+    // domain blocklist, or real org modeling) that wasn't asked for.
+    if (route === '/admin/reps' && method === 'POST') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        if (authedUser.role !== 'manager') {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+
+        const body = await request.json()
+        const targetEmail = typeof body.targetEmail === 'string' ? body.targetEmail.trim() : ''
+        const newRole = body.newRole
+        if (!targetEmail || (newRole !== 'rep' && newRole !== 'manager')) {
+          return handleCORS(NextResponse.json(
+            { error: "targetEmail and newRole ('rep' or 'manager') are required." }, { status: 400 }
+          ))
+        }
+
+        if (targetEmail.toLowerCase() === authedUser.email.toLowerCase()) {
+          return handleCORS(NextResponse.json(
+            { error: "You cannot change your own role." }, { status: 403 }
+          ))
+        }
+
+        // Domain check on the raw submitted string, before any Clerk call — cheap
+        // reject, and means a wrong-org probe gets an identical 403 whether or not
+        // the target email even exists (only a same-domain, nonexistent email ever
+        // reaches the 404 branch below).
+        const orgId = authedUser.email.split('@')[1]?.toLowerCase()
+        const targetDomain = targetEmail.split('@')[1]?.toLowerCase()
+        if (!orgId || !targetDomain || targetDomain !== orgId) {
+          return handleCORS(NextResponse.json(
+            { error: "Target user is not in your organization." }, { status: 403 }
+          ))
+        }
+
+        const client = await clerkClient()
+        const { data } = await client.users.getUserList({ emailAddress: [targetEmail] })
+        if (!data.length) {
+          return handleCORS(NextResponse.json({ error: "User not found." }, { status: 404 }))
+        }
+        const targetUser = data[0]
+
+        await client.users.updateUserMetadata(targetUser.id, {
+          publicMetadata: { role: newRole }
+        })
+
+        return handleCORS(NextResponse.json({
+          userEmail: targetEmail,
+          clerkUserId: targetUser.id,
+          role: newRole
+        }))
+      } catch (error) {
+        console.error('Admin reps POST error:', error)
+        return handleCORS(NextResponse.json(
+          { error: "Failed to update role." }, { status: 500 }
         ))
       }
     }
@@ -995,73 +1277,10 @@ if (route === '/boardroom' && method === 'POST') {
       apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
     })
 
-    // Buyer context fed to the Gemini boardroom analyst — keyed by persona so it
-    // generalizes past the old richard/sandra binary (previously `persona ===
-    // 'richard' ? ... : ...`, which silently scored every other persona, including
-    // new ones, as if they were Sandra). Priya/Rakesh now have real buyer context
-    // matching their ElevenLabs system prompts, replacing the earlier placeholder.
-    const PERSONA_CONTEXT = {
-      richard: 'VP Procurement at a logistics firm. CFO-mandated 15% cost reduction. Anchors on price, threatens vendor consolidation, demands Net-90 terms.',
-      sandra: 'IT Director at a financial firm. Blocks on SOC 2, SAML/SSO, and bandwidth. Polite but always has a blocker.',
-      priya: 'VP Procurement at an NBFC in India. Warm, relationship-first negotiator who builds rapport before grinding on price. Prioritizes long-term vendor relationships and trust, but pushes hard for discounts once comfortable, often after the rep has let their guard down.',
-      rakesh: 'AVP - Digital Transformation at a PSU-adjacent insurer in India. Genuinely curious and engaged with digital initiatives, broadly fluent in general SaaS evaluation territory (implementation, integration, security, ROI), but has no final sign-off authority. Never gives a firm yes or no; warmly defers real commitment to his organization\'s digital transformation committee.'
-    }
-    const personaContext = PERSONA_CONTEXT[persona] || 'Enterprise buyer evaluating a B2B software purchase.'
-
-    // CALL 1 — Combined analyst: procurement + enablement + 6 dimensions
-    const CombinedAnalystSchema = z.object({
-      procurementScore: z.number().min(0).max(100).describe("Procurement score 0-100 based on margin defense and price discipline"),
-      procurementReasoning: z.string().describe("2-3 sentences explaining the procurement score"),
-      marginDefense: z.enum(['strong', 'moderate', 'weak']).describe("How well the rep defended margins"),
-      discountedEarly: z.boolean().describe("Did the rep offer discounts before establishing value"),
-      enablementScore: z.number().min(0).max(100).describe("Sales enablement score 0-100 based on call technique"),
-      enablementReasoning: z.string().describe("2-3 sentences explaining the enablement score"),
-      callControl: z.enum(['strong', 'moderate', 'weak']).describe("How well the rep controlled the call"),
-      usedDiscovery: z.boolean().describe("Did the rep use discovery questions before pitching"),
-      dimensions: z.object({
-        discoveryQuality: z.number().min(0).max(100).describe("Did the rep ask the right questions before pitching. 0=no discovery at all, 100=excellent deep discovery"),
-        objectionHandling: z.number().min(0).max(100).describe("Did the rep validate objections before responding. 0=ignored objections, 100=acknowledged and reframed every objection"),
-        priceDefense: z.number().min(0).max(100).describe("Did the rep hold firm on price. 0=caved immediately, 100=held firm and traded value for concessions"),
-        smeKnowledge: z.number().min(0).max(100).describe("Did the rep demonstrate product and industry knowledge. 0=generic pitch, 100=specific credible expertise"),
-        communication: z.number().min(0).max(100).describe("Clarity, pacing, and active listening. 0=rambling and unclear, 100=crisp concise and listened actively"),
-        emotionalResilience: z.number().min(0).max(100).describe("Did the rep stay composed under pressure. 0=crumbled immediately, 100=stayed calm and confident throughout"),
-      }).describe("6-dimension skill scores"),
-    })
-
-    const COMBINED_PROMPT = `You are an elite B2B sales performance analyst. Evaluate this sales rep across two dimensions simultaneously: procurement/margin defense AND sales enablement/technique. Also score them across 6 specific skill dimensions.
-
-BUYER CONTEXT: ${personaContext}
-
-PROCUREMENT SCORING — focus on:
-HIGH SCORE: Postponed discount conversation, traded concessions for value, held firm on price, asked about budget before discussing numbers, uncovered cost of delay
-LOW SCORE: Dropped price on first objection, offered verbal discounts before understanding budget, apologized for pricing, agreed to demands without counter-ask
-
-ENABLEMENT SCORING — focus on (Challenger Sale + MEDDPICC):
-HIGH SCORE: Acknowledged objections before responding, asked deep discovery questions, maintained control of next steps, reframed cost to business impact
-LOW SCORE: Became defensive when pushed back, jumped to features without understanding objection, let buyer control the call, responded to every objection with a feature pitch
-
-6 DIMENSION SCORING:
-- Discovery Quality: Did they ask specific questions about current pain, process, impact before pitching?
-- Objection Handling: Did they acknowledge, validate, then reframe each objection?
-- Price Defense: Did they hold their ground on price without apologizing or caving?
-- SME Knowledge: Did they demonstrate specific product and industry knowledge credibly?
-- Communication: Were they clear, concise, and actively listening or rambling and vague?
-- Emotional Resilience: Did they stay calm and confident when the buyer pushed hard?
-
-TRANSCRIPT:
-${transcript}
-
-Be strict and realistic. A rep who caves on price scores below 30 on priceDefense. A rep who never asks a discovery question scores below 20 on discoveryQuality. Do not be generous.`
-
-    const analystResult = await generateObject({
-      model: google('gemini-2.5-flash'),
-      schema: CombinedAnalystSchema,
-      system: COMBINED_PROMPT,
-      prompt: 'Evaluate this sales rep strictly and realistically across all dimensions.',
-    })
-
-    const analyst = analystResult.object
-    const weightedScore = Math.round((analyst.procurementScore * 0.6) + (analyst.enablementScore * 0.4))
+    // CALL 1 — Combined analyst: procurement + enablement + 6 dimensions.
+    // Shared with the POST /api/sessions score-forgery check — see scoreTranscript()
+    // near the top of this file.
+    const { weightedScore, ...analyst } = await scoreTranscript(transcript, persona)
 
     // CALL 2 — Executive summarizer
     const ExecutiveSchema = z.object({
