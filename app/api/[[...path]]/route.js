@@ -137,8 +137,8 @@ function handleCORS(response) {
 }
 
 // OPTIONS handler for CORS
-export async function OPTIONS() {
-  return handleCORS(new NextResponse(null, { status: 200 }))
+export async function OPTIONS(request) {
+  return applyCorsOriginPolicy(handleCORS(new NextResponse(null, { status: 200 })), request)
 }
 
 // Simple test schema
@@ -297,8 +297,32 @@ function groupRepsFromSessions(sessions) {
   return Object.values(repMap).sort((a, b) => b.bestScore - a.bestScore)
 }
 
+// Origins allowed to make credentialed cross-origin requests to this API.
+// Access-Control-Allow-Origin: '*' can never be paired with
+// Access-Control-Allow-Credentials: true — browsers reject that combination
+// for credentialed requests. handleCORS() below still sets a static
+// '*'-or-CORS_ORIGINS value (kept for the plain, non-credentialed callers
+// that read it), but applyCorsOriginPolicy() runs last on every response
+// and overwrites it with the real, per-request, allowlist-checked value.
+const ALLOWED_CORS_ORIGINS = (process.env.CORS_ORIGINS || 'https://repready.site')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean)
+
+function applyCorsOriginPolicy(response, request) {
+  const origin = request.headers.get('origin')
+  if (origin && ALLOWED_CORS_ORIGINS.includes(origin)) {
+    response.headers.set('Access-Control-Allow-Origin', origin)
+    response.headers.set('Access-Control-Allow-Credentials', 'true')
+  } else {
+    response.headers.delete('Access-Control-Allow-Origin')
+    response.headers.delete('Access-Control-Allow-Credentials')
+  }
+  return response
+}
+
 // Route handler function
-async function handleRoute(request, { params }) {
+async function handleRouteInternal(request, { params }) {
   const { path = [] } = params
   const route = `/${path.join('/')}`
   const method = request.method
@@ -1501,6 +1525,13 @@ Sessions: ${sessionLines}`
       { status: 500 }
     ))
   }
+}
+
+// Wraps handleRouteInternal so every response gets the real, per-request
+// CORS origin decision applied last — see applyCorsOriginPolicy() above.
+async function handleRoute(request, context) {
+  const response = await handleRouteInternal(request, context)
+  return applyCorsOriginPolicy(response, request)
 }
 
 // Export all HTTP methods
