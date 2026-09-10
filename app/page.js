@@ -537,6 +537,7 @@ export default function Home() {
         <div style={{ maxWidth: 1080, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
           <div style={{ display: 'flex', gap: 24 }}>
             <a href="/privacy" style={{ fontSize: 12, color: STONE, textDecoration: 'none' }}>Privacy Policy</a>
+            <a href="/trust" style={{ fontSize: 12, color: STONE, textDecoration: 'none' }}>Trust &amp; Compliance</a>
             <a href="/terms" style={{ fontSize: 12, color: STONE, textDecoration: 'none' }}>Terms</a>
             <a href={BOOK_DEMO_URL} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: STONE, textDecoration: 'none' }}>Contact</a>
           </div>
