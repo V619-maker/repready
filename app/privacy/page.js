@@ -44,7 +44,7 @@ export default function PrivacyPage() {
           </div>
           <div>
             <h2 className="text-base font-black text-slate-900 mb-3">5. Data Retention</h2>
-            <p className="text-slate-500 text-sm leading-relaxed">Session data — including voice recordings, transcripts, and performance scores — is retained for 90 days from the date of the session, after which it is permanently deleted from our systems. Account information is retained for as long as your account remains active. You may request earlier deletion of your data at any time; see Section 9 (Your Rights) below.</p>
+            <p className="text-slate-500 text-sm leading-relaxed">Session data — including voice recordings, transcripts, and performance scores — is retained for 90 days from the date of the session, after which it is permanently deleted from our systems. Account information is retained for as long as your account remains active. You may request earlier deletion of your data at any time; see Section 10 (Your Rights) below.</p>
           </div>
           <div>
             <h2 className="text-base font-black text-slate-900 mb-3">6. AI Training</h2>
@@ -62,19 +62,30 @@ export default function PrivacyPage() {
             </ul>
           </div>
           <div>
-            <h2 className="text-base font-black text-slate-900 mb-3">8. Data Sharing</h2>
+            <h2 className="text-base font-black text-slate-900 mb-3">8. Sub-processors</h2>
+            <p className="text-slate-500 text-sm leading-relaxed mb-3">We use the following sub-processors to operate RepReady. Each processes a specific, limited category of your data as described below; see their own Data Processing Agreement for how they handle it.</p>
+            <ul className="list-disc list-inside text-slate-500 text-sm space-y-1 leading-relaxed">
+              <li><strong className="text-slate-700">ElevenLabs</strong> — voice AI for practice personas — <a href="https://elevenlabs.io/dpa" target="_blank" rel="noopener noreferrer" className="text-cyan-600 hover:underline">Data Processing Agreement</a></li>
+              <li><strong className="text-slate-700">MongoDB Atlas</strong> — session data storage, Mumbai region (ap-south-1) — <a href="https://www.mongodb.com/legal/data-processing-agreement" target="_blank" rel="noopener noreferrer" className="text-cyan-600 hover:underline">Data Processing Agreement</a></li>
+              <li><strong className="text-slate-700">Clerk</strong> — authentication and user accounts — <a href="https://clerk.com/legal/dpa" target="_blank" rel="noopener noreferrer" className="text-cyan-600 hover:underline">Data Processing Agreement</a></li>
+              <li><strong className="text-slate-700">Google Gemini</strong> — AI scoring engine — <a href="https://cloud.google.com/terms/data-processing-addendum" target="_blank" rel="noopener noreferrer" className="text-cyan-600 hover:underline">Data Processing Addendum</a></li>
+              <li><strong className="text-slate-700">Vercel</strong> — hosting and infrastructure — <a href="https://vercel.com/legal/dpa" target="_blank" rel="noopener noreferrer" className="text-cyan-600 hover:underline">Data Processing Agreement</a></li>
+            </ul>
+          </div>
+          <div>
+            <h2 className="text-base font-black text-slate-900 mb-3">9. Data Sharing</h2>
             <p className="text-slate-500 text-sm leading-relaxed">We do not sell your personal information. We do not share your data with third parties except the service providers listed above who are necessary to operate the product.</p>
           </div>
           <div>
-            <h2 className="text-base font-black text-slate-900 mb-3">9. Your Rights</h2>
+            <h2 className="text-base font-black text-slate-900 mb-3">10. Your Rights</h2>
             <p className="text-slate-500 text-sm leading-relaxed">You may request access to, correction of, or deletion of your personal data — including voice recordings, transcripts, and performance scores — at any time by contacting us at <a href="mailto:privacy@repready.site" className="text-cyan-600 hover:underline">privacy@repready.site</a>. We will respond within 30 days.</p>
           </div>
           <div>
-            <h2 className="text-base font-black text-slate-900 mb-3">10. Grievance Redressal</h2>
+            <h2 className="text-base font-black text-slate-900 mb-3">11. Grievance Redressal</h2>
             <p className="text-slate-500 text-sm leading-relaxed">In accordance with the Digital Personal Data Protection Act, 2023, RepReady has designated a Grievance Officer to address complaints regarding the processing of your personal data. You may raise a grievance by writing to our Grievance Officer at <a href="mailto:privacy@repready.site" className="text-cyan-600 hover:underline">privacy@repready.site</a>. We will acknowledge and respond to all grievances within 30 days of receipt.</p>
           </div>
           <div>
-            <h2 className="text-base font-black text-slate-900 mb-3">11. Contact</h2>
+            <h2 className="text-base font-black text-slate-900 mb-3">12. Contact</h2>
             <p className="text-slate-500 text-sm leading-relaxed">For any privacy-related questions, contact us at <a href="mailto:privacy@repready.site" className="text-cyan-600 hover:underline">privacy@repready.site</a></p>
           </div>
         </div>
