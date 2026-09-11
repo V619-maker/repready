@@ -198,16 +198,13 @@ export default function CoachDashboard() {
                   </p>
                 </div>
 
-                {/* 6 Dimension Skill Matrix */}
+                {/* Skill Matrix — dimensions scored on this org's current criteria */}
                 {isBoardroom && debrief.dimensions && (
                   <div className="border border-white/5 bg-[#0a0a0a] p-6">
                     <h3 className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.2em] mb-6">Skill Matrix</h3>
-                    <DimensionBar label="Discovery Quality" score={debrief.dimensions.discoveryQuality} />
-                    <DimensionBar label="Objection Handling" score={debrief.dimensions.objectionHandling} />
-                    <DimensionBar label="Price Defense" score={debrief.dimensions.priceDefense} />
-                    <DimensionBar label="SME Knowledge" score={debrief.dimensions.smeKnowledge} />
-                    <DimensionBar label="Communication" score={debrief.dimensions.communication} />
-                    <DimensionBar label="Emotional Resilience" score={debrief.dimensions.emotionalResilience} />
+                    {(debrief.criteria || []).map(c => (
+                      <DimensionBar key={c.key} label={c.name} score={debrief.dimensions[c.key]} />
+                    ))}
                   </div>
                 )}
 
