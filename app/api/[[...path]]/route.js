@@ -103,10 +103,23 @@ function slugifyKey(name, index) {
 // aggregation code path below reads through, so a criteria change can never
 // drift between the Gemini prompt and the dashboard.
 async function getCriteriaForOrg(orgId) {
-  if (!orgId) return DEFAULT_CRITERIA
+  // Logged unconditionally (not just on error) because a silent fallback to
+  // DEFAULT_CRITERIA is indistinguishable from "org never customized" at the
+  // call site — this is the only place that can tell the two apart, and a
+  // real production mismatch here (orgId not matching the org a criterion
+  // was actually saved under) produces no error, just a quietly wrong
+  // result. See Known Issues / Sprint 38.
+  if (!orgId) {
+    console.log('[getCriteriaForOrg] no orgId received — using DEFAULT_CRITERIA')
+    return DEFAULT_CRITERIA
+  }
   const db = await getDb()
   const doc = await db.collection('orgCriteria').findOne({ _id: orgId })
-  if (!doc || !Array.isArray(doc.criteria) || !doc.criteria.length) return DEFAULT_CRITERIA
+  if (!doc || !Array.isArray(doc.criteria) || !doc.criteria.length) {
+    console.log(`[getCriteriaForOrg] orgId="${orgId}" has no saved criteria doc — using DEFAULT_CRITERIA`)
+    return DEFAULT_CRITERIA
+  }
+  console.log(`[getCriteriaForOrg] orgId="${orgId}" resolved ${doc.criteria.length} custom criteria: ${doc.criteria.map(c => c.key).join(', ')}`)
   return doc.criteria
 }
 
@@ -170,7 +183,11 @@ async function scoreTranscript(transcript, persona, orgId) {
   })
   const analyst = result.object
   const weightedScore = Math.round((analyst.procurementScore * 0.6) + (analyst.enablementScore * 0.4))
-  return { ...analyst, weightedScore, criteria }
+  // Reference equality against the module-level constant is safe here — it's
+  // the literal object getCriteriaForOrg returns on its fallback branch, never
+  // a copy — and lets callers (currently /api/boardroom's response) show
+  // whether this org's own criteria were actually used without a second query.
+  return { ...analyst, weightedScore, criteria, criteriaSource: criteria === DEFAULT_CRITERIA ? 'default' : 'custom', orgIdReceived: orgId || null }
 }
 
 // Helper function to handle CORS
@@ -1500,7 +1517,8 @@ if (route === '/boardroom' && method === 'POST') {
     // CALL 1 — Combined analyst: procurement + enablement + the org's skill dimensions.
     // Shared with the POST /api/sessions score-forgery check — see scoreTranscript()
     // near the top of this file.
-    const { weightedScore, criteria, ...analyst } = await scoreTranscript(transcript, persona, orgId)
+    const { weightedScore, criteria, criteriaSource, orgIdReceived, ...analyst } = await scoreTranscript(transcript, persona, orgId)
+    console.log(`[/api/boardroom] persona=${persona} orgIdReceived=${orgIdReceived} criteriaSource=${criteriaSource} criteriaKeys=${criteria.map(c => c.key).join(',')}`)
 
     // CALL 2 — Executive summarizer
     const ExecutiveSchema = z.object({
@@ -1548,6 +1566,13 @@ Write a crisp executive summary. Each feedback field must be under 20 words. Be 
       oneThingToFixNext: executiveResult.object.oneThingToFixNext,
       dimensions: analyst.dimensions,
       criteria,
+      // Diagnostic fields (Sprint 38) — not used by the UI, visible in the
+      // browser Network tab and Vercel logs so a "why didn't my custom
+      // criteria show up" report is instantly diagnosable instead of
+      // requiring a repro: was an orgId even received, and did it resolve to
+      // this org's saved criteria or the default fallback.
+      criteriaSource,
+      orgIdReceived,
       analysts: {
         procurement: {
           score: analyst.procurementScore,
