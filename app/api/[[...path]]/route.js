@@ -67,27 +67,70 @@ const PERSONA_CONTEXT = {
   rakesh: 'AVP - Digital Transformation at a PSU-adjacent insurer in India. Genuinely curious and engaged with digital initiatives, broadly fluent in general SaaS evaluation territory (implementation, integration, security, ROI), but has no final sign-off authority. Never gives a firm yes or no; warmly defers real commitment to his organization\'s digital transformation committee.'
 }
 
-const CombinedAnalystSchema = z.object({
-  procurementScore: z.number().min(0).max(100).describe("Procurement score 0-100 based on margin defense and price discipline"),
-  procurementReasoning: z.string().describe("2-3 sentences explaining the procurement score"),
-  marginDefense: z.enum(['strong', 'moderate', 'weak']).describe("How well the rep defended margins"),
-  discountedEarly: z.boolean().describe("Did the rep offer discounts before establishing value"),
-  enablementScore: z.number().min(0).max(100).describe("Sales enablement score 0-100 based on call technique"),
-  enablementReasoning: z.string().describe("2-3 sentences explaining the enablement score"),
-  callControl: z.enum(['strong', 'moderate', 'weak']).describe("How well the rep controlled the call"),
-  usedDiscovery: z.boolean().describe("Did the rep use discovery questions before pitching"),
-  dimensions: z.object({
-    discoveryQuality: z.number().min(0).max(100).describe("Did the rep ask the right questions before pitching. 0=no discovery at all, 100=excellent deep discovery"),
-    objectionHandling: z.number().min(0).max(100).describe("Did the rep validate objections before responding. 0=ignored objections, 100=acknowledged and reframed every objection"),
-    priceDefense: z.number().min(0).max(100).describe("Did the rep hold firm on price. 0=caved immediately, 100=held firm and traded value for concessions"),
-    smeKnowledge: z.number().min(0).max(100).describe("Did the rep demonstrate product and industry knowledge. 0=generic pitch, 100=specific credible expertise"),
-    communication: z.number().min(0).max(100).describe("Clarity, pacing, and active listening. 0=rambling and unclear, 100=crisp concise and listened actively"),
-    emotionalResilience: z.number().min(0).max(100).describe("Did the rep stay composed under pressure. 0=crumbled immediately, 100=stayed calm and confident throughout"),
-  }).describe("6-dimension skill scores"),
-})
+// Default 6-dimension rubric — reproduces the pre-customization scoring exactly
+// (same keys, names, and descriptions) so any org that never touches the new
+// Scoring Criteria settings sees zero behavior change. `key` is what lands in
+// session.dimensions and the Zod schema; `name`/`description` drive both the
+// Gemini prompt and the dashboard/coach/my-stats UI labels. No `weight` field —
+// every criterion is scored and treated identically until reweighting is
+// actually built (deliberately left out of the data model per this feature's
+// scope; adding it back later is a trivial additive field, not a migration).
+const DEFAULT_CRITERIA = [
+  { key: 'discoveryQuality', name: 'Discovery Quality', description: 'Did the rep ask the right questions before pitching. 0=no discovery at all, 100=excellent deep discovery' },
+  { key: 'objectionHandling', name: 'Objection Handling', description: 'Did the rep validate objections before responding. 0=ignored objections, 100=acknowledged and reframed every objection' },
+  { key: 'priceDefense', name: 'Price Defense', description: 'Did the rep hold firm on price. 0=caved immediately, 100=held firm and traded value for concessions' },
+  { key: 'smeKnowledge', name: 'SME Knowledge', description: 'Did the rep demonstrate product and industry knowledge. 0=generic pitch, 100=specific credible expertise' },
+  { key: 'communication', name: 'Communication', description: 'Clarity, pacing, and active listening. 0=rambling and unclear, 100=crisp concise and listened actively' },
+  { key: 'emotionalResilience', name: 'Emotional Resilience', description: 'Did the rep stay composed under pressure. 0=crumbled immediately, 100=stayed calm and confident throughout' },
+]
 
-function buildCombinedAnalystPrompt(transcript, personaContext) {
-  return `You are an elite B2B sales performance analyst. Evaluate this sales rep across two dimensions simultaneously: procurement/margin defense AND sales enablement/technique. Also score them across 6 specific skill dimensions.
+// Turns a manager-supplied criterion name into a safe object/JSON-schema key —
+// never trust the raw string as a property name. Falls back to a stable
+// positional key on total collapse (e.g. a name that's pure emoji/punctuation)
+// so two odd names never silently collide into the same key.
+function slugifyKey(name, index) {
+  const slug = String(name || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9]+(.)/g, (_, c) => c.toUpperCase())
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .replace(/^[A-Z0-9]/, (c) => c.toLowerCase())
+  return slug || `criterion${index}`
+}
+
+// Looks up an org's custom scoring criteria; falls back to DEFAULT_CRITERIA
+// when the org has no orgCriteria doc (never customized) or orgId is
+// null/unresolvable. This is the single source of truth every scoring and
+// aggregation code path below reads through, so a criteria change can never
+// drift between the Gemini prompt and the dashboard.
+async function getCriteriaForOrg(orgId) {
+  if (!orgId) return DEFAULT_CRITERIA
+  const db = await getDb()
+  const doc = await db.collection('orgCriteria').findOne({ _id: orgId })
+  if (!doc || !Array.isArray(doc.criteria) || !doc.criteria.length) return DEFAULT_CRITERIA
+  return doc.criteria
+}
+
+function buildCombinedAnalystSchema(criteria) {
+  const dimensionShape = {}
+  for (const c of criteria) {
+    dimensionShape[c.key] = z.number().min(0).max(100).describe(c.description)
+  }
+  return z.object({
+    procurementScore: z.number().min(0).max(100).describe("Procurement score 0-100 based on margin defense and price discipline"),
+    procurementReasoning: z.string().describe("2-3 sentences explaining the procurement score"),
+    marginDefense: z.enum(['strong', 'moderate', 'weak']).describe("How well the rep defended margins"),
+    discountedEarly: z.boolean().describe("Did the rep offer discounts before establishing value"),
+    enablementScore: z.number().min(0).max(100).describe("Sales enablement score 0-100 based on call technique"),
+    enablementReasoning: z.string().describe("2-3 sentences explaining the enablement score"),
+    callControl: z.enum(['strong', 'moderate', 'weak']).describe("How well the rep controlled the call"),
+    usedDiscovery: z.boolean().describe("Did the rep use discovery questions before pitching"),
+    dimensions: z.object(dimensionShape).describe(`${criteria.length}-dimension skill scores`),
+  })
+}
+
+function buildCombinedAnalystPrompt(transcript, personaContext, criteria) {
+  const dimensionBullets = criteria.map(c => `- ${c.name}: ${c.description}`).join('\n')
+  return `You are an elite B2B sales performance analyst. Evaluate this sales rep across two dimensions simultaneously: procurement/margin defense AND sales enablement/technique. Also score them across the following ${criteria.length} skill dimensions.
 
 BUYER CONTEXT: ${personaContext}
 
@@ -99,32 +142,35 @@ ENABLEMENT SCORING — focus on (Challenger Sale + MEDDPICC):
 HIGH SCORE: Acknowledged objections before responding, asked deep discovery questions, maintained control of next steps, reframed cost to business impact
 LOW SCORE: Became defensive when pushed back, jumped to features without understanding objection, let buyer control the call, responded to every objection with a feature pitch
 
-6 DIMENSION SCORING:
-- Discovery Quality: Did they ask specific questions about current pain, process, impact before pitching?
-- Objection Handling: Did they acknowledge, validate, then reframe each objection?
-- Price Defense: Did they hold their ground on price without apologizing or caving?
-- SME Knowledge: Did they demonstrate specific product and industry knowledge credibly?
-- Communication: Were they clear, concise, and actively listening or rambling and vague?
-- Emotional Resilience: Did they stay calm and confident when the buyer pushed hard?
+SKILL DIMENSION SCORING:
+${dimensionBullets}
 
 TRANSCRIPT:
 ${transcript}
 
-Be strict and realistic. A rep who caves on price scores below 30 on priceDefense. A rep who never asks a discovery question scores below 20 on discoveryQuality. Do not be generous.`
+Be strict and realistic. Do not be generous.`
 }
 
-async function scoreTranscript(transcript, persona) {
+// `orgId` here is trusted only as far as its two callers already trust it:
+// POST /api/sessions already reads and stores body.orgId today (Known Issue
+// 5a — unauthenticated), and POST /api/boardroom now accepts it the same way
+// persona already was. Worst case a caller passes the wrong/fake orgId and
+// gets scored against another org's rubric text — it never touches
+// procurementScore/enablementScore/weightedScore (still fixed, still what the
+// forgery guard checks), only the supplementary dimension labels.
+async function scoreTranscript(transcript, persona, orgId) {
   const google = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY })
   const personaContext = PERSONA_CONTEXT[persona] || 'Enterprise buyer evaluating a B2B software purchase.'
+  const criteria = await getCriteriaForOrg(orgId)
   const result = await generateObject({
     model: google('gemini-2.5-flash'),
-    schema: CombinedAnalystSchema,
-    system: buildCombinedAnalystPrompt(transcript, personaContext),
+    schema: buildCombinedAnalystSchema(criteria),
+    system: buildCombinedAnalystPrompt(transcript, personaContext, criteria),
     prompt: 'Evaluate this sales rep strictly and realistically across all dimensions.',
   })
   const analyst = result.object
   const weightedScore = Math.round((analyst.procurementScore * 0.6) + (analyst.enablementScore * 0.4))
-  return { ...analyst, weightedScore }
+  return { ...analyst, weightedScore, criteria }
 }
 
 // Helper function to handle CORS
@@ -874,7 +920,7 @@ Evaluate the sales rep's performance and return JSON with:
         const claimedScore = Number(body.finalScore) || 0
         const SCORE_TOLERANCE = 20 // headroom for LLM run-to-run variance and the coach-fallback path's different scoring methodology
         try {
-          const verified = await scoreTranscript(transcript, body.persona)
+          const verified = await scoreTranscript(transcript, body.persona, body.orgId)
           if (claimedScore > verified.weightedScore + SCORE_TOLERANCE) {
             console.warn('Rejected session save — claimed score exceeds what the transcript supports', {
               userEmail: body.userEmail, persona: body.persona, claimedScore, verifiedScore: verified.weightedScore
@@ -996,7 +1042,15 @@ Evaluate the sales rep's performance and return JSON with:
           .sort({ createdAt: -1 })
           .toArray()
 
-        const DIMENSION_KEYS = ['discoveryQuality', 'objectionHandling', 'priceDefense', 'smeKnowledge', 'communication', 'emotionalResilience']
+        // Sourced from the org's actual criteria config (or DEFAULT_CRITERIA if
+        // never customized) rather than a hardcoded list, so this always
+        // aggregates against whatever dimensions this org is currently scoring
+        // on. A session scored under a prior/renamed criterion simply stops
+        // contributing to that key once the org's active list moves on — no
+        // retroactive relabeling of historical data (same as this codebase's
+        // existing pre-Sprint-15 orgId:null historical-data gap).
+        const criteria = await getCriteriaForOrg(orgId)
+        const DIMENSION_KEYS = criteria.map(c => c.key)
 
         const reps = groupRepsFromSessions(sessions)
         const qualifiedReps = reps.filter(r => r.bestQualificationStatus === 'Qualified' || r.bestQualificationStatus === 'Elite').length
@@ -1045,6 +1099,7 @@ Evaluate the sales rep's performance and return JSON with:
           eliteReps,
           dimensionAverages,
           weakestDimension,
+          criteria,
           reps,
           recentSessions: sessions.slice(0, 10).map(s => ({
             userEmail: s.userEmail,
@@ -1206,6 +1261,143 @@ Evaluate the sales rep's performance and return JSON with:
       }
     }
 
+    // Read-only scoring criteria for the caller's own org - GET /api/criteria
+    // Any authenticated user (rep or manager), not manager-only: this just
+    // supplies the dimension labels my-stats/coach/dashboard need to render
+    // whatever this org is currently scoring on. Editing stays manager-only
+    // via /api/admin/criteria below.
+    if (route === '/criteria' && method === 'GET') {
+      try {
+        const authedEmail = await getAuthedEmail()
+        if (!authedEmail) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const orgId = authedEmail.split('@')[1] || null
+        const criteria = await getCriteriaForOrg(orgId)
+        return handleCORS(NextResponse.json({ orgId, criteria }))
+      } catch (error) {
+        console.error('Criteria GET error:', error)
+        return handleCORS(NextResponse.json({ error: "Failed to load criteria." }, { status: 500 }))
+      }
+    }
+
+    // Manager-only scoring criteria settings - GET/POST/DELETE /api/admin/criteria
+    // Same role-gate pattern as /api/admin/reps above: manager-only, scoped to
+    // the caller's own org (orgId always server-derived from the authed
+    // manager's email, never client-supplied).
+    if (route === '/admin/criteria' && method === 'GET') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        if (authedUser.role !== 'manager') {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+        const orgId = authedUser.email.split('@')[1]
+        if (!orgId) return handleCORS(NextResponse.json(
+          { error: "Unable to determine organization from account email" }, { status: 400 }
+        ))
+        const db = await getDb()
+        const doc = await db.collection('orgCriteria').findOne({ _id: orgId })
+        const isDefault = !doc || !Array.isArray(doc.criteria) || !doc.criteria.length
+        return handleCORS(NextResponse.json({
+          orgId,
+          criteria: isDefault ? DEFAULT_CRITERIA : doc.criteria,
+          isDefault
+        }))
+      } catch (error) {
+        console.error('Admin criteria GET error:', error)
+        return handleCORS(NextResponse.json({ error: "Failed to load criteria." }, { status: 500 }))
+      }
+    }
+
+    // Body: { criteria: [{ name, description }] }. Server derives a slug `key`
+    // from each `name` — never trusts a client-supplied key — and rejects
+    // duplicate keys (e.g. two names that slugify the same way), empty
+    // name/description, and lists over 10 criteria (keeps the Gemini prompt
+    // and this settings UI sane). No `weight` field: every criterion is
+    // scored identically for now (see DEFAULT_CRITERIA comment above).
+    if (route === '/admin/criteria' && method === 'POST') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        if (authedUser.role !== 'manager') {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+        const orgId = authedUser.email.split('@')[1]
+        if (!orgId) return handleCORS(NextResponse.json(
+          { error: "Unable to determine organization from account email" }, { status: 400 }
+        ))
+
+        const body = await request.json()
+        const rawCriteria = Array.isArray(body.criteria) ? body.criteria : []
+        if (!rawCriteria.length) {
+          return handleCORS(NextResponse.json({ error: "At least one criterion is required." }, { status: 400 }))
+        }
+        if (rawCriteria.length > 10) {
+          return handleCORS(NextResponse.json({ error: "A maximum of 10 criteria is supported." }, { status: 400 }))
+        }
+
+        const criteria = []
+        const seenKeys = new Set()
+        for (let i = 0; i < rawCriteria.length; i++) {
+          const name = typeof rawCriteria[i].name === 'string' ? rawCriteria[i].name.trim() : ''
+          const description = typeof rawCriteria[i].description === 'string' ? rawCriteria[i].description.trim() : ''
+          if (!name || !description) {
+            return handleCORS(NextResponse.json(
+              { error: "Each criterion needs a name and a description." }, { status: 400 }
+            ))
+          }
+          const key = slugifyKey(name, i)
+          if (seenKeys.has(key)) {
+            return handleCORS(NextResponse.json(
+              { error: `Two criteria produced the same key ("${key}") — use more distinct names.` }, { status: 400 }
+            ))
+          }
+          seenKeys.add(key)
+          criteria.push({ key, name, description })
+        }
+
+        const db = await getDb()
+        await db.collection('orgCriteria').updateOne(
+          { _id: orgId },
+          { $set: { criteria, updatedAt: new Date().toISOString(), updatedBy: authedUser.email } },
+          { upsert: true }
+        )
+
+        return handleCORS(NextResponse.json({ orgId, criteria }))
+      } catch (error) {
+        console.error('Admin criteria POST error:', error)
+        return handleCORS(NextResponse.json({ error: "Failed to save criteria." }, { status: 500 }))
+      }
+    }
+
+    // Reset to the default 6-dimension rubric - DELETE /api/admin/criteria
+    if (route === '/admin/criteria' && method === 'DELETE') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        if (authedUser.role !== 'manager') {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+        const orgId = authedUser.email.split('@')[1]
+        if (!orgId) return handleCORS(NextResponse.json(
+          { error: "Unable to determine organization from account email" }, { status: 400 }
+        ))
+        const db = await getDb()
+        await db.collection('orgCriteria').deleteOne({ _id: orgId })
+        return handleCORS(NextResponse.json({ orgId, criteria: DEFAULT_CRITERIA }))
+      } catch (error) {
+        console.error('Admin criteria DELETE error:', error)
+        return handleCORS(NextResponse.json({ error: "Failed to reset criteria." }, { status: 500 }))
+      }
+    }
+
     // Persona access - GET /api/persona-access
     // Returns which of the 4 personas this user can access. If planTier is
     // unset (true for everyone right now), all 4 are unlocked — enforcement
@@ -1283,7 +1475,11 @@ Evaluate the sales rep's performance and return JSON with:
 if (route === '/boardroom' && method === 'POST') {
   try {
     const body = await request.json()
-    const { transcript, persona } = body
+    // orgId is client-supplied and unverified — this endpoint has no auth at
+    // all (transcript/persona are already trusted this way). Known, accepted
+    // gap tracked separately (Known Issue 5a); this feature doesn't add auth
+    // here, it just extends the existing trust level to one more field.
+    const { transcript, persona, orgId } = body
 
     if (!transcript || !persona) {
       return handleCORS(NextResponse.json(
@@ -1301,10 +1497,10 @@ if (route === '/boardroom' && method === 'POST') {
       apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
     })
 
-    // CALL 1 — Combined analyst: procurement + enablement + 6 dimensions.
+    // CALL 1 — Combined analyst: procurement + enablement + the org's skill dimensions.
     // Shared with the POST /api/sessions score-forgery check — see scoreTranscript()
     // near the top of this file.
-    const { weightedScore, ...analyst } = await scoreTranscript(transcript, persona)
+    const { weightedScore, criteria, ...analyst } = await scoreTranscript(transcript, persona, orgId)
 
     // CALL 2 — Executive summarizer
     const ExecutiveSchema = z.object({
@@ -1331,13 +1527,8 @@ Reasoning: ${analyst.enablementReasoning}
 Call control: ${analyst.callControl}
 Used discovery: ${analyst.usedDiscovery}
 
-6 DIMENSION SCORES:
-- Discovery Quality: ${analyst.dimensions.discoveryQuality}/100
-- Objection Handling: ${analyst.dimensions.objectionHandling}/100
-- Price Defense: ${analyst.dimensions.priceDefense}/100
-- SME Knowledge: ${analyst.dimensions.smeKnowledge}/100
-- Communication: ${analyst.dimensions.communication}/100
-- Emotional Resilience: ${analyst.dimensions.emotionalResilience}/100
+SKILL DIMENSION SCORES:
+${criteria.map(c => `- ${c.name}: ${analyst.dimensions[c.key]}/100`).join('\n')}
 
 WEIGHTED FINAL SCORE (60% procurement, 40% enablement): ${weightedScore}/100
 
@@ -1356,6 +1547,7 @@ Write a crisp executive summary. Each feedback field must be under 20 words. Be 
       whatYouDidWrong: executiveResult.object.whatYouDidWrong,
       oneThingToFixNext: executiveResult.object.oneThingToFixNext,
       dimensions: analyst.dimensions,
+      criteria,
       analysts: {
         procurement: {
           score: analyst.procurementScore,
@@ -1442,23 +1634,18 @@ Write a crisp executive summary. Each feedback field must be under 20 words. Be 
           return handleCORS(NextResponse.json({ hasHistory: false }))
         }
 
-        const DIMENSION_LABELS = {
-          discoveryQuality: 'discovery',
-          objectionHandling: 'objections',
-          priceDefense: 'price',
-          smeKnowledge: 'sme',
-          communication: 'comm',
-          emotionalResilience: 'resilience'
-        }
+        const orgId = authedEmail.split('@')[1] || null
+        const criteria = await getCriteriaForOrg(orgId)
 
         const sessionLines = sessions.map(s => {
           const date = s.createdAt ? String(s.createdAt).slice(0, 10) : 'unknown date'
           let line = `${date}: score ${s.finalScore ?? 0}/100, grade ${s.grade || 'N/A'}, hostility ${s.hostilityReached ?? 0}%, status ${s.qualificationStatus || 'Unknown'}`
           if (s.dimensions) {
-            const dims = Object.entries(DIMENSION_LABELS)
-              .map(([key, label]) => `${label} ${s.dimensions[key] ?? 0}`)
+            const dims = criteria
+              .filter(c => typeof s.dimensions[c.key] === 'number')
+              .map(c => `${c.name.toLowerCase()} ${s.dimensions[c.key]}`)
               .join(', ')
-            line += `, dimensions: ${dims}`
+            if (dims) line += `, dimensions: ${dims}`
           }
           return line
         }).join('\n')

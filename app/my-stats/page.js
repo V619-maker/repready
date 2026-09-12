@@ -73,6 +73,7 @@ export default function MyStatsPage() {
   const { user, isLoaded } = useUser()
   const router = useRouter()
   const [sessions, setSessions] = useState(null)
+  const [criteria, setCriteria] = useState([])
   const [error, setError] = useState('')
 
   const userEmail = user?.primaryEmailAddress?.emailAddress || ''
@@ -85,7 +86,23 @@ export default function MyStatsPage() {
       .then(r => r.json())
       .then(d => setSessions(Array.isArray(d) ? d : []))
       .catch(() => setError('Failed to load session history.'))
+    // Current criteria for this org — used only to label whatever keys show up
+    // in each session's `dimensions`; a session scored under an older/renamed
+    // criterion just falls back to a prettified raw key (see dimensionLabel below).
+    fetch('/api/criteria')
+      .then(r => r.json())
+      .then(d => setCriteria(Array.isArray(d.criteria) ? d.criteria : []))
+      .catch(() => {})
   }, [isLoaded, user, userEmail])
+
+  // Falls back to a prettified version of the raw key (e.g. "smeKnowledge" ->
+  // "Sme Knowledge") when a session's dimension key isn't in the org's current
+  // criteria list — keeps legacy/renamed dimensions from rendering "undefined".
+  function dimensionLabel(key) {
+    const match = criteria.find(c => c.key === key)
+    if (match) return match.name
+    return key.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase()).trim()
+  }
 
   const stats = useMemo(() => {
     if (!sessions) return null
@@ -255,12 +272,11 @@ export default function MyStatsPage() {
                   <p className="text-[9px] text-zinc-700 uppercase tracking-widest mb-4">
                     From session on {new Date(stats.dimensionSession.createdAt).toLocaleDateString()}
                   </p>
-                  <DimensionBar label="Discovery Quality" score={stats.dimensionSession.dimensions.discoveryQuality} />
-                  <DimensionBar label="Objection Handling" score={stats.dimensionSession.dimensions.objectionHandling} />
-                  <DimensionBar label="Price Defense" score={stats.dimensionSession.dimensions.priceDefense} />
-                  <DimensionBar label="SME Knowledge" score={stats.dimensionSession.dimensions.smeKnowledge} />
-                  <DimensionBar label="Communication" score={stats.dimensionSession.dimensions.communication} />
-                  <DimensionBar label="Emotional Resilience" score={stats.dimensionSession.dimensions.emotionalResilience} />
+                  {Object.entries(stats.dimensionSession.dimensions)
+                    .filter(([, score]) => typeof score === 'number')
+                    .map(([key, score]) => (
+                      <DimensionBar key={key} label={dimensionLabel(key)} score={score} />
+                    ))}
                 </>
               ) : (
                 <p className="text-zinc-600 text-xs">No dimension data yet — this is tracked on sessions run since dimensions scoring was added.</p>

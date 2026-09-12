@@ -312,7 +312,7 @@ let boardroomEnablementScore = null;
         const boardroomResponse = await fetch('/api/boardroom', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ transcript: finalTranscript, persona })
+          body: JSON.stringify({ transcript: finalTranscript, persona, orgId: userEmail ? userEmail.split('@')[1] : null })
         });
 
         if (boardroomResponse.ok) {

@@ -27,16 +27,6 @@ function daysSince(dateStr) {
   return Math.floor(diff / 86400000)
 }
 
-const DIMENSION_LABELS = {
-  discoveryQuality: 'Discovery Quality',
-  objectionHandling: 'Objection Handling',
-  priceDefense: 'Price Defense',
-  smeKnowledge: 'SME Knowledge',
-  communication: 'Communication',
-  emotionalResilience: 'Emotional Resilience',
-}
-const DIMENSION_ORDER = ['discoveryQuality', 'objectionHandling', 'priceDefense', 'smeKnowledge', 'communication', 'emotionalResilience']
-
 const QUALIFICATION_COLORS = {
   'Not Qualified': 'rgba(255,255,255,0.3)',
   'Getting Started': '#f5a623',
@@ -68,6 +58,12 @@ export default function DashboardPage() {
   const [pendingEmail, setPendingEmail] = useState(null)
   const [rowErrors, setRowErrors] = useState({})
 
+  const [criteria, setCriteria] = useState([])
+  const [criteriaLoading, setCriteriaLoading] = useState(true)
+  const [criteriaError, setCriteriaError] = useState('')
+  const [criteriaSaving, setCriteriaSaving] = useState(false)
+  const [criteriaSaved, setCriteriaSaved] = useState(false)
+
   useEffect(() => {
     if (!isLoaded) return
     if (!user) { router.push('/sign-in'); return }
@@ -93,6 +89,72 @@ export default function DashboardPage() {
       })
       .catch(e => { setAdminError(e.message); setAdminLoading(false) })
   }, [isLoaded, user, isManager])
+
+  useEffect(() => {
+    if (!isLoaded || !user || !isManager) { setCriteriaLoading(false); return }
+    setCriteriaLoading(true)
+    fetch('/api/admin/criteria')
+      .then(async r => {
+        const json = await r.json()
+        if (!r.ok) throw new Error(json.error || 'Failed to load criteria.')
+        setCriteria(json.criteria || [])
+        setCriteriaLoading(false)
+      })
+      .catch(e => { setCriteriaError(e.message); setCriteriaLoading(false) })
+  }, [isLoaded, user, isManager])
+
+  function updateCriterionField(index, field, value) {
+    setCriteriaSaved(false)
+    setCriteria(prev => prev.map((c, i) => i === index ? { ...c, [field]: value } : c))
+  }
+
+  function addCriterion() {
+    setCriteriaSaved(false)
+    setCriteria(prev => [...prev, { name: '', description: '' }])
+  }
+
+  function removeCriterion(index) {
+    setCriteriaSaved(false)
+    setCriteria(prev => prev.filter((_, i) => i !== index))
+  }
+
+  async function saveCriteria() {
+    setCriteriaSaving(true)
+    setCriteriaError('')
+    setCriteriaSaved(false)
+    try {
+      const res = await fetch('/api/admin/criteria', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ criteria: criteria.map(c => ({ name: c.name, description: c.description })) })
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to save criteria.')
+      setCriteria(json.criteria || [])
+      setCriteriaSaved(true)
+    } catch (e) {
+      setCriteriaError(e.message)
+    } finally {
+      setCriteriaSaving(false)
+    }
+  }
+
+  async function resetCriteria() {
+    setCriteriaSaving(true)
+    setCriteriaError('')
+    setCriteriaSaved(false)
+    try {
+      const res = await fetch('/api/admin/criteria', { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to reset criteria.')
+      setCriteria(json.criteria || [])
+      setCriteriaSaved(true)
+    } catch (e) {
+      setCriteriaError(e.message)
+    } finally {
+      setCriteriaSaving(false)
+    }
+  }
 
   async function handleRoleChange(rep) {
     const newRole = rep.role === 'manager' ? 'rep' : 'manager'
@@ -168,13 +230,13 @@ export default function DashboardPage() {
             <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>No dimension data yet — this is tracked on sessions run since dimensions scoring was added.</p>
           ) : (
             <>
-              {DIMENSION_ORDER.map((key) => {
-                const value = data.dimensionAverages[key]
-                const isWeakest = key === data.weakestDimension
+              {(data.criteria || []).map((c) => {
+                const value = data.dimensionAverages[c.key]
+                const isWeakest = c.key === data.weakestDimension
                 return (
-                  <div key={key} style={{ marginBottom: 14 }}>
+                  <div key={c.key} style={{ marginBottom: 14 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span style={{ fontSize: 11, color: isWeakest ? '#e84545' : 'rgba(255,255,255,0.6)', letterSpacing: '0.05em' }}>{DIMENSION_LABELS[key]}</span>
+                      <span style={{ fontSize: 11, color: isWeakest ? '#e84545' : 'rgba(255,255,255,0.6)', letterSpacing: '0.05em' }}>{c.name}</span>
                       <span style={{ fontSize: 11, fontWeight: 900, color: isWeakest ? '#e84545' : '#fff' }}>{value ?? '—'}</span>
                     </div>
                     <div style={{ width: '100%', height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
@@ -185,7 +247,7 @@ export default function DashboardPage() {
               })}
               {data.weakestDimension && (
                 <p style={{ marginTop: 16, fontSize: 12, color: '#e84545' }}>
-                  Weakest skill: {DIMENSION_LABELS[data.weakestDimension]}. Focus coaching here.
+                  Weakest skill: {data.criteria?.find(c => c.key === data.weakestDimension)?.name || data.weakestDimension}. Focus coaching here.
                 </p>
               )}
             </>
@@ -318,6 +380,99 @@ export default function DashboardPage() {
                 </div>
               )
             })}
+          </div>
+        )}
+
+        {/* SECTION 6 — Scoring criteria (manager-only, same role-gate pattern as Team Management) */}
+        {isManager && (
+          <div style={{ background: '#0d1117', border: '1px solid rgba(0,200,224,0.15)', padding: 24, marginBottom: 16 }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>SCORING CRITERIA</div>
+            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 8 }}>
+              These are the skill dimensions reps are scored on. All criteria are weighted equally.
+            </p>
+            <p style={{ fontSize: 11, color: '#f5a623', marginBottom: 20 }}>
+              Renaming a criterion does not retroactively relabel past sessions scored under the old name — historical sessions keep showing the dimension name they were scored with.
+            </p>
+            {criteriaLoading ? (
+              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13 }}>Loading criteria…</p>
+            ) : (
+              <>
+                {criteriaError && <p style={{ color: '#e84545', fontSize: 12, marginBottom: 12 }}>{criteriaError}</p>}
+                {criteria.map((c, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 12 }}>
+                    <input
+                      value={c.name}
+                      onChange={(e) => updateCriterionField(i, 'name', e.target.value)}
+                      placeholder="Name (e.g. Discovery Quality)"
+                      style={{
+                        flex: '0 0 200px', background: '#0a0d14', border: '1px solid rgba(255,255,255,0.15)',
+                        color: '#fff', fontSize: 12, fontFamily: 'monospace', padding: '8px 10px'
+                      }}
+                    />
+                    <input
+                      value={c.description}
+                      onChange={(e) => updateCriterionField(i, 'description', e.target.value)}
+                      placeholder="Description / rubric for the AI grader"
+                      style={{
+                        flex: 1, background: '#0a0d14', border: '1px solid rgba(255,255,255,0.15)',
+                        color: '#fff', fontSize: 12, fontFamily: 'monospace', padding: '8px 10px'
+                      }}
+                    />
+                    <button
+                      onClick={() => removeCriterion(i)}
+                      disabled={criteria.length <= 1}
+                      style={{
+                        fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace',
+                        background: 'transparent', border: '1px solid rgba(232,69,69,0.4)',
+                        color: criteria.length <= 1 ? 'rgba(255,255,255,0.2)' : '#e84545',
+                        padding: '8px 10px', cursor: criteria.length <= 1 ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      REMOVE
+                    </button>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', gap: 12, marginTop: 16, flexWrap: 'wrap' }}>
+                  <button
+                    onClick={addCriterion}
+                    disabled={criteria.length >= 10}
+                    style={{
+                      fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace',
+                      background: 'transparent', border: '1px solid rgba(0,200,224,0.4)',
+                      color: criteria.length >= 10 ? 'rgba(255,255,255,0.2)' : '#00c8e0',
+                      padding: '8px 14px', cursor: criteria.length >= 10 ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    + ADD CRITERION
+                  </button>
+                  <button
+                    onClick={saveCriteria}
+                    disabled={criteriaSaving}
+                    style={{
+                      fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace',
+                      background: '#00c8e0', border: '1px solid #00c8e0', color: '#0a0d14',
+                      padding: '8px 14px', cursor: criteriaSaving ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {criteriaSaving ? 'SAVING…' : 'SAVE'}
+                  </button>
+                  <button
+                    onClick={resetCriteria}
+                    disabled={criteriaSaving}
+                    style={{
+                      fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace',
+                      background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.5)',
+                      padding: '8px 14px', cursor: criteriaSaving ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    RESET TO DEFAULTS
+                  </button>
+                  {criteriaSaved && !criteriaSaving && (
+                    <span style={{ fontSize: 11, color: '#00c8e0', alignSelf: 'center' }}>Saved.</span>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
 
