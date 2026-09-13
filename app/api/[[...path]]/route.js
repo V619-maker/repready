@@ -1761,6 +1761,37 @@ Evaluate the sales rep's performance and return JSON with:
       }
     }
 
+    // Fetch a single real-call record by id - GET /api/real-calls?id=...
+    // Read-only, for the (later) client-side report page to load/reload a
+    // specific record by id — not a polling endpoint, nothing async is in
+    // flight by the time this is called. Scoped to the caller's own email,
+    // same ownership-check pattern as POST /real-calls/confirm-speaker above
+    // (never return another user's record even if they guess the id).
+    if (route === '/real-calls' && method === 'GET') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+
+        const id = new URL(request.url).searchParams.get('id')
+        if (!id) {
+          return handleCORS(NextResponse.json({ error: "id is required." }, { status: 400 }))
+        }
+
+        const db = await getDb()
+        const record = await db.collection('realCalls').findOne({ id, userEmail: authedUser.email })
+        if (!record) {
+          return handleCORS(NextResponse.json({ error: "Real call not found." }, { status: 404 }))
+        }
+
+        return handleCORS(NextResponse.json(record))
+      } catch (error) {
+        console.error('Real-calls GET error:', error)
+        return handleCORS(NextResponse.json({ error: "Failed to fetch real call." }, { status: 500 }))
+      }
+    }
+
     // Real-call speaker confirmation + scoring - POST /api/real-calls/confirm-speaker
     // Takes a `ready_for_confirmation` realCalls record (produced by POST
     // /api/real-calls, Task 3) plus the human's choice of which detected
