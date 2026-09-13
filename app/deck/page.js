@@ -722,7 +722,7 @@ let boardroomEnablementScore = null;
               Consent Required
             </h2>
             <p className="text-zinc-400 text-sm leading-relaxed mb-10">
-              This session will be recorded and analysed by AI to generate your performance score and coaching feedback. Voice data is processed by ElevenLabs and Google Gemini. Session data is stored for 90 days in Mumbai, India.
+              This session will be recorded and analysed by AI to generate your performance score and coaching feedback. Voice data is processed by ElevenLabs and Google Gemini, and automatically deleted after 90 days (not currently India-resident). Your performance scores are stored in Mumbai, India for as long as your account is active.
             </p>
             <label className="flex items-center justify-center gap-3 mb-10 cursor-pointer text-zinc-300 text-[10px] uppercase tracking-widest">
               <input
