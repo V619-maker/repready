@@ -40,11 +40,11 @@ export default function PrivacyPage() {
           </div>
           <div>
             <h2 className="text-base font-black text-slate-900 mb-3">4. Data Storage and Security</h2>
-            <p className="text-slate-500 text-sm leading-relaxed">All session data — including voice recordings, transcripts, and performance scores — is encrypted in transit and at rest, and stored in MongoDB Atlas hosted in the Mumbai, India region. Account data is managed through Clerk, which maintains industry-standard security practices. We do not store payment information — all billing is handled by Paddle.</p>
+            <p className="text-slate-500 text-sm leading-relaxed">Session records — including transcripts and performance scores — are encrypted in transit and at rest, and stored in MongoDB Atlas hosted in the Mumbai, India region. Voice conversation data captured during practice sessions is a separate case: it is processed and held by ElevenLabs, our voice AI sub-processor, not MongoDB, and is not currently India-resident (India-only processing requires ElevenLabs' Enterprise plan, which we have not yet enabled). Account data is managed through Clerk, which maintains industry-standard security practices. We do not store payment information — all billing is handled by Paddle.</p>
           </div>
           <div>
             <h2 className="text-base font-black text-slate-900 mb-3">5. Data Retention</h2>
-            <p className="text-slate-500 text-sm leading-relaxed">Session data — including voice recordings, transcripts, and performance scores — is retained for 90 days from the date of the session, after which it is permanently deleted from our systems. Account information is retained for as long as your account remains active. You may request earlier deletion of your data at any time; see Section 10 (Your Rights) below.</p>
+            <p className="text-slate-500 text-sm leading-relaxed">Voice conversation data held by ElevenLabs is automatically and permanently deleted 90 days after the session. Your session transcripts and performance scores in MongoDB Atlas are retained for as long as your account remains active, so your progress history stays available to you — you may delete them yourself at any time from your account, or request deletion; see Section 10 (Your Rights) below.</p>
           </div>
           <div>
             <h2 className="text-base font-black text-slate-900 mb-3">6. AI Training</h2>
