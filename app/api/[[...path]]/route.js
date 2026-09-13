@@ -1618,6 +1618,149 @@ Evaluate the sales rep's performance and return JSON with:
       }
     }
 
+    // Real-call upload + pasted-transcript intake - POST /api/real-calls
+    // Any signed-in user (rep or manager), no plan-tier gate. Branches on the
+    // request's Content-Type: multipart/form-data is an audio upload (Path A,
+    // transcribed via transcribeWithDiarization()), anything else is treated
+    // as a JSON pasted-transcript body (Path B, parsed via
+    // parseSpeakerLabelsFromPastedText()). Both paths derive orgId the
+    // standard server-side way and write a `realCalls` record before
+    // returning, so both an accepted and an "unsupported" outcome are always
+    // persisted, not just successes. This only produces the record and tells
+    // the caller whether a speaker-confirmation step is needed next — it does
+    // not do the confirmation, scoring, or GET-by-id itself (later tasks).
+    if (route === '/real-calls' && method === 'POST') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const orgId = authedUser.email.split('@')[1]
+        if (!orgId) return handleCORS(NextResponse.json(
+          { error: "Unable to determine organization from account email" }, { status: 400 }
+        ))
+
+        const db = await getDb()
+        const contentType = request.headers.get('content-type') || ''
+
+        // ---- Path A: audio upload ----
+        if (contentType.includes('multipart/form-data')) {
+          const formData = await request.formData()
+          const file = formData.get('audio')
+          if (!file) {
+            return handleCORS(NextResponse.json(
+              { error: "Missing audio file (field 'audio')." }, { status: 400 }
+            ))
+          }
+          const buffer = Buffer.from(await file.arrayBuffer())
+
+          let transcription
+          try {
+            transcription = await transcribeWithDiarization(buffer, file.name)
+          } catch (error) {
+            console.error('Real-call transcription error:', error)
+            return handleCORS(NextResponse.json(
+              { error: "Transcription failed. Please try again." }, { status: 500 }
+            ))
+          }
+
+          const record = {
+            id: uuidv4(),
+            orgId,
+            userEmail: authedUser.email,
+            createdAt: new Date().toISOString()
+          }
+
+          if (transcription.audioDurationSeconds > MAX_REAL_CALL_DURATION_SECONDS) {
+            record.status = 'unsupported'
+            record.unsupportedReason = 'duration'
+            await db.collection('realCalls').insertOne(record)
+            return handleCORS(NextResponse.json({ id: record.id, status: 'unsupported', reason: 'duration' }))
+          }
+
+          if (transcription.speakerLabels.length > 2) {
+            record.status = 'unsupported'
+            record.unsupportedReason = 'speaker_count'
+            await db.collection('realCalls').insertOne(record)
+            return handleCORS(NextResponse.json({ id: record.id, status: 'unsupported', reason: 'speaker_count' }))
+          }
+
+          record.status = 'ready_for_confirmation'
+          record.utterances = transcription.utterances
+          record.audioDurationSeconds = transcription.audioDurationSeconds
+          await db.collection('realCalls').insertOne(record)
+
+          const speakers = transcription.speakerLabels.map(label => {
+            const firstUtterance = transcription.utterances.find(u => u.speaker === label)
+            return { label, snippet: firstUtterance ? firstUtterance.text : '' }
+          })
+
+          return handleCORS(NextResponse.json({ id: record.id, status: 'ready_for_confirmation', speakers }))
+        }
+
+        // ---- Path B: pasted transcript (JSON) ----
+        const body = await request.json()
+        const transcript = typeof body.transcript === 'string' ? body.transcript.trim() : ''
+        if (!transcript) {
+          return handleCORS(NextResponse.json({ error: "Transcript text is required." }, { status: 400 }))
+        }
+
+        const { labels, lines } = parseSpeakerLabelsFromPastedText(transcript)
+
+        const record = {
+          id: uuidv4(),
+          orgId,
+          userEmail: authedUser.email,
+          createdAt: new Date().toISOString()
+        }
+
+        if (labels.length === 0) {
+          record.status = 'unsupported'
+          record.unsupportedReason = 'no_labels_detected'
+          await db.collection('realCalls').insertOne(record)
+          return handleCORS(NextResponse.json({ id: record.id, status: 'unsupported', reason: 'no_labels_detected' }))
+        }
+
+        if (labels.length > 2) {
+          record.status = 'unsupported'
+          record.unsupportedReason = 'speaker_count'
+          await db.collection('realCalls').insertOne(record)
+          return handleCORS(NextResponse.json({ id: record.id, status: 'unsupported', reason: 'speaker_count' }))
+        }
+
+        // Judgment call (flagged per the task, not silently resolved either
+        // way): exactly 1 detected label means the paste never distinguishes
+        // a second speaker at all, so there's no rep-vs-prospect assignment
+        // to confirm — the same practical dead end as 0 labels or 3+, just a
+        // different cause. Treating it as its own explicit "unsupported"
+        // outcome (rather than folding it into the 2-label success path,
+        // which would wrongly claim a confirmation step exists, or into the
+        // "too many" rejection path, which would mislabel the actual reason)
+        // keeps the client-facing `reason` honest about why. See the
+        // detailed writeup in the report accompanying this change.
+        if (labels.length === 1) {
+          record.status = 'unsupported'
+          record.unsupportedReason = 'single_speaker'
+          await db.collection('realCalls').insertOne(record)
+          return handleCORS(NextResponse.json({ id: record.id, status: 'unsupported', reason: 'single_speaker' }))
+        }
+
+        record.status = 'ready_for_confirmation'
+        record.pastedLines = lines
+        await db.collection('realCalls').insertOne(record)
+
+        const speakers = labels.map(label => {
+          const firstLine = lines.find(l => l.label === label)
+          return { label, snippet: firstLine ? firstLine.text : '' }
+        })
+
+        return handleCORS(NextResponse.json({ id: record.id, status: 'ready_for_confirmation', speakers }))
+      } catch (error) {
+        console.error('Real-calls POST error:', error)
+        return handleCORS(NextResponse.json({ error: "Failed to process real call." }, { status: 500 }))
+      }
+    }
+
     // Persona access - GET /api/persona-access
     // Returns which of the 4 personas this user can access. If planTier is
     // unset (true for everyone right now), all 4 are unlocked — enforcement
