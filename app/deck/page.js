@@ -441,9 +441,14 @@ let boardroomEnablementScore = null;
             <h1 className="text-5xl font-bold text-white uppercase italic tracking-tighter">SCENARIO DECK</h1>
             <p className="text-[#22D3EE] text-[10px] uppercase tracking-[0.4em] mt-2">Telemetry Active // Select Target</p>
           </div>
-          <Link href="/my-stats" className="text-[10px] text-zinc-500 hover:text-[#22D3EE] uppercase tracking-widest transition-colors mt-2">
-            My Stats →
-          </Link>
+          <div className="flex items-center gap-6">
+            <Link href="/my-stats" className="text-[10px] text-zinc-500 hover:text-[#22D3EE] uppercase tracking-widest transition-colors mt-2">
+              My Stats →
+            </Link>
+            <Link href="/real-calls" className="text-[10px] text-zinc-500 hover:text-[#22D3EE] uppercase tracking-widest transition-colors mt-2">
+              Real Calls →
+            </Link>
+          </div>
         </header>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">

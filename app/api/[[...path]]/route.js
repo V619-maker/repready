@@ -190,6 +190,209 @@ async function scoreTranscript(transcript, persona, orgId) {
   return { ...analyst, weightedScore, criteria, criteriaSource: criteria === DEFAULT_CRITERIA ? 'default' : 'custom', orgIdReceived: orgId || null }
 }
 
+// CALL 2 — Executive summarizer. Extracted out of the /api/boardroom handler
+// (prerequisite, behavior-preserving refactor for the upcoming real-call
+// upload + scoring feature — see task tracking) so it can be reused by a
+// future caller without duplicating this prompt/schema. Byte-identical
+// prompt/schema/logic to what previously lived inline in that handler.
+async function generateExecutiveSummary(analyst, weightedScore, criteria) {
+  const google = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY })
+
+  const ExecutiveSchema = z.object({
+    finalScore: z.number().min(0).max(100).describe("Weighted final score"),
+    grade: z.enum(['A', 'B', 'C', 'D', 'F']).describe("Letter grade"),
+    verdict: z.string().describe("One sentence executive verdict"),
+    whatYouDidRight: z.string().describe("One specific thing the rep did well — max 20 words"),
+    whatYouDidWrong: z.string().describe("One critical mistake — max 20 words"),
+    oneThingToFixNext: z.string().describe("One tactical fix for the next session — max 20 words"),
+  })
+
+  const executiveResult = await generateObject({
+    model: google('gemini-2.5-flash'),
+    schema: ExecutiveSchema,
+    prompt: `You are an executive sales performance reviewer. A combined analyst has scored this rep.
+
+PROCUREMENT SCORE: ${analyst.procurementScore}/100
+Reasoning: ${analyst.procurementReasoning}
+Margin defense: ${analyst.marginDefense}
+Discounted early: ${analyst.discountedEarly}
+
+ENABLEMENT SCORE: ${analyst.enablementScore}/100
+Reasoning: ${analyst.enablementReasoning}
+Call control: ${analyst.callControl}
+Used discovery: ${analyst.usedDiscovery}
+
+SKILL DIMENSION SCORES:
+${criteria.map(c => `- ${c.name}: ${analyst.dimensions[c.key]}/100`).join('\n')}
+
+WEIGHTED FINAL SCORE (60% procurement, 40% enablement): ${weightedScore}/100
+
+Grade scale: A=90+, B=75-89, C=60-74, D=45-59, F=below 45
+
+Write a crisp executive summary. Each feedback field must be under 20 words. Be direct, not motivational. This is enterprise-grade feedback.`,
+  })
+
+  return {
+    grade: executiveResult.object.grade,
+    verdict: executiveResult.object.verdict,
+    whatYouDidRight: executiveResult.object.whatYouDidRight,
+    whatYouDidWrong: executiveResult.object.whatYouDidWrong,
+    oneThingToFixNext: executiveResult.object.oneThingToFixNext,
+    analysts: {
+      procurement: {
+        score: analyst.procurementScore,
+        reasoning: analyst.procurementReasoning,
+        marginDefense: analyst.marginDefense,
+        discountedEarly: analyst.discountedEarly,
+      },
+      enablement: {
+        score: analyst.enablementScore,
+        reasoning: analyst.enablementReasoning,
+        callControl: analyst.callControl,
+        usedDiscovery: analyst.usedDiscovery,
+      }
+    }
+  }
+}
+
+// Prerequisite helpers for the real-call upload + scoring feature (Task 2).
+// Neither of these is wired into a route yet — no new endpoint, no DB write.
+// A later task calls transcribeWithDiarization() from the actual upload
+// endpoint and parseSpeakerLabelsFromPastedText() from the paste-transcript
+// input path, then decides what to do with their output (which speaker is
+// the rep, how many labels is "too many/too few", etc).
+
+// v1 cap on real-call audio length. Deliberately checked AFTER transcription
+// completes (via transcribeWithDiarization()'s returned audioDurationSeconds),
+// not before — no client-side duration probing here. That's a simplicity
+// choice already made for this feature, not something for a later task to
+// second-guess.
+const MAX_REAL_CALL_DURATION_SECONDS = 7 * 60
+
+// Runs a raw audio buffer through ElevenLabs' Speech-to-Text (Scribe v2),
+// with diarization and speaker-role detection on. Mirrors the existing
+// fail-fast-on-missing-key pattern used for GOOGLE_GENERATIVE_AI_API_KEY in
+// /api/boardroom (see scoreTranscript() above and the /boardroom route
+// handler) — check the key before doing any network work at all, never
+// attempt the call and let it fail remotely.
+//
+// Reuses ELEVENLABS_API_KEY, already configured in this app for the
+// Conversational AI agents and the retention-purge cron — no new env var
+// needed for this feature.
+//
+// This endpoint is synchronous — one request, no polling loop needed.
+//
+// ElevenLabs Speech-to-Text API shape used below:
+//   POST https://api.elevenlabs.io/v1/speech-to-text
+//   multipart/form-data: `file` (the audio), `model_id: 'scribe_v2'`,
+//   `diarize: 'true'`, `detect_speaker_roles: 'true'`
+//   auth header: `xi-api-key: <ELEVENLABS_API_KEY>`
+//   Response: `{ text, language_code, language_probability, words: [{ text,
+//   start, end, type, speaker_id }] }` — `words` mixes `type: 'word'` entries
+//   with non-word entries (spacing/audio-event markers); only `'word'`
+//   entries are joined into utterance text below.
+async function transcribeWithDiarization(audioBuffer, filename) {
+  const apiKey = process.env.ELEVENLABS_API_KEY
+  if (!apiKey) {
+    throw new Error('ELEVENLABS_API_KEY not configured')
+  }
+
+  const formData = new FormData()
+  formData.append('file', new Blob([audioBuffer]), filename)
+  formData.append('model_id', 'scribe_v2')
+  formData.append('diarize', 'true')
+  formData.append('detect_speaker_roles', 'true')
+
+  const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
+    method: 'POST',
+    headers: { 'xi-api-key': apiKey },
+    body: formData,
+  })
+  if (!response.ok) {
+    throw new Error(`ElevenLabs speech-to-text failed with status ${response.status}`)
+  }
+  const result = await response.json()
+  const words = result.words || []
+
+  // Group consecutive same-speaker words into utterance-like segments —
+  // Scribe returns word-level entries, but everything downstream of this
+  // function (the route handler, confirm-speaker, the /real-calls page)
+  // only ever consumes utterance-shaped {speaker, text} pairs.
+  const utterances = []
+  let current = null
+  for (const w of words) {
+    if (w.type !== 'word') continue
+    if (!current || current.speaker !== w.speaker_id) {
+      if (current) utterances.push(current)
+      current = { speaker: w.speaker_id, text: w.text, start: w.start, end: w.end }
+    } else {
+      current.text += ' ' + w.text
+      current.end = w.end
+    }
+  }
+  if (current) utterances.push(current)
+
+  // Last word's end timestamp, not the last utterance's — a trailing
+  // spacing/audio-event marker can extend past the last spoken word, so this
+  // scans every entry in `words`, not just the ones grouped into utterances.
+  const audioDurationSeconds = words.length ? Math.max(...words.map(w => w.end)) : 0
+
+  const speakerLabels = [...new Set(utterances.map(u => u.speaker))]
+
+  // Soft hint only, per detect_speaker_roles: when speaker roles are
+  // detected, speaker_id is expected to carry a role ("agent"/"customer")
+  // rather than a bare index — "agent" is RepReady's side of the call, so
+  // that's the suggested rep. If nothing matches, no suggestion is made
+  // (null) rather than guessing; the confirmation step below is unaffected
+  // either way; this never substitutes for it.
+  const suggestedRepLabel = speakerLabels.find(
+    (label) => typeof label === 'string' && label.toLowerCase() === 'agent'
+  ) || null
+
+  return {
+    text: result.text,
+    utterances,
+    audioDurationSeconds,
+    speakerLabels,
+    suggestedRepLabel,
+  }
+}
+
+// Heuristic parser for the "paste an existing transcript" input path — a
+// manager pastes a transcript already exported from Gong/Chorus/Zoom/etc as
+// plain text, one utterance per line, in a "Label: text" format. This is
+// pure string processing (no network, no async) so it can run client-side
+// or server-side identically.
+//
+// This is a heuristic for cleanly-formatted pastes, not guaranteed against
+// arbitrary formatting (multi-line utterances, labels with a colon inside
+// them, transcripts with timestamps prefixed on each line, etc). It only
+// detects and reports what it finds — it does NOT validate or reject
+// anything (0 labels, 1 label, 2 labels, 3+ labels are all returned the same
+// way); a later task's caller is responsible for deciding what each of those
+// counts means and validating accordingly.
+function parseSpeakerLabelsFromPastedText(text) {
+  const labelPattern = /^([A-Za-z][A-Za-z0-9 ._-]{0,40}):\s*(.+)$/
+  const labels = []
+  const lines = []
+
+  String(text || '')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line.length > 0)
+    .forEach(line => {
+      const match = line.match(labelPattern)
+      if (!match) return
+      const [, label, utteranceText] = match
+      if (!labels.includes(label)) {
+        labels.push(label)
+      }
+      lines.push({ label, text: utteranceText })
+    })
+
+  return { labels, lines }
+}
+
 // Helper function to handle CORS
 function handleCORS(response) {
   response.headers.set('Access-Control-Allow-Origin', process.env.CORS_ORIGINS || '*')
@@ -1415,6 +1618,285 @@ Evaluate the sales rep's performance and return JSON with:
       }
     }
 
+    // Real-call upload + pasted-transcript intake - POST /api/real-calls
+    // Any signed-in user (rep or manager), no plan-tier gate. Branches on the
+    // request's Content-Type: multipart/form-data is an audio upload (Path A,
+    // transcribed via transcribeWithDiarization()), anything else is treated
+    // as a JSON pasted-transcript body (Path B, parsed via
+    // parseSpeakerLabelsFromPastedText()). Both paths derive orgId the
+    // standard server-side way and write a `realCalls` record before
+    // returning, so both an accepted and an "unsupported" outcome are always
+    // persisted, not just successes. This only produces the record and tells
+    // the caller whether a speaker-confirmation step is needed next — it does
+    // not do the confirmation, scoring, or GET-by-id itself (later tasks).
+    if (route === '/real-calls' && method === 'POST') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const orgId = authedUser.email.split('@')[1]
+        if (!orgId) return handleCORS(NextResponse.json(
+          { error: "Unable to determine organization from account email" }, { status: 400 }
+        ))
+
+        const db = await getDb()
+        const contentType = request.headers.get('content-type') || ''
+
+        // ---- Path A: audio upload ----
+        if (contentType.includes('multipart/form-data')) {
+          const formData = await request.formData()
+          const file = formData.get('audio')
+          if (!file) {
+            return handleCORS(NextResponse.json(
+              { error: "Missing audio file (field 'audio')." }, { status: 400 }
+            ))
+          }
+          const buffer = Buffer.from(await file.arrayBuffer())
+
+          let transcription
+          try {
+            transcription = await transcribeWithDiarization(buffer, file.name)
+          } catch (error) {
+            console.error('Real-call transcription error:', error)
+            return handleCORS(NextResponse.json(
+              { error: "Transcription failed. Please try again." }, { status: 500 }
+            ))
+          }
+
+          const record = {
+            id: uuidv4(),
+            orgId,
+            userEmail: authedUser.email,
+            createdAt: new Date().toISOString()
+          }
+
+          if (transcription.audioDurationSeconds > MAX_REAL_CALL_DURATION_SECONDS) {
+            record.status = 'unsupported'
+            record.unsupportedReason = 'duration'
+            await db.collection('realCalls').insertOne(record)
+            return handleCORS(NextResponse.json({ id: record.id, status: 'unsupported', reason: 'duration' }))
+          }
+
+          if (transcription.speakerLabels.length > 2) {
+            record.status = 'unsupported'
+            record.unsupportedReason = 'speaker_count'
+            await db.collection('realCalls').insertOne(record)
+            return handleCORS(NextResponse.json({ id: record.id, status: 'unsupported', reason: 'speaker_count' }))
+          }
+
+          record.status = 'ready_for_confirmation'
+          record.utterances = transcription.utterances
+          record.audioDurationSeconds = transcription.audioDurationSeconds
+          record.suggestedRepLabel = transcription.suggestedRepLabel
+          await db.collection('realCalls').insertOne(record)
+
+          const speakers = transcription.speakerLabels.map(label => {
+            const firstUtterance = transcription.utterances.find(u => u.speaker === label)
+            return { label, snippet: firstUtterance ? firstUtterance.text : '' }
+          })
+
+          return handleCORS(NextResponse.json({
+            id: record.id,
+            status: 'ready_for_confirmation',
+            speakers,
+            suggestedRepLabel: transcription.suggestedRepLabel
+          }))
+        }
+
+        // ---- Path B: pasted transcript (JSON) ----
+        // Judgment call: pasted transcripts are exempt from MAX_REAL_CALL_DURATION_SECONDS,
+        // same as before this cap dropped to 7 minutes. There's no audio here to measure, and
+        // estimating spoken duration from word count is unreliable enough (speaking pace varies
+        // ~110-170wpm, plus cross-talk/pauses a transcript doesn't capture) that it would reject
+        // legitimate short-but-verbose pastes and pass slow-paced long ones. The duration cap's
+        // real purpose is bounding the ElevenLabs speech-to-text call's cost/scope for Path A —
+        // pasted text never calls that API, and scoreTranscript() already handles this length of
+        // input fine for the audio-upload path, so there's no matching cost concern to bound here.
+        // Pasted transcripts also have no suggestedRepLabel — there's no speaker-role detection
+        // without audio, so the confirmation UI falls back to no pre-highlighted default for this path.
+        const body = await request.json()
+        const transcript = typeof body.transcript === 'string' ? body.transcript.trim() : ''
+        if (!transcript) {
+          return handleCORS(NextResponse.json({ error: "Transcript text is required." }, { status: 400 }))
+        }
+
+        const { labels, lines } = parseSpeakerLabelsFromPastedText(transcript)
+
+        const record = {
+          id: uuidv4(),
+          orgId,
+          userEmail: authedUser.email,
+          createdAt: new Date().toISOString()
+        }
+
+        if (labels.length === 0) {
+          record.status = 'unsupported'
+          record.unsupportedReason = 'no_labels_detected'
+          await db.collection('realCalls').insertOne(record)
+          return handleCORS(NextResponse.json({ id: record.id, status: 'unsupported', reason: 'no_labels_detected' }))
+        }
+
+        if (labels.length > 2) {
+          record.status = 'unsupported'
+          record.unsupportedReason = 'speaker_count'
+          await db.collection('realCalls').insertOne(record)
+          return handleCORS(NextResponse.json({ id: record.id, status: 'unsupported', reason: 'speaker_count' }))
+        }
+
+        // Judgment call (flagged per the task, not silently resolved either
+        // way): exactly 1 detected label means the paste never distinguishes
+        // a second speaker at all, so there's no rep-vs-prospect assignment
+        // to confirm — the same practical dead end as 0 labels or 3+, just a
+        // different cause. Treating it as its own explicit "unsupported"
+        // outcome (rather than folding it into the 2-label success path,
+        // which would wrongly claim a confirmation step exists, or into the
+        // "too many" rejection path, which would mislabel the actual reason)
+        // keeps the client-facing `reason` honest about why. See the
+        // detailed writeup in the report accompanying this change.
+        if (labels.length === 1) {
+          record.status = 'unsupported'
+          record.unsupportedReason = 'single_speaker'
+          await db.collection('realCalls').insertOne(record)
+          return handleCORS(NextResponse.json({ id: record.id, status: 'unsupported', reason: 'single_speaker' }))
+        }
+
+        record.status = 'ready_for_confirmation'
+        record.pastedLines = lines
+        await db.collection('realCalls').insertOne(record)
+
+        const speakers = labels.map(label => {
+          const firstLine = lines.find(l => l.label === label)
+          return { label, snippet: firstLine ? firstLine.text : '' }
+        })
+
+        return handleCORS(NextResponse.json({ id: record.id, status: 'ready_for_confirmation', speakers }))
+      } catch (error) {
+        console.error('Real-calls POST error:', error)
+        return handleCORS(NextResponse.json({ error: "Failed to process real call." }, { status: 500 }))
+      }
+    }
+
+    // Fetch a single real-call record by id - GET /api/real-calls?id=...
+    // Read-only, for the (later) client-side report page to load/reload a
+    // specific record by id — not a polling endpoint, nothing async is in
+    // flight by the time this is called. Scoped to the caller's own email,
+    // same ownership-check pattern as POST /real-calls/confirm-speaker above
+    // (never return another user's record even if they guess the id).
+    if (route === '/real-calls' && method === 'GET') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+
+        const id = new URL(request.url).searchParams.get('id')
+        if (!id) {
+          return handleCORS(NextResponse.json({ error: "id is required." }, { status: 400 }))
+        }
+
+        const db = await getDb()
+        const record = await db.collection('realCalls').findOne({ id, userEmail: authedUser.email })
+        if (!record) {
+          return handleCORS(NextResponse.json({ error: "Real call not found." }, { status: 404 }))
+        }
+
+        return handleCORS(NextResponse.json(record))
+      } catch (error) {
+        console.error('Real-calls GET error:', error)
+        return handleCORS(NextResponse.json({ error: "Failed to fetch real call." }, { status: 500 }))
+      }
+    }
+
+    // Real-call speaker confirmation + scoring - POST /api/real-calls/confirm-speaker
+    // Takes a `ready_for_confirmation` realCalls record (produced by POST
+    // /api/real-calls, Task 3) plus the human's choice of which detected
+    // speaker label is the rep, relabels the transcript to the standard
+    // `Rep: `/`Prospect: ` line format used everywhere else in this app (see
+    // app/deck/page.js's handleTerminate), and runs it through the exact same
+    // two-call scoring pipeline /api/boardroom uses (scoreTranscript() then
+    // generateExecutiveSummary()) — not a reimplementation of that
+    // combination, the same one.
+    if (route === '/real-calls/confirm-speaker' && method === 'POST') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+
+        const body = await request.json()
+        const { id, repLabel } = body
+        if (!id || !repLabel) {
+          return handleCORS(NextResponse.json(
+            { error: "id and repLabel are required." }, { status: 400 }
+          ))
+        }
+
+        const db = await getDb()
+        // Scoped to the caller's own email — same ownership-check spirit as
+        // GET/DELETE /api/sessions above (never trust a client-supplied
+        // email/id pair without also matching it to the authenticated user).
+        const record = await db.collection('realCalls').findOne({ id, userEmail: authedUser.email })
+        if (!record) {
+          return handleCORS(NextResponse.json({ error: "Real call not found." }, { status: 404 }))
+        }
+
+        if (record.status !== 'ready_for_confirmation') {
+          return handleCORS(NextResponse.json(
+            { error: "This call is not awaiting speaker confirmation." }, { status: 400 }
+          ))
+        }
+
+        // Relabel to the same `Rep: `/`Prospect: ` line format the voice-mode
+        // pipeline already produces (app/deck/page.js's handleTerminate) —
+        // whichever detected label the human picked as repLabel becomes
+        // "Rep", every other label becomes "Prospect". Two input shapes:
+        // record.utterances (audio path, Task 2/3) uses {speaker, text};
+        // record.pastedLines (paste path, Task 3) uses {label, text} — same
+        // relabeling logic, different field name for the speaker tag.
+        let transcript
+        if (record.utterances) {
+          transcript = record.utterances
+            .map(u => `${u.speaker === repLabel ? 'Rep' : 'Prospect'}: ${u.text}`)
+            .join('\n')
+        } else {
+          transcript = record.pastedLines
+            .map(l => `${l.label === repLabel ? 'Rep' : 'Prospect'}: ${l.text}`)
+            .join('\n')
+        }
+
+        // Same two-call pipeline /api/boardroom uses, destructured identically.
+        const { weightedScore, criteria, criteriaSource, orgIdReceived, ...analyst } = await scoreTranscript(transcript, 'real-call', record.orgId)
+        const executiveSummary = await generateExecutiveSummary(analyst, weightedScore, criteria)
+
+        await db.collection('realCalls').updateOne({ id }, {
+          $set: {
+            status: 'scored',
+            repLabel,
+            transcript,
+            finalScore: weightedScore,
+            procurementScore: analyst.procurementScore,
+            enablementScore: analyst.enablementScore,
+            dimensions: analyst.dimensions,
+            criteria,
+            grade: executiveSummary.grade,
+            verdict: executiveSummary.verdict,
+            whatYouDidRight: executiveSummary.whatYouDidRight,
+            whatYouDidWrong: executiveSummary.whatYouDidWrong,
+            oneThingToFixNext: executiveSummary.oneThingToFixNext,
+            analysts: executiveSummary.analysts,
+            scoredAt: new Date().toISOString()
+          }
+        })
+
+        const scoredRecord = await db.collection('realCalls').findOne({ id })
+        return handleCORS(NextResponse.json(scoredRecord))
+      } catch (error) {
+        console.error('Real-calls confirm-speaker error:', error)
+        return handleCORS(NextResponse.json({ error: "Failed to score real call." }, { status: 500 }))
+      }
+    }
+
     // Persona access - GET /api/persona-access
     // Returns which of the 4 personas this user can access. If planTier is
     // unset (true for everyone right now), all 4 are unlocked — enforcement
@@ -1510,60 +1992,27 @@ if (route === '/boardroom' && method === 'POST') {
       ))
     }
 
-    const google = createGoogleGenerativeAI({
-      apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-    })
-
     // CALL 1 — Combined analyst: procurement + enablement + the org's skill dimensions.
     // Shared with the POST /api/sessions score-forgery check — see scoreTranscript()
     // near the top of this file.
     const { weightedScore, criteria, criteriaSource, orgIdReceived, ...analyst } = await scoreTranscript(transcript, persona, orgId)
     console.log(`[/api/boardroom] persona=${persona} orgIdReceived=${orgIdReceived} criteriaSource=${criteriaSource} criteriaKeys=${criteria.map(c => c.key).join(',')}`)
 
-    // CALL 2 — Executive summarizer
-    const ExecutiveSchema = z.object({
-      finalScore: z.number().min(0).max(100).describe("Weighted final score"),
-      grade: z.enum(['A', 'B', 'C', 'D', 'F']).describe("Letter grade"),
-      verdict: z.string().describe("One sentence executive verdict"),
-      whatYouDidRight: z.string().describe("One specific thing the rep did well — max 20 words"),
-      whatYouDidWrong: z.string().describe("One critical mistake — max 20 words"),
-      oneThingToFixNext: z.string().describe("One tactical fix for the next session — max 20 words"),
-    })
-
-    const executiveResult = await generateObject({
-      model: google('gemini-2.5-flash'),
-      schema: ExecutiveSchema,
-      prompt: `You are an executive sales performance reviewer. A combined analyst has scored this rep.
-
-PROCUREMENT SCORE: ${analyst.procurementScore}/100
-Reasoning: ${analyst.procurementReasoning}
-Margin defense: ${analyst.marginDefense}
-Discounted early: ${analyst.discountedEarly}
-
-ENABLEMENT SCORE: ${analyst.enablementScore}/100
-Reasoning: ${analyst.enablementReasoning}
-Call control: ${analyst.callControl}
-Used discovery: ${analyst.usedDiscovery}
-
-SKILL DIMENSION SCORES:
-${criteria.map(c => `- ${c.name}: ${analyst.dimensions[c.key]}/100`).join('\n')}
-
-WEIGHTED FINAL SCORE (60% procurement, 40% enablement): ${weightedScore}/100
-
-Grade scale: A=90+, B=75-89, C=60-74, D=45-59, F=below 45
-
-Write a crisp executive summary. Each feedback field must be under 20 words. Be direct, not motivational. This is enterprise-grade feedback.`,
-    })
+    // CALL 2 — Executive summarizer. Extracted into generateExecutiveSummary()
+    // near scoreTranscript() (prerequisite refactor for the upcoming
+    // real-call-scoring feature) — same prompt/schema/logic as before, just
+    // no longer inlined here.
+    const executiveSummary = await generateExecutiveSummary(analyst, weightedScore, criteria)
 
     return handleCORS(NextResponse.json({
       procurementScore: analyst.procurementScore,
       enablementScore: analyst.enablementScore,
       finalScore: weightedScore,
-      grade: executiveResult.object.grade,
-      verdict: executiveResult.object.verdict,
-      whatYouDidRight: executiveResult.object.whatYouDidRight,
-      whatYouDidWrong: executiveResult.object.whatYouDidWrong,
-      oneThingToFixNext: executiveResult.object.oneThingToFixNext,
+      grade: executiveSummary.grade,
+      verdict: executiveSummary.verdict,
+      whatYouDidRight: executiveSummary.whatYouDidRight,
+      whatYouDidWrong: executiveSummary.whatYouDidWrong,
+      oneThingToFixNext: executiveSummary.oneThingToFixNext,
       dimensions: analyst.dimensions,
       criteria,
       // Diagnostic fields (Sprint 38) — not used by the UI, visible in the
@@ -1573,20 +2022,7 @@ Write a crisp executive summary. Each feedback field must be under 20 words. Be 
       // this org's saved criteria or the default fallback.
       criteriaSource,
       orgIdReceived,
-      analysts: {
-        procurement: {
-          score: analyst.procurementScore,
-          reasoning: analyst.procurementReasoning,
-          marginDefense: analyst.marginDefense,
-          discountedEarly: analyst.discountedEarly,
-        },
-        enablement: {
-          score: analyst.enablementScore,
-          reasoning: analyst.enablementReasoning,
-          callControl: analyst.callControl,
-          usedDiscovery: analyst.usedDiscovery,
-        }
-      }
+      analysts: executiveSummary.analysts
     }))
 
   } catch (error) {
