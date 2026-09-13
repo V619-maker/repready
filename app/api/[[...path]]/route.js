@@ -190,6 +190,71 @@ async function scoreTranscript(transcript, persona, orgId) {
   return { ...analyst, weightedScore, criteria, criteriaSource: criteria === DEFAULT_CRITERIA ? 'default' : 'custom', orgIdReceived: orgId || null }
 }
 
+// CALL 2 — Executive summarizer. Extracted out of the /api/boardroom handler
+// (prerequisite, behavior-preserving refactor for the upcoming real-call
+// upload + scoring feature — see task tracking) so it can be reused by a
+// future caller without duplicating this prompt/schema. Byte-identical
+// prompt/schema/logic to what previously lived inline in that handler.
+async function generateExecutiveSummary(analyst, weightedScore, criteria) {
+  const google = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY })
+
+  const ExecutiveSchema = z.object({
+    finalScore: z.number().min(0).max(100).describe("Weighted final score"),
+    grade: z.enum(['A', 'B', 'C', 'D', 'F']).describe("Letter grade"),
+    verdict: z.string().describe("One sentence executive verdict"),
+    whatYouDidRight: z.string().describe("One specific thing the rep did well — max 20 words"),
+    whatYouDidWrong: z.string().describe("One critical mistake — max 20 words"),
+    oneThingToFixNext: z.string().describe("One tactical fix for the next session — max 20 words"),
+  })
+
+  const executiveResult = await generateObject({
+    model: google('gemini-2.5-flash'),
+    schema: ExecutiveSchema,
+    prompt: `You are an executive sales performance reviewer. A combined analyst has scored this rep.
+
+PROCUREMENT SCORE: ${analyst.procurementScore}/100
+Reasoning: ${analyst.procurementReasoning}
+Margin defense: ${analyst.marginDefense}
+Discounted early: ${analyst.discountedEarly}
+
+ENABLEMENT SCORE: ${analyst.enablementScore}/100
+Reasoning: ${analyst.enablementReasoning}
+Call control: ${analyst.callControl}
+Used discovery: ${analyst.usedDiscovery}
+
+SKILL DIMENSION SCORES:
+${criteria.map(c => `- ${c.name}: ${analyst.dimensions[c.key]}/100`).join('\n')}
+
+WEIGHTED FINAL SCORE (60% procurement, 40% enablement): ${weightedScore}/100
+
+Grade scale: A=90+, B=75-89, C=60-74, D=45-59, F=below 45
+
+Write a crisp executive summary. Each feedback field must be under 20 words. Be direct, not motivational. This is enterprise-grade feedback.`,
+  })
+
+  return {
+    grade: executiveResult.object.grade,
+    verdict: executiveResult.object.verdict,
+    whatYouDidRight: executiveResult.object.whatYouDidRight,
+    whatYouDidWrong: executiveResult.object.whatYouDidWrong,
+    oneThingToFixNext: executiveResult.object.oneThingToFixNext,
+    analysts: {
+      procurement: {
+        score: analyst.procurementScore,
+        reasoning: analyst.procurementReasoning,
+        marginDefense: analyst.marginDefense,
+        discountedEarly: analyst.discountedEarly,
+      },
+      enablement: {
+        score: analyst.enablementScore,
+        reasoning: analyst.enablementReasoning,
+        callControl: analyst.callControl,
+        usedDiscovery: analyst.usedDiscovery,
+      }
+    }
+  }
+}
+
 // Helper function to handle CORS
 function handleCORS(response) {
   response.headers.set('Access-Control-Allow-Origin', process.env.CORS_ORIGINS || '*')
@@ -1510,60 +1575,27 @@ if (route === '/boardroom' && method === 'POST') {
       ))
     }
 
-    const google = createGoogleGenerativeAI({
-      apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-    })
-
     // CALL 1 — Combined analyst: procurement + enablement + the org's skill dimensions.
     // Shared with the POST /api/sessions score-forgery check — see scoreTranscript()
     // near the top of this file.
     const { weightedScore, criteria, criteriaSource, orgIdReceived, ...analyst } = await scoreTranscript(transcript, persona, orgId)
     console.log(`[/api/boardroom] persona=${persona} orgIdReceived=${orgIdReceived} criteriaSource=${criteriaSource} criteriaKeys=${criteria.map(c => c.key).join(',')}`)
 
-    // CALL 2 — Executive summarizer
-    const ExecutiveSchema = z.object({
-      finalScore: z.number().min(0).max(100).describe("Weighted final score"),
-      grade: z.enum(['A', 'B', 'C', 'D', 'F']).describe("Letter grade"),
-      verdict: z.string().describe("One sentence executive verdict"),
-      whatYouDidRight: z.string().describe("One specific thing the rep did well — max 20 words"),
-      whatYouDidWrong: z.string().describe("One critical mistake — max 20 words"),
-      oneThingToFixNext: z.string().describe("One tactical fix for the next session — max 20 words"),
-    })
-
-    const executiveResult = await generateObject({
-      model: google('gemini-2.5-flash'),
-      schema: ExecutiveSchema,
-      prompt: `You are an executive sales performance reviewer. A combined analyst has scored this rep.
-
-PROCUREMENT SCORE: ${analyst.procurementScore}/100
-Reasoning: ${analyst.procurementReasoning}
-Margin defense: ${analyst.marginDefense}
-Discounted early: ${analyst.discountedEarly}
-
-ENABLEMENT SCORE: ${analyst.enablementScore}/100
-Reasoning: ${analyst.enablementReasoning}
-Call control: ${analyst.callControl}
-Used discovery: ${analyst.usedDiscovery}
-
-SKILL DIMENSION SCORES:
-${criteria.map(c => `- ${c.name}: ${analyst.dimensions[c.key]}/100`).join('\n')}
-
-WEIGHTED FINAL SCORE (60% procurement, 40% enablement): ${weightedScore}/100
-
-Grade scale: A=90+, B=75-89, C=60-74, D=45-59, F=below 45
-
-Write a crisp executive summary. Each feedback field must be under 20 words. Be direct, not motivational. This is enterprise-grade feedback.`,
-    })
+    // CALL 2 — Executive summarizer. Extracted into generateExecutiveSummary()
+    // near scoreTranscript() (prerequisite refactor for the upcoming
+    // real-call-scoring feature) — same prompt/schema/logic as before, just
+    // no longer inlined here.
+    const executiveSummary = await generateExecutiveSummary(analyst, weightedScore, criteria)
 
     return handleCORS(NextResponse.json({
       procurementScore: analyst.procurementScore,
       enablementScore: analyst.enablementScore,
       finalScore: weightedScore,
-      grade: executiveResult.object.grade,
-      verdict: executiveResult.object.verdict,
-      whatYouDidRight: executiveResult.object.whatYouDidRight,
-      whatYouDidWrong: executiveResult.object.whatYouDidWrong,
-      oneThingToFixNext: executiveResult.object.oneThingToFixNext,
+      grade: executiveSummary.grade,
+      verdict: executiveSummary.verdict,
+      whatYouDidRight: executiveSummary.whatYouDidRight,
+      whatYouDidWrong: executiveSummary.whatYouDidWrong,
+      oneThingToFixNext: executiveSummary.oneThingToFixNext,
       dimensions: analyst.dimensions,
       criteria,
       // Diagnostic fields (Sprint 38) — not used by the UI, visible in the
@@ -1573,20 +1605,7 @@ Write a crisp executive summary. Each feedback field must be under 20 words. Be 
       // this org's saved criteria or the default fallback.
       criteriaSource,
       orgIdReceived,
-      analysts: {
-        procurement: {
-          score: analyst.procurementScore,
-          reasoning: analyst.procurementReasoning,
-          marginDefense: analyst.marginDefense,
-          discountedEarly: analyst.discountedEarly,
-        },
-        enablement: {
-          score: analyst.enablementScore,
-          reasoning: analyst.enablementReasoning,
-          callControl: analyst.callControl,
-          usedDiscovery: analyst.usedDiscovery,
-        }
-      }
+      analysts: executiveSummary.analysts
     }))
 
   } catch (error) {
