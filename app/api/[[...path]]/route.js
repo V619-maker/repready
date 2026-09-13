@@ -269,93 +269,93 @@ Write a crisp executive summary. Each feedback field must be under 20 words. Be 
 // second-guess.
 const MAX_REAL_CALL_DURATION_SECONDS = 7 * 60
 
-// How long transcribeWithDiarization() will poll AssemblyAI before giving up.
-// 250s leaves real margin under Vercel's actual 300s function ceiling for
-// this project (Fluid Compute default — confirmed, not assumed; see Known
-// Issue 0h in REPREADY_CONTEXT.md, same citation style as getCriteriaForOrg/
-// scoreTranscript above use for their own constraints).
-const POLL_TIMEOUT_MS = 250000
-const POLL_INTERVAL_MS = 3000
-
-// Uploads a raw audio buffer to AssemblyAI and runs it through diarized
-// transcription, polling until it completes. Mirrors the existing
+// Runs a raw audio buffer through ElevenLabs' Speech-to-Text (Scribe v2),
+// with diarization and speaker-role detection on. Mirrors the existing
 // fail-fast-on-missing-key pattern used for GOOGLE_GENERATIVE_AI_API_KEY in
 // /api/boardroom (see scoreTranscript() above and the /boardroom route
 // handler) — check the key before doing any network work at all, never
 // attempt the call and let it fail remotely.
 //
-// AssemblyAI API shape used below — verified via web search against
-// AssemblyAI's official docs/blog/SDK source (direct WebFetch to
-// assemblyai.com was blocked by this environment's network egress proxy, so
-// this is search-snippet verification, not a direct docs fetch — flagged per
-// the research requirement, not silently presented as first-hand-confirmed):
-//   - POST /v2/upload: header `authorization: <raw API key>` (no "Bearer"
-//     prefix), raw binary body (application/octet-stream), response
-//     `{ upload_url }`. Confirmed.
-//   - POST /v2/transcript: same auth header, `content-type: application/json`,
-//     body `{ audio_url, speaker_labels: true }` — `speaker_labels` is the
-//     documented top-level field for enabling diarization. Response includes
-//     `id`. Confirmed.
-//   - GET /v2/transcript/{id}: same auth header. `status` is one of
-//     `queued`/`processing`/`completed`/`error`. On `completed`: `text`,
-//     `utterances` (array of `{ speaker, text, start, end, confidence }`,
-//     where `speaker` is a raw single letter like `"A"`/`"B"`, NOT
-//     `"Speaker A"` — the "Speaker " prefix is display formatting apps add
-//     themselves, not part of the API value), `audio_duration` (seconds).
-//     On `error`: `error` (string reason). Confirmed.
+// Reuses ELEVENLABS_API_KEY, already configured in this app for the
+// Conversational AI agents and the retention-purge cron — no new env var
+// needed for this feature.
+//
+// This endpoint is synchronous — one request, no polling loop needed.
+//
+// ElevenLabs Speech-to-Text API shape used below:
+//   POST https://api.elevenlabs.io/v1/speech-to-text
+//   multipart/form-data: `file` (the audio), `model_id: 'scribe_v2'`,
+//   `diarize: 'true'`, `detect_speaker_roles: 'true'`
+//   auth header: `xi-api-key: <ELEVENLABS_API_KEY>`
+//   Response: `{ text, language_code, language_probability, words: [{ text,
+//   start, end, type, speaker_id }] }` — `words` mixes `type: 'word'` entries
+//   with non-word entries (spacing/audio-event markers); only `'word'`
+//   entries are joined into utterance text below.
 async function transcribeWithDiarization(audioBuffer, filename) {
-  const apiKey = process.env.ASSEMBLYAI_API_KEY
+  const apiKey = process.env.ELEVENLABS_API_KEY
   if (!apiKey) {
-    throw new Error('ASSEMBLYAI_API_KEY not configured')
+    throw new Error('ELEVENLABS_API_KEY not configured')
   }
 
-  const uploadResponse = await fetch('https://api.assemblyai.com/v2/upload', {
+  const formData = new FormData()
+  formData.append('file', new Blob([audioBuffer]), filename)
+  formData.append('model_id', 'scribe_v2')
+  formData.append('diarize', 'true')
+  formData.append('detect_speaker_roles', 'true')
+
+  const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
     method: 'POST',
-    headers: { authorization: apiKey },
-    body: audioBuffer,
+    headers: { 'xi-api-key': apiKey },
+    body: formData,
   })
-  if (!uploadResponse.ok) {
-    throw new Error(`AssemblyAI upload failed with status ${uploadResponse.status}`)
+  if (!response.ok) {
+    throw new Error(`ElevenLabs speech-to-text failed with status ${response.status}`)
   }
-  const { upload_url } = await uploadResponse.json()
+  const result = await response.json()
+  const words = result.words || []
 
-  const transcriptResponse = await fetch('https://api.assemblyai.com/v2/transcript', {
-    method: 'POST',
-    headers: { authorization: apiKey, 'content-type': 'application/json' },
-    body: JSON.stringify({ audio_url: upload_url, speaker_labels: true }),
-  })
-  if (!transcriptResponse.ok) {
-    throw new Error(`AssemblyAI transcript submission failed with status ${transcriptResponse.status}`)
+  // Group consecutive same-speaker words into utterance-like segments —
+  // Scribe returns word-level entries, but everything downstream of this
+  // function (the route handler, confirm-speaker, the /real-calls page)
+  // only ever consumes utterance-shaped {speaker, text} pairs.
+  const utterances = []
+  let current = null
+  for (const w of words) {
+    if (w.type !== 'word') continue
+    if (!current || current.speaker !== w.speaker_id) {
+      if (current) utterances.push(current)
+      current = { speaker: w.speaker_id, text: w.text, start: w.start, end: w.end }
+    } else {
+      current.text += ' ' + w.text
+      current.end = w.end
+    }
   }
-  const { id: transcriptId } = await transcriptResponse.json()
+  if (current) utterances.push(current)
 
-  const startedAt = Date.now()
-  while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
+  // Last word's end timestamp, not the last utterance's — a trailing
+  // spacing/audio-event marker can extend past the last spoken word, so this
+  // scans every entry in `words`, not just the ones grouped into utterances.
+  const audioDurationSeconds = words.length ? Math.max(...words.map(w => w.end)) : 0
 
-    const pollResponse = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
-      headers: { authorization: apiKey },
-    })
-    if (!pollResponse.ok) {
-      throw new Error(`AssemblyAI poll failed with status ${pollResponse.status}`)
-    }
-    const result = await pollResponse.json()
+  const speakerLabels = [...new Set(utterances.map(u => u.speaker))]
 
-    if (result.status === 'completed') {
-      return {
-        text: result.text,
-        utterances: result.utterances || [],
-        audioDurationSeconds: result.audio_duration,
-        speakerLabels: [...new Set((result.utterances || []).map(u => u.speaker))],
-      }
-    }
-    if (result.status === 'error') {
-      throw new Error(`AssemblyAI transcription failed: ${result.error}`)
-    }
-    // status is 'queued' or 'processing' — keep polling.
+  // Soft hint only, per detect_speaker_roles: when speaker roles are
+  // detected, speaker_id is expected to carry a role ("agent"/"customer")
+  // rather than a bare index — "agent" is RepReady's side of the call, so
+  // that's the suggested rep. If nothing matches, no suggestion is made
+  // (null) rather than guessing; the confirmation step below is unaffected
+  // either way; this never substitutes for it.
+  const suggestedRepLabel = speakerLabels.find(
+    (label) => typeof label === 'string' && label.toLowerCase() === 'agent'
+  ) || null
+
+  return {
+    text: result.text,
+    utterances,
+    audioDurationSeconds,
+    speakerLabels,
+    suggestedRepLabel,
   }
-
-  throw new Error('AssemblyAI transcription timed out')
 }
 
 // Heuristic parser for the "paste an existing transcript" input path — a
@@ -1688,6 +1688,7 @@ Evaluate the sales rep's performance and return JSON with:
           record.status = 'ready_for_confirmation'
           record.utterances = transcription.utterances
           record.audioDurationSeconds = transcription.audioDurationSeconds
+          record.suggestedRepLabel = transcription.suggestedRepLabel
           await db.collection('realCalls').insertOne(record)
 
           const speakers = transcription.speakerLabels.map(label => {
@@ -1695,7 +1696,12 @@ Evaluate the sales rep's performance and return JSON with:
             return { label, snippet: firstUtterance ? firstUtterance.text : '' }
           })
 
-          return handleCORS(NextResponse.json({ id: record.id, status: 'ready_for_confirmation', speakers }))
+          return handleCORS(NextResponse.json({
+            id: record.id,
+            status: 'ready_for_confirmation',
+            speakers,
+            suggestedRepLabel: transcription.suggestedRepLabel
+          }))
         }
 
         // ---- Path B: pasted transcript (JSON) ----
@@ -1704,9 +1710,11 @@ Evaluate the sales rep's performance and return JSON with:
         // estimating spoken duration from word count is unreliable enough (speaking pace varies
         // ~110-170wpm, plus cross-talk/pauses a transcript doesn't capture) that it would reject
         // legitimate short-but-verbose pastes and pass slow-paced long ones. The duration cap's
-        // real purpose is bounding AssemblyAI transcription cost/scope for Path A — pasted text
-        // never touches AssemblyAI, and scoreTranscript() already handles this length of input
-        // fine for the audio-upload path, so there's no matching cost concern to bound here.
+        // real purpose is bounding the ElevenLabs speech-to-text call's cost/scope for Path A —
+        // pasted text never calls that API, and scoreTranscript() already handles this length of
+        // input fine for the audio-upload path, so there's no matching cost concern to bound here.
+        // Pasted transcripts also have no suggestedRepLabel — there's no speaker-role detection
+        // without audio, so the confirmation UI falls back to no pre-highlighted default for this path.
         const body = await request.json()
         const transcript = typeof body.transcript === 'string' ? body.transcript.trim() : ''
         if (!transcript) {

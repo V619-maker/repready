@@ -92,6 +92,7 @@ export default function RealCallsPage() {
   // Confirmation state
   const [recordId, setRecordId] = useState(null)
   const [speakers, setSpeakers] = useState([])
+  const [suggestedRepLabel, setSuggestedRepLabel] = useState(null)
   const [confirmError, setConfirmError] = useState('')
   const [pendingRepLabel, setPendingRepLabel] = useState(null)
 
@@ -126,6 +127,7 @@ export default function RealCallsPage() {
         } else if (record.status === 'ready_for_confirmation') {
           setRecordId(record.id)
           setSpeakers(speakersFromRecord(record))
+          setSuggestedRepLabel(record.suggestedRepLabel || null)
           setView(VIEW.CONFIRM)
         } else if (record.status === 'unsupported') {
           setUnsupportedReason(record.unsupportedReason)
@@ -151,6 +153,7 @@ export default function RealCallsPage() {
     setTranscriptText('')
     setRecordId(null)
     setSpeakers([])
+    setSuggestedRepLabel(null)
     setConfirmError('')
     setPendingRepLabel(null)
     setUnsupportedReason(null)
@@ -168,6 +171,7 @@ export default function RealCallsPage() {
     } else if (data.status === 'ready_for_confirmation') {
       setRecordId(data.id)
       setSpeakers(data.speakers || [])
+      setSuggestedRepLabel(data.suggestedRepLabel || null)
       setView(VIEW.CONFIRM)
     } else {
       setFormError('Unexpected response from the server. Please try again.')
@@ -337,20 +341,31 @@ export default function RealCallsPage() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {speakers.map((s) => (
-                  <div key={s.label} className="border border-white/5 bg-[#0a0a0a] p-6 flex flex-col justify-between">
-                    <div>
-                      <p className="text-white text-sm font-bold uppercase tracking-tight mb-2">{s.label}</p>
-                      <p className="text-zinc-500 text-xs italic leading-relaxed line-clamp-4">"{s.snippet}"</p>
-                    </div>
-                    <button
-                      onClick={() => confirmSpeaker(s.label)}
-                      className="mt-6 px-6 py-3 border border-[#22D3EE]/50 text-[#22D3EE] font-bold uppercase tracking-[0.2em] text-[10px] hover:bg-[#22D3EE]/10 transition-all"
+                {speakers.map((s) => {
+                  const isSuggested = suggestedRepLabel && s.label === suggestedRepLabel
+                  return (
+                    <div
+                      key={s.label}
+                      className={`border p-6 flex flex-col justify-between ${isSuggested ? 'border-[#22D3EE]/40 bg-[#22D3EE]/[0.03]' : 'border-white/5 bg-[#0a0a0a]'}`}
                     >
-                      This is the Rep
-                    </button>
-                  </div>
-                ))}
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-white text-sm font-bold uppercase tracking-tight">{s.label}</p>
+                          {isSuggested && (
+                            <span className="text-[9px] font-bold uppercase tracking-[0.15em] text-[#22D3EE]">Suggested Rep</span>
+                          )}
+                        </div>
+                        <p className="text-zinc-500 text-xs italic leading-relaxed line-clamp-4">"{s.snippet}"</p>
+                      </div>
+                      <button
+                        onClick={() => confirmSpeaker(s.label)}
+                        className="mt-6 px-6 py-3 border border-[#22D3EE]/50 text-[#22D3EE] font-bold uppercase tracking-[0.2em] text-[10px] hover:bg-[#22D3EE]/10 transition-all"
+                      >
+                        This is the Rep
+                      </button>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>
