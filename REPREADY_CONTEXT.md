@@ -223,8 +223,8 @@ This has NOT been applied to the live ElevenLabs agent yet — do it manually in
   whatYouDidWrong: String,     // max ~20 words
   oneThingToFixNext: String,   // max ~20 words
   analysts: {                  // per-analyst reasoning breakdown, identical shape to what /api/boardroom returns
-    procurement: { score: Number, reasoning: String, marginDefense: String, discountedEarly: String },
-    enablement: { score: Number, reasoning: String, callControl: String, usedDiscovery: String }
+    procurement: { score: Number, reasoning: String, marginDefense: String, discountedEarly: Boolean },
+    enablement: { score: Number, reasoning: String, callControl: String, usedDiscovery: Boolean }
   },
   scoredAt: String             // ISO timestamp of scoring
 }
