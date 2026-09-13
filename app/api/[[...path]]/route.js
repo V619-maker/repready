@@ -267,7 +267,7 @@ Write a crisp executive summary. Each feedback field must be under 20 words. Be 
 // not before — no client-side duration probing here. That's a simplicity
 // choice already made for this feature, not something for a later task to
 // second-guess.
-const MAX_REAL_CALL_DURATION_SECONDS = 20 * 60
+const MAX_REAL_CALL_DURATION_SECONDS = 7 * 60
 
 // How long transcribeWithDiarization() will poll AssemblyAI before giving up.
 // 250s leaves real margin under Vercel's actual 300s function ceiling for
@@ -1699,6 +1699,14 @@ Evaluate the sales rep's performance and return JSON with:
         }
 
         // ---- Path B: pasted transcript (JSON) ----
+        // Judgment call: pasted transcripts are exempt from MAX_REAL_CALL_DURATION_SECONDS,
+        // same as before this cap dropped to 7 minutes. There's no audio here to measure, and
+        // estimating spoken duration from word count is unreliable enough (speaking pace varies
+        // ~110-170wpm, plus cross-talk/pauses a transcript doesn't capture) that it would reject
+        // legitimate short-but-verbose pastes and pass slow-paced long ones. The duration cap's
+        // real purpose is bounding AssemblyAI transcription cost/scope for Path A — pasted text
+        // never touches AssemblyAI, and scoreTranscript() already handles this length of input
+        // fine for the audio-upload path, so there's no matching cost concern to bound here.
         const body = await request.json()
         const transcript = typeof body.transcript === 'string' ? body.transcript.trim() : ''
         if (!transcript) {

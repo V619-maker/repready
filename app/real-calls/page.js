@@ -9,7 +9,7 @@ import Link from 'next/link'
 // modes (too long, too many voices, no labels at all, only one voice) and
 // must read that way, not share one generic string with a variable swapped in.
 const UNSUPPORTED_MESSAGES = {
-  duration: "Calls longer than 20 minutes aren't supported yet.",
+  duration: "Calls longer than 7 minutes aren't supported yet.",
   speaker_count: "This call has more than 2 speakers — not supported yet.",
   no_labels_detected: "We couldn't detect speaker labels in this text — try formatting as `Name: message` per line.",
   single_speaker: "Only one speaker was detected — we need both sides of the conversation to score it. Check that your paste includes both the rep's and the prospect's lines.",
