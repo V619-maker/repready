@@ -1761,6 +1761,95 @@ Evaluate the sales rep's performance and return JSON with:
       }
     }
 
+    // Real-call speaker confirmation + scoring - POST /api/real-calls/confirm-speaker
+    // Takes a `ready_for_confirmation` realCalls record (produced by POST
+    // /api/real-calls, Task 3) plus the human's choice of which detected
+    // speaker label is the rep, relabels the transcript to the standard
+    // `Rep: `/`Prospect: ` line format used everywhere else in this app (see
+    // app/deck/page.js's handleTerminate), and runs it through the exact same
+    // two-call scoring pipeline /api/boardroom uses (scoreTranscript() then
+    // generateExecutiveSummary()) — not a reimplementation of that
+    // combination, the same one.
+    if (route === '/real-calls/confirm-speaker' && method === 'POST') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+
+        const body = await request.json()
+        const { id, repLabel } = body
+        if (!id || !repLabel) {
+          return handleCORS(NextResponse.json(
+            { error: "id and repLabel are required." }, { status: 400 }
+          ))
+        }
+
+        const db = await getDb()
+        // Scoped to the caller's own email — same ownership-check spirit as
+        // GET/DELETE /api/sessions above (never trust a client-supplied
+        // email/id pair without also matching it to the authenticated user).
+        const record = await db.collection('realCalls').findOne({ id, userEmail: authedUser.email })
+        if (!record) {
+          return handleCORS(NextResponse.json({ error: "Real call not found." }, { status: 404 }))
+        }
+
+        if (record.status !== 'ready_for_confirmation') {
+          return handleCORS(NextResponse.json(
+            { error: "This call is not awaiting speaker confirmation." }, { status: 400 }
+          ))
+        }
+
+        // Relabel to the same `Rep: `/`Prospect: ` line format the voice-mode
+        // pipeline already produces (app/deck/page.js's handleTerminate) —
+        // whichever detected label the human picked as repLabel becomes
+        // "Rep", every other label becomes "Prospect". Two input shapes:
+        // record.utterances (audio path, Task 2/3) uses {speaker, text};
+        // record.pastedLines (paste path, Task 3) uses {label, text} — same
+        // relabeling logic, different field name for the speaker tag.
+        let transcript
+        if (record.utterances) {
+          transcript = record.utterances
+            .map(u => `${u.speaker === repLabel ? 'Rep' : 'Prospect'}: ${u.text}`)
+            .join('\n')
+        } else {
+          transcript = record.pastedLines
+            .map(l => `${l.label === repLabel ? 'Rep' : 'Prospect'}: ${l.text}`)
+            .join('\n')
+        }
+
+        // Same two-call pipeline /api/boardroom uses, destructured identically.
+        const { weightedScore, criteria, criteriaSource, orgIdReceived, ...analyst } = await scoreTranscript(transcript, 'real-call', record.orgId)
+        const executiveSummary = await generateExecutiveSummary(analyst, weightedScore, criteria)
+
+        await db.collection('realCalls').updateOne({ id }, {
+          $set: {
+            status: 'scored',
+            repLabel,
+            transcript,
+            finalScore: weightedScore,
+            procurementScore: analyst.procurementScore,
+            enablementScore: analyst.enablementScore,
+            dimensions: analyst.dimensions,
+            criteria,
+            grade: executiveSummary.grade,
+            verdict: executiveSummary.verdict,
+            whatYouDidRight: executiveSummary.whatYouDidRight,
+            whatYouDidWrong: executiveSummary.whatYouDidWrong,
+            oneThingToFixNext: executiveSummary.oneThingToFixNext,
+            analysts: executiveSummary.analysts,
+            scoredAt: new Date().toISOString()
+          }
+        })
+
+        const scoredRecord = await db.collection('realCalls').findOne({ id })
+        return handleCORS(NextResponse.json(scoredRecord))
+      } catch (error) {
+        console.error('Real-calls confirm-speaker error:', error)
+        return handleCORS(NextResponse.json({ error: "Failed to score real call." }, { status: 500 }))
+      }
+    }
+
     // Persona access - GET /api/persona-access
     // Returns which of the 4 personas this user can access. If planTier is
     // unset (true for everyone right now), all 4 are unlocked — enforcement
