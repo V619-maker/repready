@@ -55,7 +55,8 @@ export default function TrustPage() {
 
           <section>
             <h2 style={heading}>Data Residency</h2>
-            <p style={body}>All session data — voice recordings, transcripts, and performance scores — is stored in <strong style={strong}>MongoDB Atlas</strong>, hosted in the <strong style={strong}>Mumbai, India region (ap-south-1)</strong>. Data does not leave this region at rest.</p>
+            <p style={body}>Session records — performance scores, qualification status, and skill dimensions — are stored in <strong style={strong}>MongoDB Atlas</strong>, hosted in the <strong style={strong}>Mumbai, India region (ap-south-1)</strong>. This data does not leave the region at rest.</p>
+            <p style={{ ...body, marginTop: 12 }}>Voice conversation data captured during practice sessions is a separate case: it is processed and held by our voice AI sub-processor, <strong style={strong}>ElevenLabs</strong>, not MongoDB. This voice data is <strong style={strong}>not currently India-resident</strong> — India-only processing is available on ElevenLabs&rsquo; Enterprise plan, which we have not yet enabled. See Retention &amp; Deletion below for how long this data is kept.</p>
           </section>
 
           <section>
