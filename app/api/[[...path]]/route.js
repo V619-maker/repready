@@ -255,6 +255,144 @@ Write a crisp executive summary. Each feedback field must be under 20 words. Be 
   }
 }
 
+// Prerequisite helpers for the real-call upload + scoring feature (Task 2).
+// Neither of these is wired into a route yet — no new endpoint, no DB write.
+// A later task calls transcribeWithDiarization() from the actual upload
+// endpoint and parseSpeakerLabelsFromPastedText() from the paste-transcript
+// input path, then decides what to do with their output (which speaker is
+// the rep, how many labels is "too many/too few", etc).
+
+// v1 cap on real-call audio length. Deliberately checked AFTER transcription
+// completes (via transcribeWithDiarization()'s returned audioDurationSeconds),
+// not before — no client-side duration probing here. That's a simplicity
+// choice already made for this feature, not something for a later task to
+// second-guess.
+const MAX_REAL_CALL_DURATION_SECONDS = 20 * 60
+
+// How long transcribeWithDiarization() will poll AssemblyAI before giving up.
+// 250s leaves real margin under Vercel's actual 300s function ceiling for
+// this project (Fluid Compute default — confirmed, not assumed; see Known
+// Issue 0h in REPREADY_CONTEXT.md, same citation style as getCriteriaForOrg/
+// scoreTranscript above use for their own constraints).
+const POLL_TIMEOUT_MS = 250000
+const POLL_INTERVAL_MS = 3000
+
+// Uploads a raw audio buffer to AssemblyAI and runs it through diarized
+// transcription, polling until it completes. Mirrors the existing
+// fail-fast-on-missing-key pattern used for GOOGLE_GENERATIVE_AI_API_KEY in
+// /api/boardroom (see scoreTranscript() above and the /boardroom route
+// handler) — check the key before doing any network work at all, never
+// attempt the call and let it fail remotely.
+//
+// AssemblyAI API shape used below — verified via web search against
+// AssemblyAI's official docs/blog/SDK source (direct WebFetch to
+// assemblyai.com was blocked by this environment's network egress proxy, so
+// this is search-snippet verification, not a direct docs fetch — flagged per
+// the research requirement, not silently presented as first-hand-confirmed):
+//   - POST /v2/upload: header `authorization: <raw API key>` (no "Bearer"
+//     prefix), raw binary body (application/octet-stream), response
+//     `{ upload_url }`. Confirmed.
+//   - POST /v2/transcript: same auth header, `content-type: application/json`,
+//     body `{ audio_url, speaker_labels: true }` — `speaker_labels` is the
+//     documented top-level field for enabling diarization. Response includes
+//     `id`. Confirmed.
+//   - GET /v2/transcript/{id}: same auth header. `status` is one of
+//     `queued`/`processing`/`completed`/`error`. On `completed`: `text`,
+//     `utterances` (array of `{ speaker, text, start, end, confidence }`,
+//     where `speaker` is a raw single letter like `"A"`/`"B"`, NOT
+//     `"Speaker A"` — the "Speaker " prefix is display formatting apps add
+//     themselves, not part of the API value), `audio_duration` (seconds).
+//     On `error`: `error` (string reason). Confirmed.
+async function transcribeWithDiarization(audioBuffer, filename) {
+  const apiKey = process.env.ASSEMBLYAI_API_KEY
+  if (!apiKey) {
+    throw new Error('ASSEMBLYAI_API_KEY not configured')
+  }
+
+  const uploadResponse = await fetch('https://api.assemblyai.com/v2/upload', {
+    method: 'POST',
+    headers: { authorization: apiKey },
+    body: audioBuffer,
+  })
+  if (!uploadResponse.ok) {
+    throw new Error(`AssemblyAI upload failed with status ${uploadResponse.status}`)
+  }
+  const { upload_url } = await uploadResponse.json()
+
+  const transcriptResponse = await fetch('https://api.assemblyai.com/v2/transcript', {
+    method: 'POST',
+    headers: { authorization: apiKey, 'content-type': 'application/json' },
+    body: JSON.stringify({ audio_url: upload_url, speaker_labels: true }),
+  })
+  if (!transcriptResponse.ok) {
+    throw new Error(`AssemblyAI transcript submission failed with status ${transcriptResponse.status}`)
+  }
+  const { id: transcriptId } = await transcriptResponse.json()
+
+  const startedAt = Date.now()
+  while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
+
+    const pollResponse = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
+      headers: { authorization: apiKey },
+    })
+    if (!pollResponse.ok) {
+      throw new Error(`AssemblyAI poll failed with status ${pollResponse.status}`)
+    }
+    const result = await pollResponse.json()
+
+    if (result.status === 'completed') {
+      return {
+        text: result.text,
+        utterances: result.utterances || [],
+        audioDurationSeconds: result.audio_duration,
+        speakerLabels: [...new Set((result.utterances || []).map(u => u.speaker))],
+      }
+    }
+    if (result.status === 'error') {
+      throw new Error(`AssemblyAI transcription failed: ${result.error}`)
+    }
+    // status is 'queued' or 'processing' — keep polling.
+  }
+
+  throw new Error('AssemblyAI transcription timed out')
+}
+
+// Heuristic parser for the "paste an existing transcript" input path — a
+// manager pastes a transcript already exported from Gong/Chorus/Zoom/etc as
+// plain text, one utterance per line, in a "Label: text" format. This is
+// pure string processing (no network, no async) so it can run client-side
+// or server-side identically.
+//
+// This is a heuristic for cleanly-formatted pastes, not guaranteed against
+// arbitrary formatting (multi-line utterances, labels with a colon inside
+// them, transcripts with timestamps prefixed on each line, etc). It only
+// detects and reports what it finds — it does NOT validate or reject
+// anything (0 labels, 1 label, 2 labels, 3+ labels are all returned the same
+// way); a later task's caller is responsible for deciding what each of those
+// counts means and validating accordingly.
+function parseSpeakerLabelsFromPastedText(text) {
+  const labelPattern = /^([A-Za-z][A-Za-z0-9 ._-]{0,40}):\s*(.+)$/
+  const labels = []
+  const lines = []
+
+  String(text || '')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line.length > 0)
+    .forEach(line => {
+      const match = line.match(labelPattern)
+      if (!match) return
+      const [, label, utteranceText] = match
+      if (!labels.includes(label)) {
+        labels.push(label)
+      }
+      lines.push({ label, text: utteranceText })
+    })
+
+  return { labels, lines }
+}
+
 // Helper function to handle CORS
 function handleCORS(response) {
   response.headers.set('Access-Control-Allow-Origin', process.env.CORS_ORIGINS || '*')
