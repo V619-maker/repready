@@ -4,7 +4,8 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { generateObject } from 'ai'
 import { z } from 'zod'
 import { MongoClient } from 'mongodb'
-import { auth, currentUser, clerkClient } from '@clerk/nextjs/server'
+import { clerkClient } from '@clerk/nextjs/server'
+import { getAuthedEmail, getAuthedUser } from '@/lib/auth'
 
 let cachedClient = null
 async function getDb() {
@@ -14,39 +15,6 @@ async function getDb() {
     cachedClient = client
   }
   return cachedClient.db(process.env.DB_NAME || 'repready')
-}
-
-// Resolves the requester's email from the Clerk session only — never from a
-// query param or request body. Returns null if there is no authenticated session.
-async function getAuthedEmail() {
-  const { userId } = await auth()
-  if (!userId) return null
-  const user = await currentUser()
-  return user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress || null
-}
-
-// Reads role/plan/persona-selection from Clerk publicMetadata. Defaults are
-// deliberately non-restrictive: no user currently has these fields set, so
-// until they're set manually (or via a future billing webhook), everyone
-// keeps exactly the access they have today — role defaults to 'rep' (the
-// least-privileged, so nobody accidentally sees another rep's data), but
-// planTier defaults to null, which means "unrestricted" (all 4 personas
-// unlocked) rather than defaulting to the most restrictive tier. This
-// avoids silently downgrading access for anyone until billing is actually
-// wired up to set a real tier per user.
-async function getAuthedUser() {
-  const { userId } = await auth()
-  if (!userId) return null
-  const user = await currentUser()
-  const email = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress || null
-  const meta = user?.publicMetadata || {}
-  return {
-    userId,
-    email,
-    role: meta.role === 'manager' ? 'manager' : 'rep',
-    planTier: meta.planTier || null,
-    selectedPersonas: Array.isArray(meta.selectedPersonas) ? meta.selectedPersonas : []
-  }
 }
 
 // Shared transcript scoring — the same Gemini "combined analyst" call used by
@@ -603,12 +571,21 @@ async function handleRouteInternal(request, { params }) {
     // DIAGNOSTIC TEST ENDPOINT - GET /api/test
     // ============================================
     if (route === '/test' && method === 'GET') {
+      // Sprint 27 audit flagged this endpoint as unauthenticated (anyone
+      // with the URL could trigger a billed Gemini call) and leaking a
+      // partial API key in the response — same auth-gate pattern as every
+      // other authed route in this file, checked before any of the
+      // diagnostics below are built, let alone before a live Gemini call.
+      const authedEmail = await getAuthedEmail()
+      if (!authedEmail) {
+        return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+      }
+
       const diagnostics = {
         timestamp: new Date().toISOString(),
         environment: process.env.NODE_ENV || 'unknown',
         apiKeyPresent: !!process.env.GOOGLE_GENERATIVE_AI_API_KEY,
         apiKeyLength: process.env.GOOGLE_GENERATIVE_AI_API_KEY?.length || 0,
-        apiKeyPrefix: process.env.GOOGLE_GENERATIVE_AI_API_KEY?.substring(0, 10) || 'NOT_SET',
         modelName: 'gemini-2.5-flash',
         testStatus: 'pending'
       }
@@ -670,7 +647,18 @@ async function handleRouteInternal(request, { params }) {
     }
 
     // Negotiate endpoint - POST /api/negotiate
+    // Sprint 27 audit flagged this as unauthenticated + unrate-limited,
+    // letting anyone trigger unlimited billed Gemini calls. Only known
+    // caller is app/simulate/page.js (legacy, not part of the live user
+    // journey — see REPREADY_CONTEXT.md) — this auth gate means /simulate
+    // now requires sign-in to actually negotiate, which is the correct
+    // outcome here, not a regression to work around.
     if (route === '/negotiate' && method === 'POST') {
+      const authedEmail = await getAuthedEmail()
+      if (!authedEmail) {
+        return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+      }
+
       const body = await request.json()
      const { persona, messages, currentHostility = 40 } = body
 
@@ -806,7 +794,15 @@ return handleCORS(NextResponse.json({
     }
 
     // Scorecard endpoint - POST /api/scorecard
+    // Same Sprint 27 audit gap as /api/negotiate above, same fix, same
+    // caller (app/simulate/page.js, legacy) and same reasoning for why
+    // requiring sign-in here is correct rather than something to work around.
     if (route === '/scorecard' && method === 'POST') {
+      const authedEmail = await getAuthedEmail()
+      if (!authedEmail) {
+        return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+      }
+
       const body = await request.json()
       const { persona, messages } = body
 
