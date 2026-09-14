@@ -1,6 +1,21 @@
 import { NextResponse } from "next/server";
+import { getAuthedEmail } from "@/lib/auth";
 const GEMINI_MODEL = "gemini-2.5-flash";
 export async function POST(request) {
+  // Sprint 27 audit flagged this endpoint as unauthenticated + unrate-limited
+  // — anyone with the URL could trigger unlimited billed Gemini calls. Same
+  // auth gate as the catch-all route uses everywhere. Live caller is
+  // app/deck/page.js's handleTerminate() boardroom-fallback path, which only
+  // runs on /deck — a Clerk-protected page per middleware.js — so a valid
+  // session cookie is already present by the time that fetch fires; this
+  // does not break that path. The other caller, app/simulate/page.js, is
+  // legacy/not part of the live user journey (see REPREADY_CONTEXT.md) and
+  // will now require sign-in too, same as /api/negotiate and /api/scorecard.
+  const authedEmail = await getAuthedEmail();
+  if (!authedEmail) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   let body;
   try {
     body = await request.json();
