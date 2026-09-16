@@ -1378,11 +1378,12 @@ Evaluate the sales rep's performance and return JSON with:
         const reps = groupRepsFromSessions(sessions)
 
         // Batch-resolve each rep's current role from Clerk (publicMetadata is the
-        // only source of truth for role — never trust anything from the sessions
-        // collection for this, since POST /api/sessions is unauthenticated and
-        // doesn't guarantee userEmail is a real Clerk identity). limit must be
-        // passed explicitly: Clerk's list endpoints default to 10 and would
-        // otherwise silently truncate roles for orgs with more than 10 reps.
+        // only source of truth for role — a session document doesn't carry role at
+        // all, so this always requires a live Clerk lookup regardless of how
+        // trustworthy sessions.userEmail is as an identity; see POST /api/sessions,
+        // Sprint 49, for that separate guarantee). limit must be passed explicitly:
+        // Clerk's list endpoints default to 10 and would otherwise silently
+        // truncate roles for orgs with more than 10 reps.
         const client = await clerkClient()
         const { data: clerkUsers } = reps.length
           ? await client.users.getUserList({
