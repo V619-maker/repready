@@ -134,17 +134,13 @@ Be strict and realistic. Do not be generous.`
 
 // `orgId` here is trusted only as far as each caller trusts it — this
 // function itself does no auth, it just scores against whatever criteria the
-// given orgId resolves to. POST /api/boardroom (Sprint 47) and
-// POST /api/real-calls/confirm-speaker both now pass an orgId that was
+// given orgId resolves to. All three callers now pass an orgId that was
 // already derived server-side from an authenticated user's own email domain
-// before this function is ever called — never client-supplied. POST
-// /api/sessions is the one remaining caller that still passes an
-// unauthenticated body.orgId straight through (Known Issue 5a, separately
-// tracked, not this function's job to fix): worst case there, a caller
-// passes the wrong/fake orgId and gets scored against another org's rubric
-// text — it never touches procurementScore/enablementScore/weightedScore
-// (still fixed, still what the forgery guard checks), only the supplementary
-// dimension labels.
+// before this function is ever called — never client-supplied: POST
+// /api/boardroom (Sprint 48), POST /api/sessions (Sprint 49, closing Known
+// Issue 5a), and POST /api/real-calls/confirm-speaker (derived even earlier,
+// at record-creation time in POST /api/real-calls). No remaining caller
+// passes an unauthenticated, client-supplied orgId into this function.
 async function scoreTranscript(transcript, persona, orgId) {
   const google = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY })
   const personaContext = PERSONA_CONTEXT[persona] || 'Enterprise buyer evaluating a B2B software purchase.'
@@ -1111,25 +1107,39 @@ Evaluate the sales rep's performance and return JSON with:
 
     // Save session - POST /api/sessions
     //
-    // Score-forgery guard (Sprint 27 audit, Known Issue 0b): this endpoint has no
-    // auth (see Known Issue 5a — a separate, still-open fix) and previously stored
+    // Score-forgery guard (Sprint 27 audit, Known Issue 0b): previously stored
     // body.finalScore/dimensions/procurementScore/enablementScore verbatim, so
     // anyone who could see the request shape — trivial, it's client JS — could POST
     // a fabricated "Elite, 100/100" session for any rep's email and poison their
-    // stats, the org dashboard, and the leaderboard. This doesn't add auth (that's
-    // issue 5a's job), but it does mean a forged score has to survive an
-    // independent Gemini re-scoring of a transcript that actually supports it — a
-    // much higher bar than editing a JSON body.
+    // stats, the org dashboard, and the leaderboard. A forged score has to survive
+    // an independent Gemini re-scoring of a transcript that actually supports it —
+    // a much higher bar than editing a JSON body.
     //
-    // transcript is now required specifically so this can't be bypassed by simply
-    // omitting it. NOTE: this breaks session-saving from app/simulate/page.js,
-    // which never sent a transcript field to this endpoint. /simulate is
-    // documented as an old page not part of the user journey ("do not touch" —
-    // REPREADY_CONTEXT.md), so this is an accepted, explicitly-flagged side effect,
-    // not an oversight: closing the forgery hole on the real product journey
-    // matters more than keeping a legacy, unlinked page's save path working.
+    // Identity guard (Sprint 49, closes Known Issue 5a): fabricating a score was
+    // the first half of this hole — fabricating *identity* (whose session this is,
+    // which org it belongs to) was the still-open second half. This endpoint now
+    // requires Clerk auth and derives userEmail/orgId server-side, exactly like
+    // /api/boardroom (Sprint 48). Neither field is read from the request body at
+    // all anymore, not just validated-and-ignored.
+    //
+    // transcript is required specifically so the score guard can't be bypassed by
+    // simply omitting it. NOTE: this already broke session-saving from
+    // app/simulate/page.js (Sprint 27), which never sent a transcript field to
+    // this endpoint. /simulate is documented as an old page not part of the user
+    // journey ("do not touch" — REPREADY_CONTEXT.md), so this remains an accepted,
+    // explicitly-flagged side effect, not an oversight — see Sprint 49's log entry
+    // for how this task's new auth check interacts with that pre-existing gap.
     if (route === '/sessions' && method === 'POST') {
       try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const orgId = authedUser.email.split('@')[1]
+        if (!orgId) return handleCORS(NextResponse.json(
+          { error: "Unable to determine organization from account email" }, { status: 400 }
+        ))
+
         const body = await request.json()
 
         const transcript = typeof body.transcript === 'string' ? body.transcript.trim() : ''
@@ -1142,10 +1152,14 @@ Evaluate the sales rep's performance and return JSON with:
         const claimedScore = Number(body.finalScore) || 0
         const SCORE_TOLERANCE = 20 // headroom for LLM run-to-run variance and the coach-fallback path's different scoring methodology
         try {
-          const verified = await scoreTranscript(transcript, body.persona, body.orgId)
+          // orgId here is the authenticated user's own — server-derived above, not
+          // client-supplied — so this also closes a second-order forgery angle:
+          // a caller can no longer pick a more lenient org's custom criteria to
+          // make a fabricated score easier to sneak past this check.
+          const verified = await scoreTranscript(transcript, body.persona, orgId)
           if (claimedScore > verified.weightedScore + SCORE_TOLERANCE) {
             console.warn('Rejected session save — claimed score exceeds what the transcript supports', {
-              userEmail: body.userEmail, persona: body.persona, claimedScore, verifiedScore: verified.weightedScore
+              userEmail: authedUser.email, persona: body.persona, claimedScore, verifiedScore: verified.weightedScore
             })
             return handleCORS(NextResponse.json(
               { error: "Score does not match transcript." }, { status: 400 }
@@ -1161,8 +1175,8 @@ Evaluate the sales rep's performance and return JSON with:
 
    const session = {
   id: uuidv4(),
-  userEmail: body.userEmail || '',
-  orgId: body.orgId || null,
+  userEmail: authedUser.email,
+  orgId,
   persona: body.persona || '',
   finalScore: body.finalScore || 0,
   verdict: body.scorecard?.verdict || body.verdict || '',
@@ -1364,11 +1378,12 @@ Evaluate the sales rep's performance and return JSON with:
         const reps = groupRepsFromSessions(sessions)
 
         // Batch-resolve each rep's current role from Clerk (publicMetadata is the
-        // only source of truth for role — never trust anything from the sessions
-        // collection for this, since POST /api/sessions is unauthenticated and
-        // doesn't guarantee userEmail is a real Clerk identity). limit must be
-        // passed explicitly: Clerk's list endpoints default to 10 and would
-        // otherwise silently truncate roles for orgs with more than 10 reps.
+        // only source of truth for role — a session document doesn't carry role at
+        // all, so this always requires a live Clerk lookup regardless of how
+        // trustworthy sessions.userEmail is as an identity; see POST /api/sessions,
+        // Sprint 49, for that separate guarantee). limit must be passed explicitly:
+        // Clerk's list endpoints default to 10 and would otherwise silently
+        // truncate roles for orgs with more than 10 reps.
         const client = await clerkClient()
         const { data: clerkUsers } = reps.length
           ? await client.users.getUserList({
