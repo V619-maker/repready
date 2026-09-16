@@ -290,7 +290,6 @@ function RepReadyDashboard() {
   const handleTerminate = async () => {
     setIsAnalyzing(true);
     setScoringFailed(false);
-    const wasCutOff = cutOff;
     const currentAgent = activeAgent;
     const hostilityAtSession = currentHostilityPercent;
     const minLoadingTime = new Promise(resolve => setTimeout(resolve, 2000));
@@ -320,9 +319,7 @@ let boardroomEnablementScore = null;
           console.log("[BOARDROOM RESPONSE]", boardroomData);
 
           if (boardroomData.finalScore) {
-  finalScore = wasCutOff
-    ? Math.max(30, boardroomData.finalScore - 20)
-    : boardroomData.finalScore;
+  finalScore = boardroomData.finalScore;
 
   boardroomDimensions = boardroomData.dimensions || null;
   boardroomGrade = boardroomData.grade || null;
@@ -354,9 +351,7 @@ let boardroomEnablementScore = null;
             const cleanJson = rawMessage.replace(/```json|```/g, '').trim();
             const scoreData = JSON.parse(cleanJson);
 
-            finalScore = wasCutOff
-              ? Math.max(30, (scoreData.aggregate_score || 0) - 20)
-              : (scoreData.aggregate_score || 0);
+            finalScore = scoreData.aggregate_score || 0;
 
             localStorage.setItem('repready_latest_debrief', cleanJson);
             localStorage.setItem('repready_debrief_type', 'coach');
