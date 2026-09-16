@@ -132,13 +132,19 @@ ${transcript}
 Be strict and realistic. Do not be generous.`
 }
 
-// `orgId` here is trusted only as far as its two callers already trust it:
-// POST /api/sessions already reads and stores body.orgId today (Known Issue
-// 5a — unauthenticated), and POST /api/boardroom now accepts it the same way
-// persona already was. Worst case a caller passes the wrong/fake orgId and
-// gets scored against another org's rubric text — it never touches
-// procurementScore/enablementScore/weightedScore (still fixed, still what the
-// forgery guard checks), only the supplementary dimension labels.
+// `orgId` here is trusted only as far as each caller trusts it — this
+// function itself does no auth, it just scores against whatever criteria the
+// given orgId resolves to. POST /api/boardroom (Sprint 47) and
+// POST /api/real-calls/confirm-speaker both now pass an orgId that was
+// already derived server-side from an authenticated user's own email domain
+// before this function is ever called — never client-supplied. POST
+// /api/sessions is the one remaining caller that still passes an
+// unauthenticated body.orgId straight through (Known Issue 5a, separately
+// tracked, not this function's job to fix): worst case there, a caller
+// passes the wrong/fake orgId and gets scored against another org's rubric
+// text — it never touches procurementScore/enablementScore/weightedScore
+// (still fixed, still what the forgery guard checks), only the supplementary
+// dimension labels.
 async function scoreTranscript(transcript, persona, orgId) {
   const google = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY })
   const personaContext = PERSONA_CONTEXT[persona] || 'Enterprise buyer evaluating a B2B software purchase.'
@@ -1967,14 +1973,29 @@ Evaluate the sales rep's performance and return JSON with:
       }
     }
 // Boardroom Review - POST /api/boardroom
+// Sprint 47 fixed 4 other unauthenticated billed-AI endpoints
+// (/api/test, /api/negotiate, /api/scorecard, /api/coach); this was the one
+// deliberately left for its own pass — it also trusted a client-supplied
+// orgId (previously flagged, not fixed, as Known Issue 5a). Same principle
+// as every other authed, org-scoped endpoint in this file: the client says
+// what it wants scored, never who it's authorized to act as. orgId is no
+// longer read from the request body at all — derived server-side from the
+// authenticated user's own email domain, exactly like /api/admin/criteria
+// and /api/real-calls already do (same code, same behavior on a
+// domain-less email: 400, not a silent DEFAULT_CRITERIA fallback).
 if (route === '/boardroom' && method === 'POST') {
   try {
+    const authedUser = await getAuthedUser()
+    if (!authedUser) {
+      return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+    }
+    const orgId = authedUser.email.split('@')[1]
+    if (!orgId) return handleCORS(NextResponse.json(
+      { error: "Unable to determine organization from account email" }, { status: 400 }
+    ))
+
     const body = await request.json()
-    // orgId is client-supplied and unverified — this endpoint has no auth at
-    // all (transcript/persona are already trusted this way). Known, accepted
-    // gap tracked separately (Known Issue 5a); this feature doesn't add auth
-    // here, it just extends the existing trust level to one more field.
-    const { transcript, persona, orgId } = body
+    const { transcript, persona } = body
 
     if (!transcript || !persona) {
       return handleCORS(NextResponse.json(
