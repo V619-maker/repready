@@ -386,7 +386,6 @@ let boardroomEnablementScore = null;
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
            body: JSON.stringify({
-  userEmail,
   persona,
   finalScore,
   transcript: finalTranscript,
@@ -399,8 +398,7 @@ let boardroomEnablementScore = null;
   enablementScore: boardroomEnablementScore,
   dimensions: boardroomDimensions,
   consentGiven,
-  consentTimestamp,
-  orgId: userEmail ? userEmail.split('@')[1] : null
+  consentTimestamp
 })
           });
         }
