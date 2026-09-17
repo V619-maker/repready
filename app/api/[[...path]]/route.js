@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { MongoClient } from 'mongodb'
 import { clerkClient } from '@clerk/nextjs/server'
 import { getAuthedEmail, getAuthedUser } from '@/lib/auth'
+import { splitTranscriptIntoTurns, validateEvidence } from '@/lib/evidenceValidation.mjs'
 
 let cachedClient = null
 async function getDb() {
@@ -163,18 +164,53 @@ async function scoreTranscript(transcript, persona, orgId) {
 // CALL 2 — Executive summarizer. Extracted out of the /api/boardroom handler
 // (prerequisite, behavior-preserving refactor for the upcoming real-call
 // upload + scoring feature — see task tracking) so it can be reused by a
-// future caller without duplicating this prompt/schema. Byte-identical
-// prompt/schema/logic to what previously lived inline in that handler.
-async function generateExecutiveSummary(analyst, weightedScore, criteria) {
+// future caller without duplicating this prompt/schema.
+//
+// Evidence-grounded feedback (Sprint 51): the three coaching fields below
+// (whatYouDidRight/whatYouDidWrong/oneThingToFixNext) now come with an
+// additive *Evidence sibling — {turnIndex, quote, gap, betterResponse} — so
+// the UI can show the actual transcript line behind the advice instead of a
+// generic tip. Deliberately additive, not in-place: the three original
+// string fields are untouched, so old realCalls documents (and any caller
+// that hasn't been updated) keep working exactly as before. This function
+// now takes `transcript` as a 4th argument specifically to make this
+// possible — previously it never saw the transcript at all, which is why no
+// version of this function could ever have grounded anything in it.
+//
+// Mechanical validation, not prompt-trust: the transcript is split into
+// ephemeral, request-scoped numbered turns (splitTranscriptIntoTurns() —
+// never persisted, never changes how transcripts are built/stored) purely
+// so Gemini has stable indices to cite. Every returned evidence object is
+// then checked against validateEvidence() — turnIndex must resolve to a
+// real turn AND the (whitespace-normalized) quote must actually occur in
+// that exact turn — before it's ever returned from this function. An
+// object that fails either check is discarded (null), never a corrective
+// re-prompt in this pass; the caller-facing string field is unaffected
+// either way, so a rejected quote just means "no evidence attached," never
+// "no feedback at all."
+async function generateExecutiveSummary(analyst, weightedScore, criteria, transcript) {
   const google = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY })
+
+  const turns = splitTranscriptIntoTurns(transcript)
+  const numberedTranscript = turns.map((turn, i) => `[${i}] ${turn}`).join('\n')
+
+  const EvidenceSchema = z.object({
+    turnIndex: z.number().int().min(0).describe("0-based index of the transcript turn (from the numbered list) this evidence is quoted from — must match one of the [N] markers shown"),
+    quote: z.string().describe("The exact text quoted verbatim from that transcript turn. Copy it precisely — do not paraphrase, summarize, or invent it"),
+    gap: z.string().describe("1-2 sentences explaining the specific gap (for a mistake) or strength (for a success) this exact quote demonstrates"),
+    betterResponse: z.string().describe("A concrete, specific alternative response the rep could have said instead at that point in the call"),
+  })
 
   const ExecutiveSchema = z.object({
     finalScore: z.number().min(0).max(100).describe("Weighted final score"),
     grade: z.enum(['A', 'B', 'C', 'D', 'F']).describe("Letter grade"),
     verdict: z.string().describe("One sentence executive verdict"),
     whatYouDidRight: z.string().describe("One specific thing the rep did well — max 20 words"),
+    whatYouDidRightEvidence: EvidenceSchema,
     whatYouDidWrong: z.string().describe("One critical mistake — max 20 words"),
+    whatYouDidWrongEvidence: EvidenceSchema,
     oneThingToFixNext: z.string().describe("One tactical fix for the next session — max 20 words"),
+    oneThingToFixNextEvidence: EvidenceSchema,
   })
 
   const executiveResult = await generateObject({
@@ -197,17 +233,25 @@ ${criteria.map(c => `- ${c.name}: ${analyst.dimensions[c.key]}/100`).join('\n')}
 
 WEIGHTED FINAL SCORE (60% procurement, 40% enablement): ${weightedScore}/100
 
+NUMBERED TRANSCRIPT (cite turns by their [N] index):
+${numberedTranscript}
+
 Grade scale: A=90+, B=75-89, C=60-74, D=45-59, F=below 45
 
-Write a crisp executive summary. Each feedback field must be under 20 words. Be direct, not motivational. This is enterprise-grade feedback.`,
+Write a crisp executive summary. Each feedback field must be under 20 words. Be direct, not motivational. This is enterprise-grade feedback.
+
+For whatYouDidRight, whatYouDidWrong, and oneThingToFixNext, also cite the specific transcript turn that best supports it: its exact [N] index, the exact quote from that turn copied verbatim (not paraphrased), a short explanation of the gap or strength it shows, and a concrete better response.`,
   })
 
   return {
     grade: executiveResult.object.grade,
     verdict: executiveResult.object.verdict,
     whatYouDidRight: executiveResult.object.whatYouDidRight,
+    whatYouDidRightEvidence: validateEvidence(executiveResult.object.whatYouDidRightEvidence, turns),
     whatYouDidWrong: executiveResult.object.whatYouDidWrong,
+    whatYouDidWrongEvidence: validateEvidence(executiveResult.object.whatYouDidWrongEvidence, turns),
     oneThingToFixNext: executiveResult.object.oneThingToFixNext,
+    oneThingToFixNextEvidence: validateEvidence(executiveResult.object.oneThingToFixNextEvidence, turns),
     analysts: {
       procurement: {
         score: analyst.procurementScore,
@@ -1884,7 +1928,7 @@ Evaluate the sales rep's performance and return JSON with:
 
         // Same two-call pipeline /api/boardroom uses, destructured identically.
         const { weightedScore, criteria, criteriaSource, orgIdReceived, ...analyst } = await scoreTranscript(transcript, 'real-call', record.orgId)
-        const executiveSummary = await generateExecutiveSummary(analyst, weightedScore, criteria)
+        const executiveSummary = await generateExecutiveSummary(analyst, weightedScore, criteria, transcript)
 
         await db.collection('realCalls').updateOne({ id }, {
           $set: {
@@ -1898,9 +1942,16 @@ Evaluate the sales rep's performance and return JSON with:
             criteria,
             grade: executiveSummary.grade,
             verdict: executiveSummary.verdict,
+            // whatYouDidRight/Wrong/oneThingToFixNext are unchanged flat strings
+            // (Sprint 51) — the *Evidence siblings are additive, so a document
+            // written before this sprint simply lacks them, and old readers of
+            // just the string fields keep working exactly as before.
             whatYouDidRight: executiveSummary.whatYouDidRight,
+            whatYouDidRightEvidence: executiveSummary.whatYouDidRightEvidence,
             whatYouDidWrong: executiveSummary.whatYouDidWrong,
+            whatYouDidWrongEvidence: executiveSummary.whatYouDidWrongEvidence,
             oneThingToFixNext: executiveSummary.oneThingToFixNext,
+            oneThingToFixNextEvidence: executiveSummary.oneThingToFixNextEvidence,
             analysts: executiveSummary.analysts,
             scoredAt: new Date().toISOString()
           }
@@ -2034,7 +2085,7 @@ if (route === '/boardroom' && method === 'POST') {
     // near scoreTranscript() (prerequisite refactor for the upcoming
     // real-call-scoring feature) — same prompt/schema/logic as before, just
     // no longer inlined here.
-    const executiveSummary = await generateExecutiveSummary(analyst, weightedScore, criteria)
+    const executiveSummary = await generateExecutiveSummary(analyst, weightedScore, criteria, transcript)
 
     return handleCORS(NextResponse.json({
       procurementScore: analyst.procurementScore,
@@ -2043,8 +2094,11 @@ if (route === '/boardroom' && method === 'POST') {
       grade: executiveSummary.grade,
       verdict: executiveSummary.verdict,
       whatYouDidRight: executiveSummary.whatYouDidRight,
+      whatYouDidRightEvidence: executiveSummary.whatYouDidRightEvidence,
       whatYouDidWrong: executiveSummary.whatYouDidWrong,
+      whatYouDidWrongEvidence: executiveSummary.whatYouDidWrongEvidence,
       oneThingToFixNext: executiveSummary.oneThingToFixNext,
+      oneThingToFixNextEvidence: executiveSummary.oneThingToFixNextEvidence,
       dimensions: analyst.dimensions,
       criteria,
       // Diagnostic fields (Sprint 38) — not used by the UI, visible in the

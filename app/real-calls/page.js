@@ -21,6 +21,32 @@ function scoreColor(score) {
   return '#E63946'
 }
 
+// Same visual component as app/coach/page.js's CoachingField — copied, not
+// reinvented (Sprint 51). `evidence` is null for realCalls records scored
+// before this sprint (legacy flat-string-only documents) and for anything
+// that failed server-side validation; either way, same fallback: render the
+// plain string exactly as this page always has.
+function CoachingField({ text, evidence, accentClass }) {
+  if (!evidence) {
+    return <p className="text-sm text-zinc-400 leading-relaxed">{text || "—"}</p>
+  }
+  return (
+    <div className="space-y-2">
+      <p className="text-sm text-zinc-400 leading-relaxed">{text}</p>
+      <blockquote className={`text-xs italic text-zinc-500 border-l-2 ${accentClass} pl-3`}>
+        "{evidence.quote}"
+      </blockquote>
+      <p className="text-xs text-zinc-500 leading-relaxed">{evidence.gap}</p>
+      {evidence.betterResponse && (
+        <p className="text-xs text-zinc-300 leading-relaxed">
+          <span className="text-zinc-500 uppercase tracking-widest text-[9px] mr-2">Try instead:</span>
+          {evidence.betterResponse}
+        </p>
+      )}
+    </div>
+  )
+}
+
 // Same visual component as app/coach/page.js's DimensionBar — copied, not
 // reinvented, so the skill matrix here matches that page exactly.
 function DimensionBar({ label, score }) {
@@ -498,22 +524,22 @@ function ReportState({ record, onStartNew }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="border border-green-500/20 bg-green-950/5 p-6">
           <h3 className="text-green-400 text-[10px] font-bold uppercase tracking-[0.2em] mb-4">What You Did Right</h3>
-          <p className="text-sm text-zinc-400 leading-relaxed border-l border-green-500/30 pl-3">
-            {record.whatYouDidRight || "—"}
-          </p>
+          <div className="border-l border-green-500/30 pl-3">
+            <CoachingField text={record.whatYouDidRight} evidence={record.whatYouDidRightEvidence} accentClass="border-green-500/40" />
+          </div>
         </div>
         <div className="border border-red-500/20 bg-red-950/5 p-6">
           <h3 className="text-red-400 text-[10px] font-bold uppercase tracking-[0.2em] mb-4">What You Did Wrong</h3>
-          <p className="text-sm text-zinc-400 leading-relaxed border-l border-red-500/30 pl-3">
-            {record.whatYouDidWrong || "—"}
-          </p>
+          <div className="border-l border-red-500/30 pl-3">
+            <CoachingField text={record.whatYouDidWrong} evidence={record.whatYouDidWrongEvidence} accentClass="border-red-500/40" />
+          </div>
         </div>
       </div>
 
       {/* One thing to fix next */}
       <div className="border border-[#22D3EE]/20 bg-[#22D3EE]/5 p-6">
         <h3 className="text-[#22D3EE] text-[10px] font-bold uppercase tracking-[0.2em] mb-4">One Thing To Fix Next</h3>
-        <p className="text-sm text-zinc-300 leading-relaxed">{record.oneThingToFixNext || "—"}</p>
+        <CoachingField text={record.oneThingToFixNext} evidence={record.oneThingToFixNextEvidence} accentClass="border-[#22D3EE]/40" />
       </div>
 
       {/* Skill Matrix */}
