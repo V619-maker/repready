@@ -3,6 +3,32 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 
+// Evidence-grounded coaching (Sprint 51). `text` is the existing, always-
+// present summary string; `evidence` is the additive, mechanically-verified
+// sibling — null for legacy debriefs (pre-Sprint-51) and for anything that
+// failed validation server-side. Same fallback in both cases: render the
+// plain string exactly as this page always has.
+function CoachingField({ text, evidence, accentClass }) {
+  if (!evidence) {
+    return <p className="text-sm text-zinc-400 leading-relaxed">{text || "—"}</p>
+  }
+  return (
+    <div className="space-y-2">
+      <p className="text-sm text-zinc-400 leading-relaxed">{text}</p>
+      <blockquote className={`text-xs italic text-zinc-500 border-l-2 ${accentClass} pl-3`}>
+        "{evidence.quote}"
+      </blockquote>
+      <p className="text-xs text-zinc-500 leading-relaxed">{evidence.gap}</p>
+      {evidence.betterResponse && (
+        <p className="text-xs text-zinc-300 leading-relaxed">
+          <span className="text-zinc-500 uppercase tracking-widest text-[9px] mr-2">Try instead:</span>
+          {evidence.betterResponse}
+        </p>
+      )}
+    </div>
+  )
+}
+
 function DimensionBar({ label, score }) {
   const color = score >= 70 ? '#22D3EE' : score >= 40 ? '#F5A623' : '#E63946'
   return (
@@ -154,15 +180,15 @@ export default function CoachDashboard() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="border border-green-500/20 bg-green-950/5 p-6">
                       <h3 className="text-green-400 text-[10px] font-bold uppercase tracking-[0.2em] mb-4">What You Did Right</h3>
-                      <p className="text-sm text-zinc-400 leading-relaxed border-l border-green-500/30 pl-3">
-                        {debrief.whatYouDidRight || "—"}
-                      </p>
+                      <div className="border-l border-green-500/30 pl-3">
+                        <CoachingField text={debrief.whatYouDidRight} evidence={debrief.whatYouDidRightEvidence} accentClass="border-green-500/40" />
+                      </div>
                     </div>
                     <div className="border border-red-500/20 bg-red-950/5 p-6">
                       <h3 className="text-red-400 text-[10px] font-bold uppercase tracking-[0.2em] mb-4">What You Did Wrong</h3>
-                      <p className="text-sm text-zinc-400 leading-relaxed border-l border-red-500/30 pl-3">
-                        {debrief.whatYouDidWrong || "—"}
-                      </p>
+                      <div className="border-l border-red-500/30 pl-3">
+                        <CoachingField text={debrief.whatYouDidWrong} evidence={debrief.whatYouDidWrongEvidence} accentClass="border-red-500/40" />
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -191,11 +217,13 @@ export default function CoachDashboard() {
                   <h3 className="text-[#22D3EE] text-[10px] font-bold uppercase tracking-[0.2em] mb-4">
                     {isBoardroom ? 'One Thing To Fix Next' : 'Actionable Advice'}
                   </h3>
-                  <p className="text-sm text-zinc-300 leading-relaxed">
-                    {isBoardroom
-                      ? (debrief.oneThingToFixNext || "—")
-                      : (debrief.actionable_advice || "Review the transcript to identify missed buying signals.")}
-                  </p>
+                  {isBoardroom ? (
+                    <CoachingField text={debrief.oneThingToFixNext} evidence={debrief.oneThingToFixNextEvidence} accentClass="border-[#22D3EE]/40" />
+                  ) : (
+                    <p className="text-sm text-zinc-300 leading-relaxed">
+                      {debrief.actionable_advice || "Review the transcript to identify missed buying signals."}
+                    </p>
+                  )}
                 </div>
 
                 {/* Skill Matrix — dimensions scored on this org's current criteria */}
