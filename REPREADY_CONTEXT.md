@@ -1,54 +1,13 @@
 # REPREADY_CONTEXT.md
 # Single source of truth for RepReady — updated after every sprint task
-# Last updated: September 17, 2026 (Sprint 51 — V1 evidence-grounded executive-summary coaching:
-# whatYouDidRight/whatYouDidWrong/oneThingToFixNext now come with an additive, mechanically-
-# validated *Evidence sibling {turnIndex, quote, gap, betterResponse} quoting the actual
-# transcript turn, instead of a generic tip. New lib/evidenceValidation.mjs + committed test
-# file (this repo's first real test suite, npm test). Global 3 fields only -- per-criterion
-# evidence explicitly deferred. Prior update: September 16, 2026 (Sprint 50 — removed the -20 timeout score penalty: wasCutOff
-# means "the 90s client timer expired while connected," not "the rep ended early" -- a manual
-# end-call leaves cutOff=false regardless of duration, so the penalty punished hitting the
-# product's own time limit while not penalizing an actual early exit. A time-limit-reached call
-# now scores identically to a completed one. Also fixed one inaccurate "tolerance" doc reference
-# (the /api/sessions score check is a one-sided +20 ceiling, not a two-sided match). Existing
-# Mongo records deliberately NOT retroactively rewritten -- see that entry for the historical-
-# discontinuity note future analytics must account for. Prior update: same day (Sprint 49 —
-# locked down POST /api/sessions: now requires
-# Clerk auth and no longer trusts client-supplied userEmail/orgId, deriving both server-side
-# instead. Closes Known Issue 5a and completes 0b -- this was the more serious identity-forgery
-# gap flagged after the /api/boardroom fix, since this endpoint's writes are what dashboards,
-# leaderboards, and rep-memory all read downstream. Branch stacked on Sprint 48's still-unmerged
-# fix/boardroom-orgid-auth to avoid a shared-comment conflict -- merge that PR first. Prior
-# update: same day (Sprint 48 — locked down /api/boardroom: now requires Clerk
-# auth and no longer trusts a client-supplied orgId, deriving it server-side from the
-# authenticated user's own email domain instead, same pattern used everywhere else in this app.
-# Closes Known Issue 0c completely (all 5 originally-named endpoints now fixed across Sprints
-# 47-48). Prior update: September 14, 2026 (Sprint 47 — auth-gated the 4 unauthenticated billed-AI
-# endpoints from the Sprint 27 audit: /api/test, /api/negotiate, /api/scorecard, /api/coach.
-# Also removed /api/test's Gemini API key prefix leak. /api/boardroom deliberately left open,
-# separately tracked at the time. Prior update: September 13, 2026 (Sprint 46 — replaced AssemblyAI with
-# ElevenLabs Scribe v2 in
-# transcribeWithDiarization(); closes a real gap where the Scribe rework had been planned but never
-# committed. Also renumbers this branch's own Sprint 42/43 to 44/45 — real-call upload + scoring
-# feature, and the 20-to-7-minute cap tightening — to resolve a numbering collision against `main`'s
-# unrelated Sprint 42/43, merged separately and left unchanged, in the order they actually merged to
-# `main`: Sprint 43 — evaluated per-agent ElevenLabs Zero Retention Mode
-# for all 4 personas; logged as an ACTION NEEDED dashboard item, could not confirm plan-tier
-# eligibility or toggle it — this sandbox has no network path to elevenlabs.io at all and no live
-# API key. Sprint 42, same day — fixed a real live compliance-accuracy bug: /trust, the Privacy
-# Policy, and the pre-session consent modal all falsely stated voice recordings are stored in
-# MongoDB Atlas Mumbai; voice data is actually held by ElevenLabs, not currently India-resident).
-# Prior update: same day (Sprint 41 — corrected a stale "10s Hobby timeout" claim; the
-# real, confirmed ceiling is 300s via Fluid Compute). Prior update: same day (Sprint 40 — confirmed
-# and fixed the real root cause of the "Richard not responding" incident: a Vercel Install Command
-# override, not the ElevenLabs SDK.
-# Prior update: September 11, 2026 (Sprint 37 — flexible per-org scoring criteria, replacing
-# the hardcoded 6-dimension lock-in). Prior update: September 10, 2026 (Sprint 36 — corrected
-# stale retention-cron status; Sprint 35 — public /trust page; Sprint 34 — privacy policy
-# sub-processors section — all landed the same day. See those entries for detail. Prior update:
-# September 6, 2026, Sprints 30-33 —
-# vendored skills, clickjacking fix, CORS fix, protected-route fix. Major update before that:
-# September 2, 2026 full codebase audit, Sprint 27)
+# Last updated: September 18, 2026 (Sprint 52 — Canonical Evaluation foundation PR1.
+# Utilities/tests/docs only; zero production request-path behavior changed. Added deterministic
+# SHA-256 transcript hashing (exact UTF-8 string, no normalization) and ordered scoring-criteria
+# fingerprinting, plus ADR/spec and plain-Node tests. Practice transcripts remain non-persisted.
+# /api/boardroom, /api/sessions, the existing second-Gemini one-sided +20 verification/fail-open
+# behavior, /api/coach fallback, real-call scoring, historical sessions, tenancy, completion
+# semantics, scoring formulas/prompts, qualification, hostility, consent, and billing are untouched.
+# Planned later: additive shadow scoreResults write, then a compatibility-gated canonical consume path.
 
 ---
 
@@ -391,6 +350,7 @@ This is `DEFAULT_CRITERIA` in `app/api/[[...path]]/route.js` — used automatica
 
 | Sprint | Status | Notes |
 |---|---|---|
+| Sprint 52 — Canonical Evaluation foundation PR1 | 🔄 PR | Foundation only: `lib/canonicalEvaluation.mjs` adds exact-transcript SHA-256 binding plus ordered `key`/`name`/`description` criteria fingerprinting and explicit scoring/model/source constants; new plain-Node tests + ADR/spec. **Production behavior change: none.** No Mongo `scoreResults` writes, API/deck changes, second-Gemini removal, coach/real-call changes, transcript persistence, or historical rewrite in this PR. |
 | Sprint 1 — Core journey | ✅ Complete | Landing → /deck → voice → /coach working |
 | Sprint 2 — Dynamic hostility | ✅ Complete | Hostility passes to Richard via ElevenLabs dynamic variables |
 | Sprint 3 — Boardroom pipeline | ✅ Complete | 2-call Gemini pipeline live, 6 dimensions scoring |
