@@ -66,7 +66,10 @@ function RepReadyDashboard() {
   const [currentHostilityPercent, setCurrentHostilityPercent] = useState(40);
   const [qualificationStatus, setQualificationStatus] = useState('');
   const [scoringFailed, setScoringFailed] = useState(false);
+  const [sessionSaveFailed, setSessionSaveFailed] = useState(false);
+  const [isRetryingSessionSave, setIsRetryingSessionSave] = useState(false);
   const transcriptRef = useRef([]);
+  const pendingSessionSaveRef = useRef(null);
 
   useEffect(() => {
     const header = document.querySelector('body > header');
@@ -287,9 +290,44 @@ function RepReadyDashboard() {
     handleTerminate();
   };
 
+  const savePracticeSession = async (payload) => {
+    const response = await fetch('/api/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      let detail = '';
+      try {
+        const errorBody = await response.json();
+        detail = errorBody?.error || '';
+      } catch (_) {}
+      throw new Error(`Session save failed (${response.status})${detail ? `: ${detail}` : ''}`);
+    }
+    return response.json();
+  };
+
+  const handleRetrySessionSave = async () => {
+    if (!pendingSessionSaveRef.current || isRetryingSessionSave) return;
+    setIsRetryingSessionSave(true);
+    try {
+      await savePracticeSession(pendingSessionSaveRef.current);
+      pendingSessionSaveRef.current = null;
+      setSessionSaveFailed(false);
+      console.info('[SESSION SAVE] Retry succeeded');
+    } catch (retryError) {
+      console.error('[SESSION SAVE] Retry failed:', retryError);
+      setSessionSaveFailed(true);
+    } finally {
+      setIsRetryingSessionSave(false);
+    }
+  };
+
   const handleTerminate = async () => {
     setIsAnalyzing(true);
     setScoringFailed(false);
+    setSessionSaveFailed(false);
+    pendingSessionSaveRef.current = null;
     const currentAgent = activeAgent;
     const hostilityAtSession = currentHostilityPercent;
     const minLoadingTime = new Promise(resolve => setTimeout(resolve, 2000));
@@ -379,26 +417,33 @@ let boardroomScoreResultId = null;
 
         if (userEmail) {
           const nextHostility = getNextHostility(hostilityAtSession, finalScore);
-          await fetch('/api/sessions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify({
-  persona,
-  finalScore,
-  transcript: finalTranscript,
-  mode: 'voice',
-  hostilityReached: hostilityAtSession,
-  nextHostility,
-  qualificationStatus: qualification,
-  grade: boardroomGrade,
-  procurementScore: boardroomProcurementScore,
-  enablementScore: boardroomEnablementScore,
-  dimensions: boardroomDimensions,
-  ...(boardroomScoreResultId ? { scoreResultId: boardroomScoreResultId } : {}),
-  consentGiven,
-  consentTimestamp
-})
-          });
+          const sessionPayload = {
+            persona,
+            finalScore,
+            transcript: finalTranscript,
+            mode: 'voice',
+            hostilityReached: hostilityAtSession,
+            nextHostility,
+            qualificationStatus: qualification,
+            grade: boardroomGrade,
+            procurementScore: boardroomProcurementScore,
+            enablementScore: boardroomEnablementScore,
+            dimensions: boardroomDimensions,
+            ...(boardroomScoreResultId ? { scoreResultId: boardroomScoreResultId } : {}),
+            consentGiven,
+            consentTimestamp
+          };
+          pendingSessionSaveRef.current = sessionPayload;
+          try {
+            await savePracticeSession(sessionPayload);
+            pendingSessionSaveRef.current = null;
+            console.info('[SESSION SAVE] Persisted', {
+              path: boardroomScoreResultId ? 'canonical' : 'legacy'
+            });
+          } catch (sessionSaveError) {
+            console.error('[SESSION SAVE] Persistence failed:', sessionSaveError);
+            setSessionSaveFailed(true);
+          }
         }
       } else {
         setScoringFailed(true);
@@ -759,6 +804,18 @@ let boardroomScoreResultId = null;
               </p>
               {scoringFailed && (
                 <p className="text-red-500 text-[9px] uppercase tracking-widest mt-4">Scoring failed — check connection and try again</p>
+              )}
+              {sessionSaveFailed && (
+                <div className="mt-4">
+                  <p className="text-amber-400 text-[9px] uppercase tracking-widest">Score generated, but session history was not saved</p>
+                  <button
+                    onClick={handleRetrySessionSave}
+                    disabled={isRetryingSessionSave}
+                    className="mt-3 px-4 py-2 border border-amber-400/50 text-amber-400 text-[9px] font-bold uppercase tracking-widest hover:bg-amber-400/10 disabled:opacity-50"
+                  >
+                    {isRetryingSessionSave ? 'RETRYING SAVE...' : 'RETRY SAVE'}
+                  </button>
+                </div>
               )}
               {recentScore >= (bestScores[activeAgent] || 0) && recentScore > 0 && !cutOff && (
                 <p className="text-green-400 text-[9px] uppercase tracking-widest mt-4 animate-pulse">New Personal Best!</p>
