@@ -1656,7 +1656,7 @@ Evaluate the sales rep's performance and return JSON with:
         // reject, and means a wrong-org probe gets an identical 403 whether or not
         // the target email even exists (only a same-domain, nonexistent email ever
         // reaches the 404 branch below).
-        const orgId = authedUser.orgId
+        const orgId = authedUser.orgId?.toLowerCase()
         const targetDomain = targetEmail.split('@')[1]?.toLowerCase()
         if (!orgId || !targetDomain || targetDomain !== orgId) {
           return handleCORS(NextResponse.json(
