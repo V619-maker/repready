@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid'
+import { v4 as uuidv4, validate as uuidValidate } from 'uuid'
 import { NextResponse } from 'next/server'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { generateObject } from 'ai'
@@ -1187,35 +1187,88 @@ Evaluate the sales rep's performance and return JSON with:
 
         const body = await request.json()
 
-        const transcript = typeof body.transcript === 'string' ? body.transcript.trim() : ''
+        // Keep the exact transcript string for canonical provenance. Trimming is
+        // only an emptiness check; hashTranscript() intentionally treats whitespace
+        // as meaningful because PR1 binds an evaluation to the exact scored text.
+        const rawTranscript = typeof body.transcript === 'string' ? body.transcript : ''
+        const transcript = rawTranscript.trim()
         if (!transcript) {
           return handleCORS(NextResponse.json(
             { error: "transcript required to verify score" }, { status: 400 }
           ))
         }
 
-        const claimedScore = Number(body.finalScore) || 0
-        const SCORE_TOLERANCE = 20 // headroom for LLM run-to-run variance and the coach-fallback path's different scoring methodology
-        try {
-          // orgId here is the authenticated user's own — server-derived above, not
-          // client-supplied — so this also closes a second-order forgery angle:
-          // a caller can no longer pick a more lenient org's custom criteria to
-          // make a fabricated score easier to sneak past this check.
-          const verified = await scoreTranscript(transcript, body.persona, orgId)
-          if (claimedScore > verified.weightedScore + SCORE_TOLERANCE) {
-            console.warn('Rejected session save — claimed score exceeds what the transcript supports', {
-              userEmail: authedUser.email, persona: body.persona, claimedScore, verifiedScore: verified.weightedScore
+        const hasScoreResultId = Object.prototype.hasOwnProperty.call(body, 'scoreResultId')
+        let canonicalScoreResult = null
+
+        if (hasScoreResultId) {
+          // Presence of scoreResultId selects the canonical path. Any malformed,
+          // missing, mismatched, or unreadable canonical claim is rejected/fails
+          // closed — it must never silently downgrade to the weaker legacy path.
+          if (typeof body.scoreResultId !== 'string' || !uuidValidate(body.scoreResultId)) {
+            console.warn('Rejected canonical session save — malformed scoreResultId', {
+              userEmail: authedUser.email
             })
             return handleCORS(NextResponse.json(
-              { error: "Score does not match transcript." }, { status: 400 }
+              { error: "Invalid score result." }, { status: 400 }
             ))
           }
-        } catch (verifyError) {
-          // Fail OPEN on infra errors (Gemini down/timeout) — an outage in this
-          // verification call shouldn't cost a legitimate rep their real session.
-          // This does mean the forgery guard is soft during a Gemini outage; a
-          // known, accepted trade-off, not an oversight.
-          console.error('Score verification call failed, saving unverified:', verifyError)
+
+          try {
+            const db = await getDb()
+            canonicalScoreResult = await db.collection('scoreResults').findOne({ id: body.scoreResultId })
+          } catch (scoreResultLookupError) {
+            console.error('Canonical scoreResult lookup failed:', scoreResultLookupError)
+            return handleCORS(NextResponse.json(
+              { error: "Failed to validate score result." }, { status: 500 }
+            ))
+          }
+
+          let canonicalRejectReason = null
+          if (!canonicalScoreResult) canonicalRejectReason = 'not_found'
+          else if (canonicalScoreResult.status !== 'ready') canonicalRejectReason = 'status_not_ready'
+          else if (canonicalScoreResult.userEmail !== authedUser.email) canonicalRejectReason = 'user_mismatch'
+          else if (canonicalScoreResult.orgId !== orgId) canonicalRejectReason = 'org_mismatch'
+          else if (canonicalScoreResult.persona !== body.persona) canonicalRejectReason = 'persona_mismatch'
+          else if (hashTranscript(rawTranscript) !== canonicalScoreResult.transcriptHash) canonicalRejectReason = 'transcript_hash_mismatch'
+
+          if (canonicalRejectReason) {
+            // Keep the client response deliberately uniform so callers cannot
+            // probe record existence, ownership, persona, or transcript binding.
+            console.warn('Rejected canonical session save', {
+              userEmail: authedUser.email,
+              reason: canonicalRejectReason
+            })
+            return handleCORS(NextResponse.json(
+              { error: "Invalid score result." }, { status: 400 }
+            ))
+          }
+        } else {
+          // Legacy compatibility path: unchanged score-forgery guard for coach
+          // fallback and clients that do not yet carry a canonical scoreResultId.
+          const claimedScore = Number(body.finalScore) || 0
+          const SCORE_TOLERANCE = 20 // headroom for LLM run-to-run variance and the coach-fallback path's different scoring methodology
+          try {
+            // orgId here is the authenticated user's own — server-derived above, not
+            // client-supplied — so this also closes a second-order forgery angle:
+            // a caller can no longer pick a more lenient org's custom criteria to
+            // make a fabricated score easier to sneak past this check.
+            const verified = await scoreTranscript(transcript, body.persona, orgId)
+            if (claimedScore > verified.weightedScore + SCORE_TOLERANCE) {
+              console.warn('Rejected session save — claimed score exceeds what the transcript supports', {
+                userEmail: authedUser.email, persona: body.persona, claimedScore, verifiedScore: verified.weightedScore
+              })
+              return handleCORS(NextResponse.json(
+                { error: "Score does not match transcript." }, { status: 400 }
+              ))
+            }
+          } catch (verifyError) {
+            // Fail OPEN on infra errors (Gemini down/timeout) — an outage in this
+            // verification call shouldn't cost a legitimate rep their real session.
+            // This does mean the forgery guard is soft during a Gemini outage; a
+            // known, accepted trade-off, not an oversight.
+            console.error('Score verification call failed, saving unverified:', verifyError)
+          }
         }
 
    const session = {
@@ -1223,16 +1276,17 @@ Evaluate the sales rep's performance and return JSON with:
   userEmail: authedUser.email,
   orgId,
   persona: body.persona || '',
-  finalScore: body.finalScore || 0,
+  finalScore: canonicalScoreResult ? canonicalScoreResult.finalScore : (body.finalScore || 0),
   verdict: body.scorecard?.verdict || body.verdict || '',
   mode: body.mode || 'text',
   hostilityReached: body.hostilityReached || null,
   nextHostility: body.nextHostility || null,
   qualificationStatus: body.qualificationStatus || null,
-  grade: body.grade || null,
-  procurementScore: body.procurementScore || null,
-  enablementScore: body.enablementScore || null,
-  dimensions: body.dimensions || null,
+  grade: canonicalScoreResult ? canonicalScoreResult.grade : (body.grade || null),
+  procurementScore: canonicalScoreResult ? canonicalScoreResult.procurementScore : (body.procurementScore || null),
+  enablementScore: canonicalScoreResult ? canonicalScoreResult.enablementScore : (body.enablementScore || null),
+  dimensions: canonicalScoreResult ? canonicalScoreResult.dimensions : (body.dimensions || null),
+  ...(canonicalScoreResult ? { scoreResultId: canonicalScoreResult.id } : {}),
   consentGiven: body.consentGiven ?? null,
   consentTimestamp: body.consentTimestamp ?? null,
   createdAt: new Date().toISOString()
