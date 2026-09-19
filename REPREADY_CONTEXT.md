@@ -1,14 +1,15 @@
 # REPREADY_CONTEXT.md
 # Single source of truth for RepReady — updated after every sprint task
-# Last updated: September 18, 2026 (Sprint 52 — Canonical Evaluation foundation PR1.
-# Utilities/tests/docs only; zero production request-path behavior changed. Added deterministic
-# SHA-256 transcript hashing (exact UTF-8 string, no normalization) and ordered scoring-criteria
-# fingerprinting, plus ADR/spec and plain-Node tests. Practice transcripts remain non-persisted.
-# /api/boardroom, /api/sessions, the existing second-Gemini one-sided +20 verification/fail-open
-# behavior, /api/coach fallback, real-call scoring, historical sessions, tenancy, completion
-# semantics, scoring formulas/prompts, qualification, hostility, consent, and billing are untouched.
-# Planned later: additive shadow scoreResults write, then a compatibility-gated canonical consume path.
-
+# Last updated: September 19, 2026 (Sprint 55 — Canonical Evaluation PR4 hardening).
+# PR2 shadow-writes server-owned scoreResults only after the full two-call boardroom pipeline succeeds.
+# PR3 makes a valid supplied scoreResultId authoritative for practice session scoring fields while
+# preserving the legacy verification path when no ID is supplied; invalid supplied IDs never downgrade.
+# PR4 atomically inserts the canonical session and transitions scoreResults ready -> consumed in one
+# Mongo transaction, makes already-consumed retries idempotently return the existing matching session,
+# fails canonical infrastructure errors closed, and makes /deck check session-save responses and expose
+# an explicit retry when persistence fails. Raw practice transcripts remain non-persisted.
+# Legacy coach/no-ID session verification, scoring prompts/formulas, real calls, tenancy, completion,
+# qualification/hostility, consent, billing, dashboards/My Stats, and historical records remain unchanged.
 ---
 
 ## PRODUCT OVERVIEW
