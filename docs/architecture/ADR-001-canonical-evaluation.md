@@ -72,10 +72,10 @@ A change that modifies both the model and score methodology must update both ide
 
 The migration is additive-first:
 
-1. **PR1 — this foundation:** deterministic helpers, tests, ADR/spec, context documentation. No production request path changes.
-2. **Shadow write:** after the existing boardroom pipeline completes successfully, `/api/boardroom` creates a score result and additively returns `scoreResultId`. A shadow-write failure must not cost the rep their existing debrief. A first-call success followed by executive-summary failure must not produce a consumable score result.
-3. **Dual-path finalization:** `/api/sessions` consumes a valid supplied `scoreResultId`; requests without one retain the legacy verification path during compatibility rollout. A supplied-but-invalid ID must fail rather than silently downgrade.
-4. **Hardening:** idempotency, visible persistence failures, operational telemetry.
+1. **PR1 — foundation (implemented):** deterministic helpers, tests, ADR/spec, context documentation. No production request path changes.
+2. **PR2 — shadow write (implemented):** after the existing boardroom pipeline completes successfully, `/api/boardroom` creates a score result and additively returns `scoreResultId`. A shadow-write failure does not cost the rep their existing debrief.
+3. **PR3 — dual-path finalization (implemented):** `/api/sessions` consumes a valid supplied `scoreResultId`; requests without one retain the legacy verification path. A supplied-but-invalid ID fails rather than silently downgrading.
+4. **PR4 — hardening (implemented by this change):** canonical session insertion and `ready -> consumed` transition are transactional; already-consumed retries return the existing matching session; persistence failures are visible in the deck with an explicit retry action; canonical failures remain fail-closed and are logged.
 5. **Later consumers:** real calls/completion semantics/coach unification are separate scoped changes.
 
 ## Existing Product Preservation / Regression Contract
