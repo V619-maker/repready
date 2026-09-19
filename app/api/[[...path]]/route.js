@@ -1180,7 +1180,7 @@ Evaluate the sales rep's performance and return JSON with:
         if (!authedUser) {
           return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
         }
-        const orgId = authedUser.email.split('@')[1]
+        const orgId = authedUser.orgId
         if (!orgId) return handleCORS(NextResponse.json(
           { error: "Unable to determine organization from account email" }, { status: 400 }
         ))
@@ -1455,7 +1455,7 @@ Evaluate the sales rep's performance and return JSON with:
         if (!authedUser) {
           return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
         }
-        const orgId = authedUser.email.split('@')[1]
+        const orgId = authedUser.orgId
         if (!orgId) return handleCORS(NextResponse.json(
           { error: "Unable to determine organization from account email" }, { status: 400 }
         ))
@@ -1559,7 +1559,7 @@ Evaluate the sales rep's performance and return JSON with:
         if (authedUser.role !== 'manager') {
           return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
         }
-        const orgId = authedUser.email.split('@')[1]
+        const orgId = authedUser.orgId
         if (!orgId) return handleCORS(NextResponse.json(
           { error: "Unable to determine organization from account email" }, { status: 400 }
         ))
@@ -1656,7 +1656,7 @@ Evaluate the sales rep's performance and return JSON with:
         // reject, and means a wrong-org probe gets an identical 403 whether or not
         // the target email even exists (only a same-domain, nonexistent email ever
         // reaches the 404 branch below).
-        const orgId = authedUser.email.split('@')[1]?.toLowerCase()
+        const orgId = authedUser.orgId?.toLowerCase()
         const targetDomain = targetEmail.split('@')[1]?.toLowerCase()
         if (!orgId || !targetDomain || targetDomain !== orgId) {
           return handleCORS(NextResponse.json(
@@ -1721,7 +1721,7 @@ Evaluate the sales rep's performance and return JSON with:
         if (authedUser.role !== 'manager') {
           return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
         }
-        const orgId = authedUser.email.split('@')[1]
+        const orgId = authedUser.orgId
         if (!orgId) return handleCORS(NextResponse.json(
           { error: "Unable to determine organization from account email" }, { status: 400 }
         ))
@@ -1754,7 +1754,7 @@ Evaluate the sales rep's performance and return JSON with:
         if (authedUser.role !== 'manager') {
           return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
         }
-        const orgId = authedUser.email.split('@')[1]
+        const orgId = authedUser.orgId
         if (!orgId) return handleCORS(NextResponse.json(
           { error: "Unable to determine organization from account email" }, { status: 400 }
         ))
@@ -1812,7 +1812,7 @@ Evaluate the sales rep's performance and return JSON with:
         if (authedUser.role !== 'manager') {
           return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
         }
-        const orgId = authedUser.email.split('@')[1]
+        const orgId = authedUser.orgId
         if (!orgId) return handleCORS(NextResponse.json(
           { error: "Unable to determine organization from account email" }, { status: 400 }
         ))
@@ -1842,7 +1842,7 @@ Evaluate the sales rep's performance and return JSON with:
         if (!authedUser) {
           return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
         }
-        const orgId = authedUser.email.split('@')[1]
+        const orgId = authedUser.orgId
         if (!orgId) return handleCORS(NextResponse.json(
           { error: "Unable to determine organization from account email" }, { status: 400 }
         ))
@@ -2201,7 +2201,7 @@ if (route === '/boardroom' && method === 'POST') {
     if (!authedUser) {
       return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
     }
-    const orgId = authedUser.email.split('@')[1]
+    const orgId = authedUser.orgId
     if (!orgId) return handleCORS(NextResponse.json(
       { error: "Unable to determine organization from account email" }, { status: 400 }
     ))
