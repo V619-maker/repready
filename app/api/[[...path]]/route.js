@@ -7,6 +7,7 @@ import { MongoClient } from 'mongodb'
 import { clerkClient } from '@clerk/nextjs/server'
 import { getAuthedEmail, getAuthedUser } from '@/lib/auth'
 import { splitTranscriptIntoTurns, validateEvidence } from '@/lib/evidenceValidation.mjs'
+import { hashTranscript, fingerprintCriteria, SCORING_VERSION, SCORING_MODEL_ID } from '@/lib/canonicalEvaluation.mjs'
 
 let cachedClient = null
 async function getDb() {
@@ -2087,6 +2088,38 @@ if (route === '/boardroom' && method === 'POST') {
     // no longer inlined here.
     const executiveSummary = await generateExecutiveSummary(analyst, weightedScore, criteria, transcript)
 
+    // Canonical Evaluation PR2 — shadow-write only. This record is additive
+    // infrastructure: no existing product path depends on it. A persistence
+    // failure must never turn a successful boardroom review into a failed one.
+    let scoreResultId = null
+    try {
+      const scoreResult = {
+        id: uuidv4(),
+        userEmail: authedUser.email,
+        orgId,
+        persona,
+        source: 'practice',
+        transcriptHash: hashTranscript(transcript),
+        scoringVersion: SCORING_VERSION,
+        modelId: SCORING_MODEL_ID,
+        criteriaSnapshot: criteria,
+        criteriaFingerprint: fingerprintCriteria(criteria),
+        finalScore: weightedScore,
+        procurementScore: analyst.procurementScore,
+        enablementScore: analyst.enablementScore,
+        dimensions: analyst.dimensions,
+        grade: executiveSummary.grade,
+        status: 'ready',
+        createdAt: new Date().toISOString(),
+        consumedAt: null,
+      }
+      const db = await getDb()
+      await db.collection('scoreResults').insertOne(scoreResult)
+      scoreResultId = scoreResult.id
+    } catch (shadowWriteError) {
+      console.error('Canonical scoreResult shadow write failed, continuing without scoreResultId:', shadowWriteError)
+    }
+
     return handleCORS(NextResponse.json({
       procurementScore: analyst.procurementScore,
       enablementScore: analyst.enablementScore,
@@ -2108,7 +2141,8 @@ if (route === '/boardroom' && method === 'POST') {
       // this org's saved criteria or the default fallback.
       criteriaSource,
       orgIdReceived,
-      analysts: executiveSummary.analysts
+      analysts: executiveSummary.analysts,
+      ...(scoreResultId ? { scoreResultId } : {})
     }))
 
   } catch (error) {
