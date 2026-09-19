@@ -1199,12 +1199,11 @@ Evaluate the sales rep's performance and return JSON with:
         }
 
         const hasScoreResultId = Object.prototype.hasOwnProperty.call(body, 'scoreResultId')
-        let canonicalScoreResult = null
 
         if (hasScoreResultId) {
-          // Presence of scoreResultId selects the canonical path. Any malformed,
-          // missing, mismatched, or unreadable canonical claim is rejected/fails
-          // closed — it must never silently downgrade to the weaker legacy path.
+          // Presence of scoreResultId selects the canonical path. PR4 consumes
+          // the scoreResult and creates its session in one Mongo transaction so
+          // neither side can commit without the other.
           if (typeof body.scoreResultId !== 'string' || !uuidValidate(body.scoreResultId)) {
             console.warn('Rejected canonical session save — malformed scoreResultId', {
               userEmail: authedUser.email
@@ -1214,34 +1213,127 @@ Evaluate the sales rep's performance and return JSON with:
             ))
           }
 
+          const db = await getDb()
+          const transactionSession = cachedClient.startSession()
+          let canonicalSession = null
+
           try {
-            const db = await getDb()
-            canonicalScoreResult = await db.collection('scoreResults').findOne({ id: body.scoreResultId })
-          } catch (scoreResultLookupError) {
-            console.error('Canonical scoreResult lookup failed:', scoreResultLookupError)
-            return handleCORS(NextResponse.json(
-              { error: "Failed to validate score result." }, { status: 500 }
-            ))
-          }
+            await transactionSession.withTransaction(async () => {
+              const scoreResults = db.collection('scoreResults')
+              const sessions = db.collection('sessions')
+              const scoreResult = await scoreResults.findOne(
+                { id: body.scoreResultId },
+                { session: transactionSession }
+              )
 
-          let canonicalRejectReason = null
-          if (!canonicalScoreResult) canonicalRejectReason = 'not_found'
-          else if (canonicalScoreResult.status !== 'ready') canonicalRejectReason = 'status_not_ready'
-          else if (canonicalScoreResult.userEmail !== authedUser.email) canonicalRejectReason = 'user_mismatch'
-          else if (canonicalScoreResult.orgId !== orgId) canonicalRejectReason = 'org_mismatch'
-          else if (canonicalScoreResult.persona !== body.persona) canonicalRejectReason = 'persona_mismatch'
-          else if (hashTranscript(rawTranscript) !== canonicalScoreResult.transcriptHash) canonicalRejectReason = 'transcript_hash_mismatch'
+              let canonicalRejectReason = null
+              if (!scoreResult) canonicalRejectReason = 'not_found'
+              else if (scoreResult.userEmail !== authedUser.email) canonicalRejectReason = 'user_mismatch'
+              else if (scoreResult.orgId !== orgId) canonicalRejectReason = 'org_mismatch'
+              else if (scoreResult.persona !== body.persona) canonicalRejectReason = 'persona_mismatch'
+              else if (hashTranscript(rawTranscript) !== scoreResult.transcriptHash) canonicalRejectReason = 'transcript_hash_mismatch'
 
-          if (canonicalRejectReason) {
-            // Keep the client response deliberately uniform so callers cannot
-            // probe record existence, ownership, persona, or transcript binding.
-            console.warn('Rejected canonical session save', {
-              userEmail: authedUser.email,
-              reason: canonicalRejectReason
+              if (canonicalRejectReason) {
+                const invalidScoreResultError = new Error('Invalid score result')
+                invalidScoreResultError.code = 'INVALID_SCORE_RESULT'
+                invalidScoreResultError.reason = canonicalRejectReason
+                throw invalidScoreResultError
+              }
+
+              // Idempotent retry: a committed canonical save can be returned as-is.
+              // A consumed scoreResult without its matching session is inconsistent
+              // and must fail closed rather than create a second historical claim.
+              if (scoreResult.status === 'consumed') {
+                const existingSession = await sessions.findOne(
+                  {
+                    scoreResultId: scoreResult.id,
+                    userEmail: authedUser.email,
+                    orgId,
+                    persona: body.persona
+                  },
+                  { session: transactionSession }
+                )
+                if (!existingSession) {
+                  const invalidScoreResultError = new Error('Consumed score result has no matching session')
+                  invalidScoreResultError.code = 'INVALID_SCORE_RESULT'
+                  invalidScoreResultError.reason = 'consumed_without_session'
+                  throw invalidScoreResultError
+                }
+                canonicalSession = existingSession
+                console.info('Canonical session save idempotent retry', {
+                  userEmail: authedUser.email,
+                  scoreResultId: scoreResult.id
+                })
+                return
+              }
+
+              if (scoreResult.status !== 'ready') {
+                const invalidScoreResultError = new Error('Score result is not ready')
+                invalidScoreResultError.code = 'INVALID_SCORE_RESULT'
+                invalidScoreResultError.reason = 'status_not_ready'
+                throw invalidScoreResultError
+              }
+
+              const consumedAt = new Date().toISOString()
+              const session = {
+                id: uuidv4(),
+                userEmail: authedUser.email,
+                orgId,
+                persona: body.persona || '',
+                finalScore: scoreResult.finalScore,
+                verdict: body.scorecard?.verdict || body.verdict || '',
+                mode: body.mode || 'text',
+                hostilityReached: body.hostilityReached || null,
+                nextHostility: body.nextHostility || null,
+                qualificationStatus: body.qualificationStatus || null,
+                grade: scoreResult.grade,
+                procurementScore: scoreResult.procurementScore,
+                enablementScore: scoreResult.enablementScore,
+                dimensions: scoreResult.dimensions,
+                scoreResultId: scoreResult.id,
+                consentGiven: body.consentGiven ?? null,
+                consentTimestamp: body.consentTimestamp ?? null,
+                createdAt: consumedAt
+              }
+
+              await sessions.insertOne(session, { session: transactionSession })
+              const consumeResult = await scoreResults.updateOne(
+                { id: scoreResult.id, status: 'ready' },
+                { $set: { status: 'consumed', consumedAt } },
+                { session: transactionSession }
+              )
+              if (consumeResult.modifiedCount !== 1) {
+                throw new Error('Canonical scoreResult consumption lost atomic claim')
+              }
+
+              canonicalSession = session
             })
+
+            console.info('Canonical session save committed', {
+              userEmail: authedUser.email,
+              scoreResultId: body.scoreResultId,
+              sessionId: canonicalSession?.id
+            })
+            return handleCORS(NextResponse.json(canonicalSession))
+          } catch (canonicalSaveError) {
+            if (canonicalSaveError.code === 'INVALID_SCORE_RESULT') {
+              console.warn('Rejected canonical session save', {
+                userEmail: authedUser.email,
+                reason: canonicalSaveError.reason
+              })
+              return handleCORS(NextResponse.json(
+                { error: "Invalid score result." }, { status: 400 }
+              ))
+            }
+
+            // Canonical claims fail closed on infrastructure/transaction errors.
+            // The legacy path is intentionally not used as a fallback.
+            console.error('Canonical session transaction failed:', canonicalSaveError)
             return handleCORS(NextResponse.json(
-              { error: "Invalid score result." }, { status: 400 }
+              { error: "Failed to save session." }, { status: 500 }
             ))
+          } finally {
+            await transactionSession.endSession()
           }
         } else {
           // Legacy compatibility path: unchanged score-forgery guard for coach
@@ -1276,17 +1368,16 @@ Evaluate the sales rep's performance and return JSON with:
   userEmail: authedUser.email,
   orgId,
   persona: body.persona || '',
-  finalScore: canonicalScoreResult ? canonicalScoreResult.finalScore : (body.finalScore || 0),
+  finalScore: body.finalScore || 0,
   verdict: body.scorecard?.verdict || body.verdict || '',
   mode: body.mode || 'text',
   hostilityReached: body.hostilityReached || null,
   nextHostility: body.nextHostility || null,
   qualificationStatus: body.qualificationStatus || null,
-  grade: canonicalScoreResult ? canonicalScoreResult.grade : (body.grade || null),
-  procurementScore: canonicalScoreResult ? canonicalScoreResult.procurementScore : (body.procurementScore || null),
-  enablementScore: canonicalScoreResult ? canonicalScoreResult.enablementScore : (body.enablementScore || null),
-  dimensions: canonicalScoreResult ? canonicalScoreResult.dimensions : (body.dimensions || null),
-  ...(canonicalScoreResult ? { scoreResultId: canonicalScoreResult.id } : {}),
+  grade: body.grade || null,
+  procurementScore: body.procurementScore || null,
+  enablementScore: body.enablementScore || null,
+  dimensions: body.dimensions || null,
   consentGiven: body.consentGiven ?? null,
   consentTimestamp: body.consentTimestamp ?? null,
   createdAt: new Date().toISOString()

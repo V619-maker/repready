@@ -1,4 +1,4 @@
-# Canonical Evaluation — Foundation Spec
+# Canonical Evaluation — Migration Spec
 
 ## Scope of PR1
 
@@ -45,6 +45,15 @@ A future server-owned score result is expected to contain:
 ```
 
 The persisted shape may be refined before the shadow-write PR.
+
+## Implementation status through PR4
+
+- **PR1:** deterministic transcript/criteria provenance helpers and architecture contract.
+- **PR2:** best-effort `scoreResults` shadow write after both boardroom Gemini calls succeed; raw practice transcript remains non-persisted.
+- **PR3:** dual-path session finalization. A supplied valid `scoreResultId` makes server-owned canonical scoring fields authoritative; absent IDs retain the legacy Gemini verification path; invalid supplied IDs never downgrade.
+- **PR4:** canonical session creation and `ready -> consumed` lifecycle transition occur in one Mongo transaction. A retry of an already-consumed scoreResult returns its existing matching session instead of creating a duplicate. Canonical infrastructure/transaction failures fail closed. The deck checks the session-save HTTP response, surfaces persistence failure separately from scoring failure, and retains the exact request payload for an explicit retry.
+
+PR4 does not remove the legacy compatibility path, alter scoring prompts/formulas, migrate real calls, change tenancy, or persist raw practice transcripts.
 
 ## Current trust boundary — characterization
 
