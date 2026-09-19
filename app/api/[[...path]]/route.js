@@ -7,7 +7,7 @@ import { MongoClient } from 'mongodb'
 import { clerkClient } from '@clerk/nextjs/server'
 import { getAuthedEmail, getAuthedUser } from '@/lib/auth'
 import { splitTranscriptIntoTurns, validateEvidence } from '@/lib/evidenceValidation.mjs'
-import { hashTranscript, fingerprintCriteria, SCORING_VERSION, SCORING_MODEL_ID } from '@/lib/canonicalEvaluation.mjs'
+import { hashTranscript, fingerprintCriteria, SCORING_VERSION, SCORING_MODEL_ID, EVALUATION_SOURCE_PRACTICE } from '@/lib/canonicalEvaluation.mjs'
 
 let cachedClient = null
 async function getDb() {
@@ -1228,6 +1228,7 @@ Evaluate the sales rep's performance and return JSON with:
 
               let canonicalRejectReason = null
               if (!scoreResult) canonicalRejectReason = 'not_found'
+              else if (scoreResult.source !== EVALUATION_SOURCE_PRACTICE) canonicalRejectReason = 'source_mismatch'
               else if (scoreResult.userEmail !== authedUser.email) canonicalRejectReason = 'user_mismatch'
               else if (scoreResult.orgId !== orgId) canonicalRejectReason = 'org_mismatch'
               else if (scoreResult.persona !== body.persona) canonicalRejectReason = 'persona_mismatch'
@@ -2243,7 +2244,7 @@ if (route === '/boardroom' && method === 'POST') {
         userEmail: authedUser.email,
         orgId,
         persona,
-        source: 'practice',
+        source: EVALUATION_SOURCE_PRACTICE,
         transcriptHash: hashTranscript(transcript),
         scoringVersion: SCORING_VERSION,
         modelId: SCORING_MODEL_ID,
