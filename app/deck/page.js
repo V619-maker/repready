@@ -300,6 +300,7 @@ let boardroomDimensions = null;
 let boardroomGrade = null;
 let boardroomProcurementScore = null;
 let boardroomEnablementScore = null;
+let boardroomScoreResultId = null;
 
     try {
       const realTranscript = transcriptRef.current.join('\n\n');
@@ -325,6 +326,7 @@ let boardroomEnablementScore = null;
   boardroomGrade = boardroomData.grade || null;
   boardroomProcurementScore = boardroomData.procurementScore || null;
   boardroomEnablementScore = boardroomData.enablementScore || null;
+  boardroomScoreResultId = boardroomData.scoreResultId || null;
 
   localStorage.setItem('repready_latest_debrief', JSON.stringify(boardroomData));
   localStorage.setItem('repready_debrief_type', 'boardroom');
@@ -392,6 +394,7 @@ let boardroomEnablementScore = null;
   procurementScore: boardroomProcurementScore,
   enablementScore: boardroomEnablementScore,
   dimensions: boardroomDimensions,
+  ...(boardroomScoreResultId ? { scoreResultId: boardroomScoreResultId } : {}),
   consentGiven,
   consentTimestamp
 })
