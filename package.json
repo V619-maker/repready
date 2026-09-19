@@ -8,7 +8,7 @@
         "dev:webpack": "next dev --hostname 0.0.0.0 --port 3000",
         "build": "next build",
         "start": "next start",
-        "test": "node lib/evidenceValidation.test.mjs"
+        "test": "node lib/evidenceValidation.test.mjs && node lib/canonicalEvaluation.test.mjs"
     },
     "dependencies": {
         "@ai-sdk/google": "^0.0.52",
