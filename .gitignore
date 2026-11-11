@@ -48,6 +48,10 @@ next-env.d.ts
 # Test results
 test_result.md
 
+# Ad-hoc research notes/reports (not application code or product docs)
+/research_notes/
+/reports/
+
 # Logs
 logs/
 *.log
