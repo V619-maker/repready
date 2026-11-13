@@ -351,6 +351,7 @@ This is `DEFAULT_CRITERIA` in `app/api/[[...path]]/route.js` — used automatica
 
 | Sprint | Status | Notes |
 |---|---|---|
+| Sprint 56 — "Practice this next" | 🔄 PR | `/coach` shows the lowest-scored skill from the latest boardroom debrief (computed client-side from existing `criteria`/`dimensions`) with a START NEXT CALL button -> `/deck?agent=<id>&focus=<skill>`. `/deck` pre-selects that persona and shows a "Focus this call" reminder; the rep still presses INITIATE LINK (consent/credit checks unchanged). New localStorage key `repready_latest_agent`. Hidden for no-speech sessions and coach-fallback debriefs. **No scoring, prompt, schema, API or ElevenLabs agent changes.** |
 | Sprint 52 — Canonical Evaluation foundation PR1 | 🔄 PR | Foundation only: `lib/canonicalEvaluation.mjs` adds exact-transcript SHA-256 binding plus ordered `key`/`name`/`description` criteria fingerprinting and explicit scoring/model/source constants; new plain-Node tests + ADR/spec. **Production behavior change: none.** No Mongo `scoreResults` writes, API/deck changes, second-Gemini removal, coach/real-call changes, transcript persistence, or historical rewrite in this PR. |
 | Sprint 1 — Core journey | ✅ Complete | Landing → /deck → voice → /coach working |
 | Sprint 2 — Dynamic hostility | ✅ Complete | Hostility passes to Richard via ElevenLabs dynamic variables |
