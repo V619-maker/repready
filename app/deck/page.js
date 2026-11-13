@@ -56,6 +56,7 @@ function RepReadyDashboard() {
   const userEmail = user?.primaryEmailAddress?.emailAddress || '';
 
   const [activeAgent, setActiveAgent] = useState(null);
+  const [noSpeechDetected, setNoSpeechDetected] = useState(false);
   const [showAudit, setShowAudit] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [timeLeft, setTimeLeft] = useState(TRIAL_TIME_LIMIT);
@@ -345,6 +346,7 @@ function RepReadyDashboard() {
 
   const handleTerminate = async () => {
     setIsAnalyzing(true);
+    setNoSpeechDetected(false);
     setScoringFailed(false);
     setSessionSaveFailed(false);
     pendingSessionSaveRef.current = null;
@@ -362,6 +364,25 @@ let boardroomScoreResultId = null;
 
     try {
       const realTranscript = transcriptRef.current.join('\n\n');
+
+      // No rep speech => nothing to evaluate. Do not call the scorer, save a
+      // session, or touch the stored debrief/best score (a silent call used to
+      // be scored 10 and shown as a "New Personal Best"). The credit was
+      // already deducted at call start; that behavior is unchanged.
+      const repSpoke = transcriptRef.current.some((line) => /^Rep:\s*\S/.test(line));
+      if (!repSpoke) {
+        setNoSpeechDetected(true);
+        setRecentScore(0);
+        setQualificationStatus(null);
+        transcriptRef.current = [];
+        await minLoadingTime;
+        setIsAnalyzing(false);
+        setActiveAgent(null);
+        setShowAudit(true);
+        setConsentGiven(false);
+        setConsentChecked(false);
+        return;
+      }
       const finalTranscript = realTranscript.trim() ? realTranscript : "No words were spoken during the simulation.";
       const persona = PERSONA_MAP[currentAgent];
 
@@ -830,6 +851,11 @@ let boardroomScoreResultId = null;
               <p className={`text-7xl font-bold italic tracking-tighter ${cutOff ? 'text-red-500' : 'text-[#22D3EE]'}`}>
                 {recentScore > 0 ? recentScore : '—'}
               </p>
+              {noSpeechDetected && (
+                <p className="text-amber-400 text-[10px] uppercase tracking-widest mt-4 leading-relaxed">
+                  No speech detected, so this call was not scored or saved. Check your microphone and try again.
+                </p>
+              )}
               {scoringFailed && (
                 <p className="text-red-500 text-[9px] uppercase tracking-widest mt-4">Scoring failed — check connection and try again</p>
               )}
@@ -845,7 +871,7 @@ let boardroomScoreResultId = null;
                   </button>
                 </div>
               )}
-              {recentScore >= (bestScores[activeAgent] || 0) && recentScore > 0 && !cutOff && (
+              {!noSpeechDetected && recentScore >= (bestScores[activeAgent] || 0) && recentScore > 0 && !cutOff && (
                 <p className="text-green-400 text-[9px] uppercase tracking-widest mt-4 animate-pulse">New Personal Best!</p>
               )}
             </div>
@@ -857,11 +883,13 @@ let boardroomScoreResultId = null;
               </div>
             )}
             <div className="flex gap-4">
+              {!noSpeechDetected && (
               <Link href="/coach" className="flex-1">
                 <button className={`w-full py-4 font-bold uppercase tracking-[0.2em] text-[10px] transition-all ${cutOff ? 'bg-red-500 text-white hover:bg-red-400' : 'bg-[#22D3EE] text-black hover:bg-white'}`}>
                   ANALYZE WITH COACH
                 </button>
               </Link>
+              )}
               <button
                 onClick={() => setShowAudit(false)}
                 className="flex-1 py-4 border border-white/10 text-white font-bold uppercase tracking-[0.2em] text-[10px] hover:bg-white/5 transition-all"
