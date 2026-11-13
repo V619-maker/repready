@@ -98,6 +98,23 @@ export default function CoachDashboard() {
 
   const isBoardroom = debriefType === 'boardroom';
 
+  // Weakest scored skill, only when the call had real speech and the agent
+  // for this debrief is known. Ties go to the first criterion listed.
+  let practiceNext = null;
+  const latestAgent = typeof window !== 'undefined' ? localStorage.getItem('repready_latest_agent') : null;
+  if (isBoardroom && debrief && debrief.dimensions && latestAgent && transcript && !transcript.startsWith('No words were spoken')) {
+    const scored = (debrief.criteria || [])
+      .map(c => ({ name: c.name, score: Number(debrief.dimensions[c.key]) }))
+      .filter(c => Number.isFinite(c.score));
+    if (scored.length > 0) {
+      const weakest = scored.reduce((lo, c) => (c.score < lo.score ? c : lo));
+      practiceNext = {
+        ...weakest,
+        href: `/deck?agent=${encodeURIComponent(latestAgent)}&focus=${encodeURIComponent(weakest.name)}`
+      };
+    }
+  }
+
   return (
     <div className="w-full min-h-screen bg-[#050505] text-zinc-300 font-mono p-4 md:p-10 relative">
       <div className="absolute inset-0 opacity-5 pointer-events-none" style={{ backgroundImage: 'linear-gradient(#22D3EE 1px, transparent 1px), linear-gradient(90deg, #22D3EE 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
@@ -225,6 +242,23 @@ export default function CoachDashboard() {
                     </p>
                   )}
                 </div>
+
+                {/* Practice this next: aims the next call at the weakest scored skill */}
+                {isBoardroom && practiceNext && (
+                  <div className="border border-amber-400/30 bg-amber-400/5 p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div>
+                      <h3 className="text-amber-400 text-[10px] font-bold uppercase tracking-[0.2em] mb-2">Practice this next</h3>
+                      <p className="text-sm text-zinc-300 leading-relaxed">
+                        Your lowest skill this call was <span className="text-white font-bold">{practiceNext.name}</span> ({practiceNext.score}/100). Run another call and work on just that.
+                      </p>
+                    </div>
+                    <Link href={practiceNext.href}>
+                      <button className="px-6 py-3 bg-amber-400 text-black text-[10px] font-bold uppercase tracking-[0.2em] hover:bg-white transition-all whitespace-nowrap">
+                        START NEXT CALL
+                      </button>
+                    </Link>
+                  </div>
+                )}
 
                 {/* Skill Matrix — dimensions scored on this org's current criteria */}
                 {isBoardroom && debrief.dimensions && (

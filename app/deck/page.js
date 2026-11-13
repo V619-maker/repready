@@ -225,6 +225,26 @@ function RepReadyDashboard() {
     }
   }, [activeAgent]);
 
+  // "Practice this next" (from /coach): /deck?agent=<id>&focus=<skill name>
+  // opens that persona's call screen directly. It only pre-selects the
+  // persona and shows a reminder of the skill to work on; the rep still
+  // presses INITIATE LINK, so consent and credit checks are unchanged.
+  const [practiceFocus, setPracticeFocus] = useState(null);
+  const autoSelectDoneRef = useRef(false);
+
+  useEffect(() => {
+    if (autoSelectDoneRef.current || !isLoaded || typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const agentParam = params.get('agent');
+    if (!agentParam) return;
+    autoSelectDoneRef.current = true;
+    if (!PERSONA_MAP[agentParam]) return;
+    const focusParam = (params.get('focus') || '').slice(0, 60);
+    if (focusParam) setPracticeFocus(focusParam);
+    handleSelectPersona(agentParam);
+    window.history.replaceState(null, '', '/deck');
+  }, [isLoaded]);
+
   const handleStartCall = async () => {
     setIsVerifying(true);
     setCreditsDepleted(false);
@@ -368,6 +388,7 @@ let boardroomScoreResultId = null;
 
   localStorage.setItem('repready_latest_debrief', JSON.stringify(boardroomData));
   localStorage.setItem('repready_debrief_type', 'boardroom');
+  localStorage.setItem('repready_latest_agent', currentAgent);
   localStorage.setItem('repready_latest_transcript', finalTranscript);
   debriefSaved = true;
 }
@@ -395,6 +416,7 @@ let boardroomScoreResultId = null;
 
             localStorage.setItem('repready_latest_debrief', cleanJson);
             localStorage.setItem('repready_debrief_type', 'coach');
+            localStorage.setItem('repready_latest_agent', currentAgent);
             localStorage.setItem('repready_latest_transcript', finalTranscript);
             debriefSaved = true;
           }
@@ -720,6 +742,12 @@ let boardroomScoreResultId = null;
                 </div>
               </div>
             </div>
+
+            {practiceFocus && conversation.status !== 'connected' && (
+              <div className="px-6 py-3 border-t border-amber-400/30 bg-amber-400/5 text-amber-400 text-[10px] uppercase tracking-[0.2em]">
+                Focus this call: {practiceFocus}
+              </div>
+            )}
 
             <div className="flex justify-between items-center p-6 border-t border-cyan-500/30 bg-cyan-950/10">
               <div className="flex gap-4">
