@@ -8,7 +8,7 @@ import Link from 'next/link';
 // sibling — null for legacy debriefs (pre-Sprint-51) and for anything that
 // failed validation server-side. Same fallback in both cases: render the
 // plain string exactly as this page always has.
-function CoachingField({ text, evidence, accentClass }) {
+function CoachingField({ text, evidence, accentClass, betterLabel = 'Try instead:' }) {
   if (!evidence) {
     return <p className="text-sm text-zinc-400 leading-relaxed">{text || "—"}</p>
   }
@@ -21,7 +21,7 @@ function CoachingField({ text, evidence, accentClass }) {
       <p className="text-xs text-zinc-500 leading-relaxed">{evidence.gap}</p>
       {evidence.betterResponse && (
         <p className="text-xs text-zinc-300 leading-relaxed">
-          <span className="text-zinc-500 uppercase tracking-widest text-[9px] mr-2">Try instead:</span>
+          <span className="text-zinc-500 uppercase tracking-widest text-[9px] mr-2">{betterLabel}</span>
           {evidence.betterResponse}
         </p>
       )}
@@ -198,7 +198,7 @@ export default function CoachDashboard() {
                     <div className="border border-green-500/20 bg-green-950/5 p-6">
                       <h3 className="text-green-400 text-[10px] font-bold uppercase tracking-[0.2em] mb-4">What You Did Right</h3>
                       <div className="border-l border-green-500/30 pl-3">
-                        <CoachingField text={debrief.whatYouDidRight} evidence={debrief.whatYouDidRightEvidence} accentClass="border-green-500/40" />
+                        <CoachingField text={debrief.whatYouDidRight} evidence={debrief.whatYouDidRightEvidence} accentClass="border-green-500/40" betterLabel="Push it further:" />
                       </div>
                     </div>
                     <div className="border border-red-500/20 bg-red-950/5 p-6">
