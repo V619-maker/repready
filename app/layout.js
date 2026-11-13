@@ -46,7 +46,7 @@ export default function RootLayout({ children }) {
                   { "@type": "Question", "name": "Who is RepReady built for?", "acceptedAnswer": { "@type": "Answer", "text": "RepReady is built for B2B sales teams of 5 or more — SDRs, AEs, and the managers who run them. If your team loses deals on objections, pricing pressure, or procurement pushback, RepReady is built for you." } },
                   { "@type": "Question", "name": "How is this different from traditional sales training or roleplay?", "acceptedAnswer": { "@type": "Answer", "text": "Traditional training is episodic. RepReady is always-on. Your reps get hostile AI buyers available 24/7, scored sessions, and a coaching debrief after every call. No scheduling, no bias, no holding back." } },
                   { "@type": "Question", "name": "How quickly can my team get started?", "acceptedAnswer": { "@type": "Answer", "text": "Your team can run their first simulation in under 10 minutes. No integration required, no IT dependency. Sign up, pick a scenario, and go." } },
-                  { "@type": "Question", "name": "How does RepReady pricing work?", "acceptedAnswer": { "@type": "Answer", "text": "RepReady pricing is published in Indian rupees per user per month: Starter ₹2,499 (up to 5 reps), Growth ₹1,999 (6-20 reps) and Scale ₹1,499 (21-100 reps), with about 20% off on annual billing. Enterprise pricing is custom for teams of 100+ reps or regulated industries such as BFSI." } },
+                  { "@type": "Question", "name": "How does RepReady pricing work?", "acceptedAnswer": { "@type": "Answer", "text": "RepReady starts at $49/seat/month with a 5-seat minimum. Volume discounts apply at 15+ seats." } },
                   { "@type": "Question", "name": "What sales scenarios are available right now?", "acceptedAnswer": { "@type": "Answer", "text": "RepReady has four AI buyer personas today: Richard (VP Procurement at a logistics firm), Sandra (IT Director at a financial firm), Priya Malhotra (VP Procurement at an Indian NBFC) and Rakesh Iyer (AVP Digital Transformation at an Indian insurer). The buyer gets harder as your scores improve." } },
                   { "@type": "Question", "name": "Is our data private and secure?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. All session data is encrypted in transit and at rest. Your team's recordings and coaching data are never used to train AI models without your explicit written consent." } }
                 ]
@@ -63,7 +63,7 @@ export default function RootLayout({ children }) {
                 "applicationCategory": "BusinessApplication",
                 "description": "AI-powered B2B sales negotiation simulator with voice personas, real-time coaching, and deal health scoring.",
                 "url": "https://repready.site",
-                "offers": { "@type": "AggregateOffer", "lowPrice": "1499", "highPrice": "2499", "priceCurrency": "INR", "offerCount": "3" }
+                "offers": { "@type": "Offer", "price": "49", "priceCurrency": "USD" }
               })
             }}
           />
