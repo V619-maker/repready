@@ -199,7 +199,7 @@ async function generateExecutiveSummary(analyst, weightedScore, criteria, transc
     turnIndex: z.number().int().min(0).describe("0-based index of the transcript turn (from the numbered list) this evidence is quoted from — must match one of the [N] markers shown"),
     quote: z.string().describe("The exact text quoted verbatim from that transcript turn. Copy it precisely — do not paraphrase, summarize, or invent it"),
     gap: z.string().describe("1-2 sentences explaining the specific gap (for a mistake) or strength (for a success) this exact quote demonstrates"),
-    betterResponse: z.string().describe("A concrete, specific alternative response the rep could have said instead at that point in the call"),
+    betterResponse: z.string().describe("The exact words the rep should say aloud at that point: first person, 1-3 spoken sentences, max 45 words, built from specifics the buyer actually said. Not advice about what to do — a line they can read out"),
   })
 
   const ExecutiveSchema = z.object({
@@ -241,7 +241,16 @@ Grade scale: A=90+, B=75-89, C=60-74, D=45-59, F=below 45
 
 Write a crisp executive summary. Each feedback field must be under 20 words. Be direct, not motivational. This is enterprise-grade feedback.
 
-For whatYouDidRight, whatYouDidWrong, and oneThingToFixNext, also cite the specific transcript turn that best supports it: its exact [N] index, the exact quote from that turn copied verbatim (not paraphrased), a short explanation of the gap or strength it shows, and a concrete better response.`,
+For whatYouDidRight, whatYouDidWrong, and oneThingToFixNext, also cite the specific transcript turn that best supports it: its exact [N] index, the exact quote from that turn copied verbatim (not paraphrased), a short explanation of the gap or strength it shows, and a betterResponse.
+
+Rules for every betterResponse (this is the part reps act on, so be strict):
+1. It is a script line, not advice. Write the exact words the rep would say aloud, in first person, 1-3 short spoken sentences, max 45 words. Wrong: "Ask about their budget process." Right: "Before I move on the price, what does your finance team need to see to approve a number like this?"
+2. Before writing it, re-read the buyer's turn(s) just before the cited turn. Use at least one concrete detail the buyer actually said (a number, system, deadline, name, objection or constraint). Never invent facts, figures or product features that are not in the transcript.
+3. Do not repeat a move the rep already made anywhere in the transcript, and do not ask something the buyer has already answered. If the rep already tried it and it failed, give a different move.
+4. Avoid empty phrases such as "open-ended questions", "build rapport", "pain points", "value proposition", "active listening". Name the specific move instead (for example: a give-and-get trade, a question about who signs off, a reply that restates the buyer's own number).
+5. On price, never offer a bare concession. Tie any movement to something the buyer gives in return (term length, volume, payment timing, a reference).
+6. For whatYouDidRight, betterResponse shows how to push the same strong move one step further, in the same spoken style.
+7. Cite three different turns where the transcript allows. The oneThingToFixNext line must be something the rep can do on the very next call, not a repeat of whatYouDidWrong.`,
   })
 
   return {
