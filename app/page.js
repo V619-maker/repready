@@ -210,7 +210,6 @@ function ChromeFrame({ label, children }) {
 /* ---------- page ---------- */
 
 export default function Home() {
-  const [annual, setAnnual] = useState(false);
   const heroBlobRef = useRef(null);
 
   useRevealOnScroll();
@@ -235,10 +234,8 @@ export default function Home() {
   ];
 
   const plans = [
-    { name: 'Starter', monthly: 2499, annualPrice: 1999, badge: null, features: ['Up to 5 reps', '2 personas', 'Boardroom scoring', 'Email support'], cta: 'Get Started →', href: '/sign-in' },
-    { name: 'Growth', monthly: 1999, annualPrice: 1599, badge: 'MOST POPULAR', features: ['6-20 reps', 'All personas', '6-dimension matrix', 'Manager dashboard', 'Priority support'], cta: 'Get Started →', href: '/sign-in' },
-    { name: 'Scale', monthly: 1499, annualPrice: 1199, badge: null, features: ['21-100 reps', 'Everything in Growth', 'Qualification tracking', 'Slack reports'], cta: 'Get Started →', href: '/sign-in' },
-    { name: 'Enterprise', monthly: null, annualPrice: null, badge: null, features: ['100+ reps or BFSI/regulated industries', 'Custom personas', 'Compliance docs', 'Dedicated onboarding'], cta: 'Book a Call →', href: BOOK_DEMO_URL },
+    { name: 'Team', price: 49, badge: 'MOST POPULAR', features: ['$49 per seat per month', '5-seat minimum', 'Volume discounts at 15+ seats', 'All 4 buyer personas', 'Boardroom scoring', '6-dimension skill matrix', 'Manager dashboard'], cta: 'Get Started →', href: '/sign-in' },
+    { name: 'Enterprise', price: null, badge: null, features: ['100+ reps or BFSI/regulated industries', 'Custom personas', 'Compliance docs', 'Dedicated onboarding'], cta: 'Book a Call →', href: BOOK_DEMO_URL },
   ];
 
   const badRepLines = [
@@ -466,20 +463,10 @@ export default function Home() {
             <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 'clamp(26px, 4vw, 44px)', fontWeight: 600, color: INK, marginBottom: 12 }}>Transparent pricing. No surprises.</h2>
             <p style={{ fontSize: 14, color: STONE }}>Unlike US competitors, we show you the number.</p>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, margin: '32px 0 64px' }}>
-            <span style={{ fontSize: 12, color: annual ? STONE : INK, fontWeight: 700 }}>Monthly</span>
-            <button
-              onClick={() => setAnnual((a) => !a)}
-              aria-label="Toggle annual billing"
-              style={{ width: 44, height: 24, borderRadius: 12, border: `1px solid ${NAVY}`, background: annual ? NAVY : 'transparent', position: 'relative', cursor: 'pointer', padding: 0 }}
-            >
-              <span style={{ position: 'absolute', top: 2, left: annual ? 22 : 2, width: 18, height: 18, borderRadius: '50%', background: annual ? CREAM : NAVY, transition: 'left 0.25s ease' }} />
-            </button>
-            <span style={{ fontSize: 12, color: annual ? INK : STONE, fontWeight: 700 }}>Annual <span style={{ color: NAVY }}>(Save 20%)</span></span>
-          </div>
-          <div className="rr-grid-4" style={{ gap: 24 }}>
+          <div style={{ height: 40 }} />
+          <div className="rr-grid-2" style={{ gap: 24, maxWidth: 780, margin: '0 auto' }}>
             {plans.map((plan) => {
-              const price = plan.monthly === null ? null : (annual ? plan.annualPrice : plan.monthly);
+              const price = plan.price;
               return (
                 <div key={plan.name} className="rr-card-hover" style={{ position: 'relative', border: `1px solid ${plan.badge ? NAVY : BORDER}`, background: '#fff', padding: plan.badge ? 34 : 28, boxShadow: plan.badge ? '0 20px 50px rgba(27,42,74,0.14)' : 'none' }}>
                   {plan.badge && (
@@ -491,8 +478,8 @@ export default function Home() {
                       <span style={{ fontFamily: FONT_DISPLAY, fontSize: 22, fontWeight: 600, color: INK }}>Custom pricing</span>
                     ) : (
                       <>
-                        <span style={{ fontFamily: FONT_DISPLAY, fontSize: 28, fontWeight: 600, color: INK }}>₹{price.toLocaleString('en-IN')}</span>
-                        <span style={{ fontSize: 11, color: STONE }}>/user/mo</span>
+                        <span style={{ fontFamily: FONT_DISPLAY, fontSize: 28, fontWeight: 600, color: INK }}>${price}</span>
+                        <span style={{ fontSize: 11, color: STONE }}>/seat/mo</span>
                       </>
                     )}
                   </div>
