@@ -186,6 +186,27 @@ export default function DashboardPage() {
     }
   }
 
+  const [switchSaving, setSwitchSaving] = useState(false)
+
+  async function setUseInCalls(enabled) {
+    setSwitchSaving(true)
+    setDocsError('')
+    try {
+      const res = await fetch('/api/product-docs/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled })
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to save the setting.')
+      await loadProductDocs()
+    } catch (e) {
+      setDocsError(e.message)
+    } finally {
+      setSwitchSaving(false)
+    }
+  }
+
   async function deleteProductDoc(id) {
     setDocDeletingId(id)
     setDocsError('')
@@ -568,9 +589,34 @@ export default function DashboardPage() {
               {docsMeta.workspaceKind === 'company' ? ` (everyone signed in with an @${docsMeta.workspaceLabel} email belongs to it; only managers can add or delete).` : '.'}
               {' '}You can delete a document at any time and it is removed from our database.
             </p>
-            <p style={{ fontSize: 11, color: '#f5a623', marginBottom: 20 }}>
-              Stored privately, but the AI buyer does not use these yet. Using them will send the text to our AI providers (Google for scoring, ElevenLabs for voice); we will say so here before that is switched on.
-            </p>
+            <div style={{ border: '1px solid rgba(245,166,35,0.35)', padding: 14, marginBottom: 20 }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.15em', color: '#f5a623', marginBottom: 8 }}>
+                USE IN PRACTICE CALLS: {docsMeta.useInPracticeCalls ? 'ON' : 'OFF'}
+              </div>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, marginBottom: 12 }}>
+                When this is on, the AI buyer in practice calls knows your products and asks about them. To do that, the text of your documents
+                (newest first, up to about 12,000 characters) is sent to ElevenLabs, our voice provider, at the start of each call. ElevenLabs
+                processes it outside India. Everyone in your workspace who practises receives it in their browser during the call. It is not
+                sent to the scoring AI. Turning this off stops all future sending. Deleting a document removes it from our database;
+                copies already sent during calls follow ElevenLabs' retention, and we delete call records after 90 days.
+              </p>
+              <button
+                onClick={() => setUseInCalls(!docsMeta.useInPracticeCalls)}
+                disabled={switchSaving || (!docsMeta.useInPracticeCalls && docsMeta.docs.length === 0)}
+                style={{
+                  fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace',
+                  background: docsMeta.useInPracticeCalls ? 'transparent' : '#f5a623',
+                  border: '1px solid #f5a623',
+                  color: docsMeta.useInPracticeCalls ? '#f5a623' : '#0a0d14',
+                  padding: '8px 14px', cursor: switchSaving ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {switchSaving ? 'SAVING…' : docsMeta.useInPracticeCalls ? 'TURN OFF' : 'I UNDERSTAND, TURN ON'}
+              </button>
+              {!docsMeta.useInPracticeCalls && docsMeta.docs.length === 0 && (
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginLeft: 12 }}>Add a document first.</span>
+              )}
+            </div>
             {docsError && <p style={{ color: '#e84545', fontSize: 12, marginBottom: 12 }}>{docsError}</p>}
             {docsMeta.docs.length === 0 ? (
               <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, marginBottom: 16 }}>No documents yet.</p>

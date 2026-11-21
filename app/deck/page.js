@@ -295,6 +295,28 @@ function RepReadyDashboard() {
         }
       }
 
+      // Product reference (only when a manager opted in; see /api/product-context).
+      // Always passed - a fixed "none" string when off or on any failure - so an
+      // agent prompt that mentions {{product_context}} never sees an unset variable.
+      dynamicVariables.product_context = 'No product reference provided.';
+      if (userEmail) {
+        const ctxController = new AbortController();
+        const ctxTimeout = setTimeout(() => ctxController.abort(), 3000);
+        try {
+          const ctxResponse = await fetch('/api/product-context', { signal: ctxController.signal });
+          if (ctxResponse.ok) {
+            const ctxData = await ctxResponse.json();
+            if (ctxData.enabled === true && typeof ctxData.productContext === 'string' && ctxData.productContext) {
+              dynamicVariables.product_context = ctxData.productContext;
+            }
+          }
+        } catch (ctxError) {
+          console.error("Product context fetch failed:", ctxError);
+        } finally {
+          clearTimeout(ctxTimeout);
+        }
+      }
+
       await conversation.startSession({
         agentId: activeAgent,
         connectionType: "webrtc",
