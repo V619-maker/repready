@@ -360,6 +360,49 @@ export default function DashboardPage() {
     }
   }
 
+  // Assigned practice (manager only; the server re-checks the role).
+  const [asg, setAsg] = useState(null)
+  const [asgForm, setAsgForm] = useState({ title: '', persona: 'richard', focus: '', dueDate: '', minScore: '', assignees: '', note: '' })
+  const [asgBusy, setAsgBusy] = useState(false)
+  const [asgMsg, setAsgMsg] = useState('')
+  const [asgOpen, setAsgOpen] = useState('')
+
+  async function loadAssignments() {
+    try {
+      const r = await fetch('/api/admin/assignments')
+      const j = await r.json()
+      if (r.ok) { setAsg(j); setAsgMsg('') } else { setAsg({ assignments: [] }); setAsgMsg(j.error || '') }
+    } catch (e) { /* leave as is */ }
+  }
+  useEffect(() => {
+    if (!isLoaded || !user || !isManager) return
+    loadAssignments()
+  }, [isLoaded, user, isManager])
+
+  async function createAssignment() {
+    setAsgBusy(true); setAsgMsg('')
+    try {
+      const res = await fetch('/api/admin/assignments', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(asgForm)
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed.')
+      setAsgForm({ title: '', persona: asgForm.persona, focus: '', dueDate: '', minScore: '', assignees: '', note: '' })
+      setAsgMsg('Assigned. Reps will see it on the call-selection screen.')
+      await loadAssignments()
+    } catch (e) { setAsgMsg(e.message) } finally { setAsgBusy(false) }
+  }
+  async function deleteAssignment(id) {
+    setAsgBusy(true); setAsgMsg('')
+    try {
+      const res = await fetch(`/api/admin/assignments?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed.')
+      await loadAssignments()
+    } catch (e) { setAsgMsg(e.message) } finally { setAsgBusy(false) }
+  }
+
   async function deleteProductDoc(id) {
     setDocDeletingId(id)
     setDocsError('')
@@ -1069,6 +1112,81 @@ export default function DashboardPage() {
               </>
             )}
             {gongMsg && <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 10 }}>{gongMsg}</p>}
+          </div>
+          )
+        })()}
+
+        {/* SECTION 11 - Assigned practice (manager-only) */}
+        {isManager && (() => {
+          const inputStyle = { background: '#0a0d14', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontSize: 12, fontFamily: 'monospace', padding: '8px 10px', minWidth: 140 }
+          const STATUS = { done: ['DONE', '#3ecf8e'], done_late: ['DONE LATE', '#f5a623'], attempted: ['TRIED, BELOW TARGET', '#f5a623'], overdue: ['OVERDUE', '#e84545'], pending: ['NOT STARTED', 'rgba(255,255,255,0.4)'] }
+          const NAMES = { richard: 'Richard Vance', sandra: 'Sandra Chen', priya: 'Priya Malhotra', rakesh: 'Rakesh Iyer' }
+          return (
+          <div style={{ background: '#0d1117', border: '1px solid rgba(0,200,224,0.15)', padding: 24, marginBottom: 16 }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>ASSIGNED PRACTICE</div>
+            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6, marginBottom: 12 }}>
+              Ask your reps to practise a specific buyer by a date. A rep counts as done when they finish a call with that buyer after you create the assignment
+              (and score at least the minimum, if you set one). Leave the email box empty to assign everyone who has practised before; list emails to include people who have not started yet.
+              Due dates end at midnight India time.
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+              <input style={{ ...inputStyle, flex: 1, minWidth: 220 }} placeholder="Title, e.g. Hold your price against procurement" value={asgForm.title} onChange={e => setAsgForm(f => ({ ...f, title: e.target.value }))} />
+              <select style={inputStyle} value={asgForm.persona} onChange={e => setAsgForm(f => ({ ...f, persona: e.target.value }))}>
+                {Object.entries(NAMES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+              <select style={inputStyle} value={asgForm.focus} onChange={e => setAsgForm(f => ({ ...f, focus: e.target.value }))}>
+                <option value="">Focus skill (optional)</option>
+                {criteria.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+              </select>
+              <input style={inputStyle} type="date" value={asgForm.dueDate} onChange={e => setAsgForm(f => ({ ...f, dueDate: e.target.value }))} />
+              <input style={{ ...inputStyle, minWidth: 110, width: 110 }} type="number" min="1" max="100" placeholder="Min score" value={asgForm.minScore} onChange={e => setAsgForm(f => ({ ...f, minScore: e.target.value }))} />
+            </div>
+            <textarea style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', marginBottom: 8 }} rows={2} placeholder="Emails of the reps to assign (optional, comma or line separated)" value={asgForm.assignees} onChange={e => setAsgForm(f => ({ ...f, assignees: e.target.value }))} />
+            <input style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', marginBottom: 8 }} placeholder="Note to reps (optional)" value={asgForm.note} onChange={e => setAsgForm(f => ({ ...f, note: e.target.value }))} />
+            <button
+              onClick={createAssignment}
+              disabled={asgBusy || !asgForm.title.trim()}
+              style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: '#00c8e0', border: '1px solid #00c8e0', color: '#0a0d14', padding: '8px 14px', cursor: asgBusy ? 'not-allowed' : 'pointer' }}
+            >
+              {asgBusy ? 'SAVING…' : 'ASSIGN'}
+            </button>
+            {asgMsg && <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 10 }}>{asgMsg}</p>}
+
+            {(asg?.assignments || []).map(a => (
+              <div key={a.id} style={{ borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: 16, paddingTop: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ fontSize: 12, color: '#fff' }}>{a.title}</div>
+                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
+                      {NAMES[a.persona] || a.persona}{a.focus ? ` · focus: ${a.focus}` : ''}{a.dueDate ? ` · due ${a.dueDate}` : ''}{a.minScore ? ` · min score ${a.minScore}` : ''}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 12, color: '#fff' }}>
+                      {a.progress.completionPct == null ? 'No reps yet' : `${a.progress.done} of ${a.progress.total} done (${a.progress.completionPct}%)`}
+                      {a.progress.overdue > 0 && <span style={{ color: '#e84545' }}> · {a.progress.overdue} overdue</span>}
+                    </div>
+                    <button onClick={() => setAsgOpen(asgOpen === a.id ? '' : a.id)} style={{ fontSize: 10, background: 'none', border: 'none', color: '#00c8e0', cursor: 'pointer', fontFamily: 'monospace', padding: 0, marginRight: 12 }}>
+                      {asgOpen === a.id ? 'HIDE REPS' : 'SHOW REPS'}
+                    </button>
+                    <button onClick={() => deleteAssignment(a.id)} disabled={asgBusy} style={{ fontSize: 10, background: 'none', border: 'none', color: '#e84545', cursor: 'pointer', fontFamily: 'monospace', padding: 0 }}>DELETE</button>
+                  </div>
+                </div>
+                {asgOpen === a.id && (
+                  <div style={{ marginTop: 8 }}>
+                    {a.progress.reps.length === 0 && <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Nobody to show yet: no rep in your company has practised, and no emails were listed.</div>}
+                    {a.progress.reps.map(r => (
+                      <div key={r.email} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, padding: '3px 0', color: 'rgba(255,255,255,0.7)' }}>
+                        <span>{r.email}</span>
+                        <span style={{ color: (STATUS[r.status] || STATUS.pending)[1] }}>
+                          {(STATUS[r.status] || STATUS.pending)[0]}{r.bestScore != null ? ` · best ${r.bestScore}` : ''}{r.attempts ? ` · ${r.attempts} call${r.attempts > 1 ? 's' : ''}` : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
           )
         })()}
