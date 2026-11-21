@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { marginDefenseLabel } from '@/lib/marginDefense.mjs'
 import { useUser } from '@clerk/nextjs'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -618,7 +619,7 @@ function ReportState({ record, onStartNew }) {
             <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">Score</p>
             <p className="text-xs text-white font-bold mb-3">{procurement.score ?? '--'}/100</p>
             <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">Margin Defense</p>
-            <p className="text-xs text-white font-bold uppercase mb-3">{procurement.marginDefense}</p>
+            <p className="text-xs text-white font-bold uppercase mb-3">{marginDefenseLabel(procurement.marginDefense)}</p>
             <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">Discounted Early</p>
             <p className="text-xs text-white font-bold uppercase mb-3">{procurement.discountedEarly ? 'Yes' : 'No'}</p>
             <p className="text-xs text-zinc-500 leading-relaxed">{procurement.reasoning}</p>

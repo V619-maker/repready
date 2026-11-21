@@ -15,6 +15,7 @@ import { parseGongCreds, maskGong, isValidGongCallId, verifyGong, findGongUserId
 import { getCrmAdapter, CRM_PROVIDERS, buildDealContext, NO_DEAL_CONTEXT, openCrmSession, forgetCrmSession } from '@/lib/crm.mjs'
 import { MAX_RUNS as CONSISTENCY_MAX_RUNS, SAMPLE_TRANSCRIPTS, summarizeRuns } from '@/lib/scoreConsistency.mjs'
 import { splitTranscriptIntoTurns, validateEvidence } from '@/lib/evidenceValidation.mjs'
+import { applyMarginTestedRule, MARGIN_TESTED_PROMPT } from '@/lib/marginDefense.mjs'
 import { hashTranscript, fingerprintCriteria, SCORING_VERSION, SCORING_MODEL_ID, EVALUATION_SOURCE_PRACTICE } from '@/lib/canonicalEvaluation.mjs'
 
 let cachedClient = null
@@ -109,7 +110,7 @@ function buildCombinedAnalystSchema(criteria) {
   return z.object({
     procurementScore: z.number().min(0).max(100).describe("Procurement score 0-100 based on margin defense and price discipline"),
     procurementReasoning: z.string().describe("2-3 sentences explaining the procurement score"),
-    marginDefense: z.enum(['strong', 'moderate', 'weak']).describe("How well the rep defended margins"),
+    marginDefense: z.enum(['strong', 'moderate', 'weak', 'not_tested']).describe("How well the rep defended margins, or not_tested if price/discount/budget never came up"),
     discountedEarly: z.boolean().describe("Did the rep offer discounts before establishing value"),
     enablementScore: z.number().min(0).max(100).describe("Sales enablement score 0-100 based on call technique"),
     enablementReasoning: z.string().describe("2-3 sentences explaining the enablement score"),
@@ -132,6 +133,8 @@ LOW SCORE: Dropped price on first objection, offered verbal discounts before und
 ENABLEMENT SCORING — focus on (Challenger Sale + MEDDPICC):
 HIGH SCORE: Acknowledged objections before responding, asked deep discovery questions, maintained control of next steps, reframed cost to business impact
 LOW SCORE: Became defensive when pushed back, jumped to features without understanding objection, let buyer control the call, responded to every objection with a feature pitch
+
+${MARGIN_TESTED_PROMPT}
 
 SKILL DIMENSION SCORING:
 ${dimensionBullets}
@@ -220,7 +223,7 @@ async function scoreTranscript(transcript, persona, orgId) {
     system: buildCombinedAnalystPrompt(transcript, personaContext, criteria),
     prompt: 'Evaluate this sales rep strictly and realistically across all dimensions.',
   })
-  const analyst = result.object
+  const analyst = applyMarginTestedRule(result.object)
   const weightedScore = Math.round((analyst.procurementScore * 0.6) + (analyst.enablementScore * 0.4))
   // Reference equality against the module-level constant is safe here — it's
   // the literal object getCriteriaForOrg returns on its fallback branch, never
