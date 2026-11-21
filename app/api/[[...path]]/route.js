@@ -9,7 +9,7 @@ import { clerkClient } from '@clerk/nextjs/server'
 import { getAuthedEmail, getAuthedUser } from '@/lib/auth'
 import { PRODUCT_DOC_LIMITS, canManageProductDocs, validateProductDocInput, checkProductDocQuota, buildProductContext, NO_PRODUCT_CONTEXT } from '@/lib/productDocs.mjs'
 import { validateIntegrationUrl, maskUrl, generateWebhookSecret, signBody, buildSessionPayload, buildTestPayload, formatSlack, formatTeams, isPrivateOrLocalAddress, toCsv } from '@/lib/webhooks.mjs'
-import { isValidHubspotToken, maskToken, isValidDealId, verifyToken as hsVerifyToken, findOwnerIdByEmail as hsFindOwner, listOwnedDeals as hsListDeals, getDeal as hsGetDeal, getStageLabels as hsStageLabels, buildDealContext, buildPracticeNoteHtml, createDealNote as hsCreateNote, NO_DEAL_CONTEXT } from '@/lib/hubspot.mjs'
+import { getCrmAdapter, CRM_PROVIDERS, buildDealContext, NO_DEAL_CONTEXT } from '@/lib/crm.mjs'
 import { MAX_RUNS as CONSISTENCY_MAX_RUNS, SAMPLE_TRANSCRIPTS, summarizeRuns } from '@/lib/scoreConsistency.mjs'
 import { splitTranscriptIntoTurns, validateEvidence } from '@/lib/evidenceValidation.mjs'
 import { hashTranscript, fingerprintCriteria, SCORING_VERSION, SCORING_MODEL_ID, EVALUATION_SOURCE_PRACTICE } from '@/lib/canonicalEvaluation.mjs'
@@ -2293,16 +2293,19 @@ Evaluate the sales rep's performance and return JSON with:
     }
 
     // ---------------------------------------------------------------------
-    // HubSpot (Sprint 67). The customer's HubSpot admin creates a private app and
-    // pastes its access token; no OAuth app is hosted by RepReady. The token is a
-    // secret: stored server-side in workspaceSettings.hubspot, never returned.
-    //   Manager (or personal-workspace owner): /api/admin/hubspot (GET, POST, DELETE),
-    //                                          /api/admin/hubspot/settings (POST)
+    // CRM link (Sprints 67-68): HubSpot, Salesforce or Zoho CRM, one per workspace.
+    // The customer's admin creates an API client in their own CRM and pastes its
+    // credentials here; RepReady hosts no marketplace app. Credentials are secrets:
+    // stored server-side in workspaceSettings.crm, never returned (masked label only).
+    //   Manager (or personal-workspace owner): /api/admin/crm (GET, POST, DELETE),
+    //                                          /api/admin/crm/settings (POST)
     //   Any signed-in member, own deals only:   /api/crm/deals, /api/crm/deal-context,
     //                                          /api/crm/log-practice (POST)
-    // Reps can only reach deals whose HubSpot owner has the rep's own sign-in email.
+    // Own-deals-only is enforced HERE by matching the deal owner to the rep's sign-in
+    // email. The CRM credentials themselves are workspace-wide (Salesforce acts as the
+    // app's "Run As" user), so the CRM does not enforce it for us.
     // ---------------------------------------------------------------------
-    if (route === '/admin/hubspot' || route === '/admin/hubspot/settings') {
+    if (route === '/admin/crm' || route === '/admin/crm/settings') {
       try {
         const authedUser = await getAuthedUser()
         if (!authedUser) {
@@ -2321,69 +2324,76 @@ Evaluate the sales rep's performance and return JSON with:
         const col = db.collection('workspaceSettings')
         const status = async () => {
           const doc = await col.findOne({ _id: workspaceId })
+          const adapter = getCrmAdapter(doc?.crm?.provider)
+          const connected = !!(adapter && doc?.crm?.creds)
           return {
-            connected: !!doc?.hubspot?.token,
-            token: doc?.hubspot?.token ? maskToken(doc.hubspot.token) : null,
-            useDealContext: doc?.hubspotUseDealContext === true,
-            writeback: doc?.hubspotWriteback === true,
+            connected,
+            provider: connected ? adapter.id : null,
+            providerLabel: connected ? adapter.label : null,
+            credentials: connected ? adapter.mask(doc.crm.creds) : null,
+            useDealContext: doc?.crmUseDealContext === true,
+            writeback: doc?.crmWriteback === true,
+            providers: Object.values(CRM_PROVIDERS).map((a) => ({ id: a.id, label: a.label })),
           }
         }
 
-        if (route === '/admin/hubspot' && method === 'GET') {
+        if (route === '/admin/crm' && method === 'GET') {
           return handleCORS(NextResponse.json(await status()))
         }
 
-        if (route === '/admin/hubspot' && method === 'POST') {
+        if (route === '/admin/crm' && method === 'POST') {
           const body = await request.json()
-          const token = typeof body.token === 'string' ? body.token.trim() : ''
-          if (!isValidHubspotToken(token)) {
-            return handleCORS(NextResponse.json(
-              { error: "That does not look like a HubSpot private app token (it starts with pat-)." }, { status: 400 }
-            ))
+          const adapter = getCrmAdapter(body?.provider)
+          if (!adapter) {
+            return handleCORS(NextResponse.json({ error: "Choose HubSpot, Salesforce or Zoho CRM." }, { status: 400 }))
           }
-          const check = await hsVerifyToken(fetch, token)
+          const parsed = adapter.parseCreds(body)
+          if (!parsed.ok) {
+            return handleCORS(NextResponse.json({ error: parsed.error }, { status: 400 }))
+          }
+          const check = await adapter.verify(fetch, parsed.creds)
           if (!check.ok) {
             return handleCORS(NextResponse.json({ error: check.error }, { status: 400 }))
           }
           await col.updateOne(
             { _id: workspaceId },
-            { $set: { hubspot: { token, connectedAt: new Date().toISOString(), connectedBy: authedUser.email }, hubspotUseDealContext: false, hubspotWriteback: false } },
+            { $set: { crm: { provider: adapter.id, creds: parsed.creds, connectedAt: new Date().toISOString(), connectedBy: authedUser.email }, crmUseDealContext: false, crmWriteback: false } },
             { upsert: true }
           )
-          console.log(`[hubspot] connected workspace=${workspaceId}`)
+          console.log(`[crm] connected provider=${adapter.id} workspace=${workspaceId}`)
           return handleCORS(NextResponse.json(await status()))
         }
 
-        if (route === '/admin/hubspot' && method === 'DELETE') {
+        if (route === '/admin/crm' && method === 'DELETE') {
           await col.updateOne(
             { _id: workspaceId },
-            { $unset: { hubspot: '', hubspotUseDealContext: '', hubspotWriteback: '' } }
+            { $unset: { crm: '', crmUseDealContext: '', crmWriteback: '' } }
           )
-          console.log(`[hubspot] disconnected workspace=${workspaceId}`)
+          console.log(`[crm] disconnected workspace=${workspaceId}`)
           return handleCORS(NextResponse.json(await status()))
         }
 
-        if (route === '/admin/hubspot/settings' && method === 'POST') {
+        if (route === '/admin/crm/settings' && method === 'POST') {
           const body = await request.json()
           const current = await status()
           if (!current.connected) {
-            return handleCORS(NextResponse.json({ error: "Connect HubSpot first." }, { status: 400 }))
+            return handleCORS(NextResponse.json({ error: "Connect your CRM first." }, { status: 400 }))
           }
           const set = {}
-          if (typeof body.useDealContext === 'boolean') set.hubspotUseDealContext = body.useDealContext
-          if (typeof body.writeback === 'boolean') set.hubspotWriteback = body.writeback
+          if (typeof body.useDealContext === 'boolean') set.crmUseDealContext = body.useDealContext
+          if (typeof body.writeback === 'boolean') set.crmWriteback = body.writeback
           if (!Object.keys(set).length) {
             return handleCORS(NextResponse.json({ error: "Nothing to change." }, { status: 400 }))
           }
           await col.updateOne({ _id: workspaceId }, { $set: set })
-          console.log(`[hubspot] settings ${JSON.stringify(set)} workspace=${workspaceId}`)
+          console.log(`[crm] settings ${JSON.stringify(set)} workspace=${workspaceId}`)
           return handleCORS(NextResponse.json(await status()))
         }
 
         return handleCORS(NextResponse.json({ error: "Not found" }, { status: 404 }))
       } catch (error) {
-        console.error('HubSpot admin error:', error?.message)
-        return handleCORS(NextResponse.json({ error: "HubSpot request failed." }, { status: 500 }))
+        console.error('CRM admin error:', error?.message)
+        return handleCORS(NextResponse.json({ error: "CRM request failed." }, { status: 500 }))
       }
     }
 
@@ -2396,27 +2406,38 @@ Evaluate the sales rep's performance and return JSON with:
         const workspaceId = authedUser.workspaceId
         const db = await getDb()
         const doc = workspaceId ? await db.collection('workspaceSettings').findOne({ _id: workspaceId }) : null
-        const token = doc?.hubspot?.token
-        if (!token) {
+        const adapter = getCrmAdapter(doc?.crm?.provider)
+        if (!adapter || !doc?.crm?.creds) {
           return handleCORS(NextResponse.json({ enabled: false, deals: [] }))
         }
+        // Cheap switch checks first so a disabled workspace makes no calls to the CRM.
+        const wantsContext = doc.crmUseDealContext === true
+        const wantsWriteback = doc.crmWriteback === true
+        if ((route !== '/crm/log-practice' && !wantsContext) || (route === '/crm/log-practice' && !wantsWriteback)) {
+          return handleCORS(NextResponse.json(route === '/crm/log-practice'
+            ? { logged: false, reason: 'not_enabled' }
+            : route === '/crm/deal-context' ? { enabled: false, dealContext: NO_DEAL_CONTEXT } : { enabled: false, deals: [] }))
+        }
 
-        // Shared: resolve the rep's own HubSpot owner id (matched on exact email).
-        const owner = await hsFindOwner(fetch, token, authedUser.email)
+        // Shared: sign in to the CRM, then find the rep's own owner id (exact email match).
+        const opened = await adapter.open(fetch, doc.crm.creds)
+        if (!opened.ok) {
+          console.warn(`[crm] open failed provider=${adapter.id} workspace=${workspaceId}`)
+          return handleCORS(NextResponse.json({ enabled: false, deals: [], error: opened.error }))
+        }
+        const ctx = opened.ctx
+        const owner = await adapter.findOwner(fetch, ctx, authedUser.email)
         if (!owner.ok) {
-          console.warn(`[hubspot] owner lookup failed workspace=${workspaceId}`)
+          console.warn(`[crm] owner lookup failed provider=${adapter.id} workspace=${workspaceId}`)
           return handleCORS(NextResponse.json({ enabled: false, deals: [], error: owner.error }))
         }
         const ownerId = owner.ownerId
 
         if (route === '/crm/deals' && method === 'GET') {
-          if (doc.hubspotUseDealContext !== true) {
-            return handleCORS(NextResponse.json({ enabled: false, deals: [] }))
-          }
           if (!ownerId) {
-            return handleCORS(NextResponse.json({ enabled: true, deals: [], message: "No HubSpot user found with your sign-in email." }))
+            return handleCORS(NextResponse.json({ enabled: true, deals: [], message: `No ${adapter.label} user found with your sign-in email.` }))
           }
-          const [list, labels] = await Promise.all([hsListDeals(fetch, token, ownerId, 25), hsStageLabels(fetch, token)])
+          const [list, labels] = await Promise.all([adapter.listDeals(fetch, ctx, ownerId, 25), adapter.stageLabels(fetch, ctx)])
           if (!list.ok) {
             return handleCORS(NextResponse.json({ enabled: true, deals: [], error: list.error }))
           }
@@ -2427,30 +2448,30 @@ Evaluate the sales rep's performance and return JSON with:
         }
 
         if (route === '/crm/deal-context' && method === 'GET') {
-          if (doc.hubspotUseDealContext !== true || !ownerId) {
+          if (!ownerId) {
             return handleCORS(NextResponse.json({ enabled: false, dealContext: NO_DEAL_CONTEXT }))
           }
           const dealId = new URL(request.url).searchParams.get('dealId')
-          if (!isValidDealId(dealId)) {
+          if (!adapter.isValidDealId(dealId)) {
             return handleCORS(NextResponse.json({ error: "Invalid deal." }, { status: 400 }))
           }
-          const got = await hsGetDeal(fetch, token, dealId)
+          const got = await adapter.getDeal(fetch, ctx, dealId)
           // Same answer for "not found" and "not yours" so ids cannot be probed.
           if (!got.ok || !got.deal || got.deal.ownerId !== ownerId) {
             return handleCORS(NextResponse.json({ enabled: false, dealContext: NO_DEAL_CONTEXT }))
           }
-          const labels = await hsStageLabels(fetch, token)
+          const labels = await adapter.stageLabels(fetch, ctx)
           return handleCORS(NextResponse.json({ enabled: true, dealContext: buildDealContext(got.deal, labels) }))
         }
 
         if (route === '/crm/log-practice' && method === 'POST') {
-          if (doc.hubspotWriteback !== true || !ownerId) {
+          if (!ownerId) {
             return handleCORS(NextResponse.json({ logged: false, reason: 'not_enabled' }))
           }
           const body = await request.json()
           const dealId = body.dealId
           const sessionId = typeof body.sessionId === 'string' ? body.sessionId : ''
-          if (!isValidDealId(dealId) || !sessionId) {
+          if (!adapter.isValidDealId(dealId) || !sessionId) {
             return handleCORS(NextResponse.json({ error: "dealId and sessionId are required." }, { status: 400 }))
           }
           const sessions = db.collection('sessions')
@@ -2458,7 +2479,7 @@ Evaluate the sales rep's performance and return JSON with:
           if (!session) {
             return handleCORS(NextResponse.json({ error: "Session not found." }, { status: 404 }))
           }
-          const got = await hsGetDeal(fetch, token, dealId)
+          const got = await adapter.getDeal(fetch, ctx, dealId)
           if (!got.ok || !got.deal || got.deal.ownerId !== ownerId) {
             return handleCORS(NextResponse.json({ logged: false, reason: 'deal_not_yours' }, { status: 403 }))
           }
@@ -2471,11 +2492,11 @@ Evaluate the sales rep's performance and return JSON with:
             return handleCORS(NextResponse.json({ logged: false, reason: 'already_logged' }))
           }
           const PERSONA_LABELS = { richard: 'Richard Vance', sandra: 'Sandra Chen', priya: 'Priya Malhotra', rakesh: 'Rakesh Iyer' }
-          const created = await hsCreateNote(fetch, token, dealId, buildPracticeNoteHtml(session, PERSONA_LABELS[session.persona] || session.persona), ownerId)
+          const created = await adapter.createNote(fetch, ctx, got.deal, session, PERSONA_LABELS[session.persona] || session.persona, ownerId)
           if (!created.ok) {
             // Release the claim so the rep can retry.
             await sessions.updateOne({ id: sessionId }, { $unset: { crmNoteLoggedAt: '', crmDealId: '' } })
-            console.warn(`[hubspot] note failed workspace=${workspaceId}`)
+            console.warn(`[crm] note failed provider=${adapter.id} workspace=${workspaceId}`)
             return handleCORS(NextResponse.json({ logged: false, error: created.error }, { status: 502 }))
           }
           return handleCORS(NextResponse.json({ logged: true }))
