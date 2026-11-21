@@ -233,8 +233,8 @@ function RepReadyDashboard() {
   const [practiceFocus, setPracticeFocus] = useState(null);
   const autoSelectDoneRef = useRef(false);
 
-  // Real-deal rehearsal (HubSpot). Only populated when a manager has connected
-  // HubSpot and switched it on; reps only ever get their own deals from the server.
+  // Real-deal rehearsal (HubSpot / Salesforce / Zoho). Only populated when a manager has connected
+  // a CRM and switched it on; reps only ever get their own deals from the server.
   const [crmDeals, setCrmDeals] = useState([]);
   const [selectedDealId, setSelectedDealId] = useState('');
   const activeDealRef = useRef(null); // the deal actually used for the call in progress
@@ -331,7 +331,7 @@ function RepReadyDashboard() {
         }
       }
 
-      // Deal context (only when the rep picked one of their own HubSpot deals).
+      // Deal context (only when the rep picked one of their own CRM deals).
       // Always passed - a fixed "none" string otherwise - so a prompt mentioning
       // {{deal_context}} never sees an unset variable.
       dynamicVariables.deal_context = 'No deal selected.';
