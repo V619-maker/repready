@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { MongoClient } from 'mongodb'
 import { clerkClient } from '@clerk/nextjs/server'
 import { getAuthedEmail, getAuthedUser } from '@/lib/auth'
-import { PRODUCT_DOC_LIMITS, canManageProductDocs, validateProductDocInput, checkProductDocQuota } from '@/lib/productDocs.mjs'
+import { PRODUCT_DOC_LIMITS, canManageProductDocs, validateProductDocInput, checkProductDocQuota, buildProductContext, NO_PRODUCT_CONTEXT } from '@/lib/productDocs.mjs'
 import { splitTranscriptIntoTurns, validateEvidence } from '@/lib/evidenceValidation.mjs'
 import { hashTranscript, fingerprintCriteria, SCORING_VERSION, SCORING_MODEL_ID, EVALUATION_SOURCE_PRACTICE } from '@/lib/canonicalEvaluation.mjs'
 
@@ -1850,9 +1850,11 @@ Evaluate the sales rep's performance and return JSON with:
     //     never the text.
     //  3. Every read/delete filters by workspaceId. A wrong-workspace id returns
     //     the same 404 as a missing one, so ids can't be probed.
-    //  4. The text is never returned by any endpoint here and never logged.
-    // Stored in MongoDB Atlas (encrypted at rest by Atlas). NOT yet sent to any AI:
-    // wiring documents into the AI buyer / scoring is a separate, later change.
+    //  4. This endpoint never returns the text and nothing logs it. The only way text leaves
+    //     is /api/product-context below, and only after a manager switches
+    //     'use in practice calls' on (default off).
+    // Stored in MongoDB Atlas (encrypted at rest by Atlas). Sent to the AI buyer (ElevenLabs)
+    // only via the opt-in /api/product-context. Never sent to Gemini scoring.
     // Plain text only for now (.txt/.md/pasted) - PDF/DOCX parsing comes later.
     // ---------------------------------------------------------------------
     if (route === '/product-docs' && (method === 'GET' || method === 'POST' || method === 'DELETE')) {
@@ -1881,6 +1883,7 @@ Evaluate the sales rep's performance and return JSON with:
             workspaceKind: authedUser.isPersonalWorkspace ? 'personal' : 'company',
             workspaceLabel: authedUser.isPersonalWorkspace ? 'your private workspace' : workspaceId,
             canManage,
+            useInPracticeCalls: (await db.collection('workspaceSettings').findOne({ _id: workspaceId }))?.useProductDocs === true,
             limits: LIMITS,
             docs
           }))
@@ -1932,6 +1935,77 @@ Evaluate the sales rep's performance and return JSON with:
       } catch (error) {
         console.error('Product docs error:', error?.message)
         return handleCORS(NextResponse.json({ error: "Product documents request failed." }, { status: 500 }))
+      }
+    }
+
+    // Opt-in switch - POST /api/product-docs/settings  { enabled: boolean }
+    // Off by default. Turning it on lets practice calls send the workspace's
+    // product text to the voice provider (ElevenLabs). Manager (or personal-workspace
+    // owner) only; the dashboard shows the disclosure before offering the switch.
+    if (route === '/product-docs/settings' && method === 'POST') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const workspaceId = authedUser.workspaceId
+        if (!workspaceId) {
+          return handleCORS(NextResponse.json(
+            { error: "Unable to determine a private workspace from this account." }, { status: 400 }
+          ))
+        }
+        if (!canManageProductDocs(authedUser)) {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+        const body = await request.json()
+        if (typeof body.enabled !== 'boolean') {
+          return handleCORS(NextResponse.json({ error: "enabled must be true or false." }, { status: 400 }))
+        }
+        const db = await getDb()
+        await db.collection('workspaceSettings').updateOne(
+          { _id: workspaceId },
+          { $set: { useProductDocs: body.enabled, updatedAt: new Date().toISOString(), updatedBy: authedUser.email } },
+          { upsert: true }
+        )
+        console.log(`[product-docs] use_in_practice_calls=${body.enabled} workspace=${workspaceId}`)
+        return handleCORS(NextResponse.json({ useInPracticeCalls: body.enabled }))
+      } catch (error) {
+        console.error('Product docs settings error:', error?.message)
+        return handleCORS(NextResponse.json({ error: "Failed to save the setting." }, { status: 500 }))
+      }
+    }
+
+    // Product context for a practice call - GET /api/product-context
+    // Any signed-in member of the workspace. Returns the capped, labelled text
+    // ONLY when a manager switched the opt-in on; otherwise a fixed "no reference"
+    // string. The call screen passes this to ElevenLabs as {{product_context}}
+    // (the voice session is started in the browser, so the text does reach the
+    // member's browser - that is the point of the feature, and the dashboard
+    // disclosure says so).
+    if (route === '/product-context' && method === 'GET') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const workspaceId = authedUser.workspaceId
+        if (!workspaceId) {
+          return handleCORS(NextResponse.json({ enabled: false, productContext: NO_PRODUCT_CONTEXT }))
+        }
+        const db = await getDb()
+        const settings = await db.collection('workspaceSettings').findOne({ _id: workspaceId })
+        if (settings?.useProductDocs !== true) {
+          return handleCORS(NextResponse.json({ enabled: false, productContext: NO_PRODUCT_CONTEXT }))
+        }
+        const docs = await db.collection('productDocs')
+          .find({ workspaceId }, { projection: { _id: 0, name: 1, text: 1, uploadedAt: 1 } })
+          .toArray()
+        const productContext = buildProductContext(docs)
+        return handleCORS(NextResponse.json({ enabled: productContext !== NO_PRODUCT_CONTEXT, productContext }))
+      } catch (error) {
+        console.error('Product context error:', error?.message)
+        // Fail closed: a practice call must still work without the reference.
+        return handleCORS(NextResponse.json({ enabled: false, productContext: NO_PRODUCT_CONTEXT }))
       }
     }
 
