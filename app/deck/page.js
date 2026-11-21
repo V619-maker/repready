@@ -233,6 +233,20 @@ function RepReadyDashboard() {
   const [practiceFocus, setPracticeFocus] = useState(null);
   const autoSelectDoneRef = useRef(false);
 
+  // Real-deal rehearsal (HubSpot). Only populated when a manager has connected
+  // HubSpot and switched it on; reps only ever get their own deals from the server.
+  const [crmDeals, setCrmDeals] = useState([]);
+  const [selectedDealId, setSelectedDealId] = useState('');
+  const activeDealRef = useRef(null); // the deal actually used for the call in progress
+
+  useEffect(() => {
+    if (!isLoaded || !user) return;
+    fetch('/api/crm/deals')
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j?.enabled && Array.isArray(j.deals)) setCrmDeals(j.deals); })
+      .catch(() => {});
+  }, [isLoaded, user]);
+
   useEffect(() => {
     if (autoSelectDoneRef.current || !isLoaded || typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
@@ -314,6 +328,30 @@ function RepReadyDashboard() {
           console.error("Product context fetch failed:", ctxError);
         } finally {
           clearTimeout(ctxTimeout);
+        }
+      }
+
+      // Deal context (only when the rep picked one of their own HubSpot deals).
+      // Always passed - a fixed "none" string otherwise - so a prompt mentioning
+      // {{deal_context}} never sees an unset variable.
+      dynamicVariables.deal_context = 'No deal selected.';
+      activeDealRef.current = null;
+      if (userEmail && selectedDealId) {
+        const dealController = new AbortController();
+        const dealTimeout = setTimeout(() => dealController.abort(), 4000);
+        try {
+          const dealResponse = await fetch(`/api/crm/deal-context?dealId=${encodeURIComponent(selectedDealId)}`, { signal: dealController.signal });
+          if (dealResponse.ok) {
+            const dealData = await dealResponse.json();
+            if (dealData.enabled === true && typeof dealData.dealContext === 'string' && dealData.dealContext) {
+              dynamicVariables.deal_context = dealData.dealContext;
+              activeDealRef.current = selectedDealId;
+            }
+          }
+        } catch (dealError) {
+          console.error("Deal context fetch failed:", dealError);
+        } finally {
+          clearTimeout(dealTimeout);
         }
       }
 
@@ -500,11 +538,20 @@ let boardroomScoreResultId = null;
           };
           pendingSessionSaveRef.current = sessionPayload;
           try {
-            await savePracticeSession(sessionPayload);
+            const savedSession = await savePracticeSession(sessionPayload);
             pendingSessionSaveRef.current = null;
             console.info('[SESSION SAVE] Persisted', {
               path: boardroomScoreResultId ? 'canonical' : 'legacy'
             });
+            // Optional CRM note (server checks the manager switch, deal ownership and
+            // that it is written only once). Never blocks or affects the save.
+            if (activeDealRef.current && savedSession?.id) {
+              fetch('/api/crm/log-practice', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ dealId: activeDealRef.current, sessionId: savedSession.id })
+              }).catch(() => {});
+            }
           } catch (sessionSaveError) {
             console.error('[SESSION SAVE] Persistence failed:', sessionSaveError);
             setSessionSaveFailed(true);
@@ -515,6 +562,7 @@ let boardroomScoreResultId = null;
       }
 
       transcriptRef.current = [];
+      activeDealRef.current = null;
 
     } catch (error) {
       console.error("Scoring Error:", error);
@@ -785,6 +833,29 @@ let boardroomScoreResultId = null;
                 </div>
               </div>
             </div>
+
+            {crmDeals.length > 0 && conversation.status !== 'connected' && (
+              <div className="px-6 py-3 border-t border-cyan-500/30 text-[10px] uppercase tracking-[0.2em] text-zinc-400">
+                <label className="block mb-2">Rehearse one of your deals (optional)</label>
+                <select
+                  value={selectedDealId}
+                  onChange={(e) => setSelectedDealId(e.target.value)}
+                  className="w-full bg-black border border-cyan-500/30 text-zinc-200 text-xs p-2 normal-case tracking-normal"
+                >
+                  <option value="">No deal: standard practice</option>
+                  {crmDeals.map(d => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}{d.amount != null ? ` · ${d.amount.toLocaleString()}` : ''}{d.stage ? ` · ${d.stage}` : ''}
+                    </option>
+                  ))}
+                </select>
+                {selectedDealId && (
+                  <p className="mt-2 normal-case tracking-normal text-[11px] text-amber-400">
+                    This deal's name, value, stage, close date and notes will be sent to our voice provider (ElevenLabs) for this call.
+                  </p>
+                )}
+              </div>
+            )}
 
             {practiceFocus && conversation.status !== 'connected' && (
               <div className="px-6 py-3 border-t border-amber-400/30 bg-amber-400/5 text-amber-400 text-[10px] uppercase tracking-[0.2em]">
