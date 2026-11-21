@@ -207,6 +207,61 @@ export default function DashboardPage() {
     }
   }
 
+  // Integrations (Slack / Teams / webhook). Addresses are secrets: the server only
+  // ever returns them masked, and the signing secret exactly once.
+  const [integ, setInteg] = useState(null)
+  const [integInputs, setIntegInputs] = useState({ slack: '', teams: '', webhook: '' })
+  const [integBusy, setIntegBusy] = useState('')
+  const [integMsg, setIntegMsg] = useState({})
+  const [newSecret, setNewSecret] = useState('')
+
+  useEffect(() => {
+    if (!docsMeta?.canManage) return
+    fetch('/api/admin/integrations')
+      .then(async r => { const j = await r.json(); if (r.ok) setInteg(j.configured) })
+      .catch(() => {})
+  }, [docsMeta?.canManage])
+
+  async function saveIntegration(kind, url) {
+    setIntegBusy(kind)
+    setIntegMsg(m => ({ ...m, [kind]: '' }))
+    try {
+      const res = await fetch('/api/admin/integrations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind, url })
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to save.')
+      setInteg(json.configured)
+      setIntegInputs(v => ({ ...v, [kind]: '' }))
+      if (json.newSecret) setNewSecret(json.newSecret)
+      setIntegMsg(m => ({ ...m, [kind]: url ? 'Saved.' : 'Removed.' }))
+    } catch (e) {
+      setIntegMsg(m => ({ ...m, [kind]: e.message }))
+    } finally {
+      setIntegBusy('')
+    }
+  }
+
+  async function testIntegration(kind) {
+    setIntegBusy(kind)
+    setIntegMsg(m => ({ ...m, [kind]: '' }))
+    try {
+      const res = await fetch('/api/admin/integrations/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind })
+      })
+      const json = await res.json()
+      setIntegMsg(m => ({ ...m, [kind]: json.detail || json.error || 'Failed.' }))
+    } catch (e) {
+      setIntegMsg(m => ({ ...m, [kind]: 'Failed.' }))
+    } finally {
+      setIntegBusy('')
+    }
+  }
+
   async function deleteProductDoc(id) {
     setDocDeletingId(id)
     setDocsError('')
@@ -676,6 +731,81 @@ export default function DashboardPage() {
               <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>
                 Up to {docsMeta.limits.maxDocs} documents, {docsMeta.limits.maxCharsPerDoc.toLocaleString()} characters each.
               </span>
+            </div>
+          </div>
+        )}
+
+        {/* SECTION 8 - Integrations (same visibility rule as product documents) */}
+        {docsMeta?.canManage && (
+          <div style={{ background: '#0d1117', border: '1px solid rgba(0,200,224,0.15)', padding: 24, marginBottom: 16 }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>INTEGRATIONS</div>
+            <p style={{ fontSize: 11, color: '#f5a623', lineHeight: 1.6, marginBottom: 16 }}>
+              When a rep finishes a practice call, RepReady sends one message to each address you add below: the rep's email, the buyer,
+              the score, grade and status, and a one-sentence verdict. It never sends the transcript or any recording. Anyone who can read that
+              Slack channel or receive that webhook will see it. Remove an address to stop sending.
+            </p>
+            {[
+              { kind: 'slack', label: 'SLACK', hint: 'Slack incoming webhook address (https://hooks.slack.com/...)' },
+              { kind: 'teams', label: 'MICROSOFT TEAMS', hint: 'Teams Workflows (Power Automate) webhook address' },
+              { kind: 'webhook', label: 'GENERIC WEBHOOK', hint: 'Any https address (for Zapier, n8n, your CRM or learning system)' },
+            ].map(({ kind, label, hint }) => (
+              <div key={kind} style={{ marginBottom: 18 }}>
+                <div style={{ fontSize: 10, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.5)', marginBottom: 6 }}>
+                  {label}{integ?.[kind] ? `  ·  connected (${integ[kind]})` : '  ·  not connected'}
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <input
+                    value={integInputs[kind]}
+                    onChange={(e) => setIntegInputs(v => ({ ...v, [kind]: e.target.value }))}
+                    placeholder={hint}
+                    style={{ flex: 1, minWidth: 220, background: '#0a0d14', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontSize: 12, fontFamily: 'monospace', padding: '8px 10px' }}
+                  />
+                  <button
+                    onClick={() => saveIntegration(kind, integInputs[kind])}
+                    disabled={integBusy === kind || !integInputs[kind]}
+                    style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: '#00c8e0', border: '1px solid #00c8e0', color: '#0a0d14', padding: '8px 14px', cursor: integBusy === kind ? 'not-allowed' : 'pointer' }}
+                  >
+                    SAVE
+                  </button>
+                  {integ?.[kind] && (
+                    <>
+                      <button
+                        onClick={() => testIntegration(kind)}
+                        disabled={integBusy === kind}
+                        style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: 'transparent', border: '1px solid rgba(0,200,224,0.4)', color: '#00c8e0', padding: '8px 14px', cursor: 'pointer' }}
+                      >
+                        SEND TEST
+                      </button>
+                      <button
+                        onClick={() => saveIntegration(kind, null)}
+                        disabled={integBusy === kind}
+                        style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: 'transparent', border: '1px solid rgba(232,69,69,0.4)', color: '#e84545', padding: '8px 14px', cursor: 'pointer' }}
+                      >
+                        REMOVE
+                      </button>
+                    </>
+                  )}
+                </div>
+                {integMsg[kind] && <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 6 }}>{integMsg[kind]}</p>}
+              </div>
+            ))}
+            {newSecret && (
+              <div style={{ border: '1px solid rgba(245,166,35,0.35)', padding: 12, marginBottom: 16 }}>
+                <p style={{ fontSize: 11, color: '#f5a623', marginBottom: 6 }}>
+                  Webhook signing secret. Copy it now: it is shown only once. Your system can use it to check that a message really came from RepReady (header X-RepReady-Signature).
+                </p>
+                <code style={{ fontSize: 12, color: '#fff', wordBreak: 'break-all' }}>{newSecret}</code>
+              </div>
+            )}
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 14 }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.5)', marginBottom: 6 }}>EXPORT SCORES</div>
+              <a
+                href="/api/admin/export-sessions"
+                style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', border: '1px solid rgba(0,200,224,0.4)', color: '#00c8e0', padding: '8px 14px', textDecoration: 'none', display: 'inline-block' }}
+              >
+                DOWNLOAD CSV
+              </a>
+              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginLeft: 12 }}>One row per practice call, up to 5,000. Opens in Excel or Google Sheets.</span>
             </div>
           </div>
         )}
