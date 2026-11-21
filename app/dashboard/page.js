@@ -118,6 +118,89 @@ export default function DashboardPage() {
     setCriteria(prev => prev.filter((_, i) => i !== index))
   }
 
+  // Product documents (private to this workspace; see /api/product-docs).
+  // The server decides who may manage them (manager, or the sole owner of a
+  // personal free-email workspace) and returns canManage - the client only
+  // uses that to decide whether to render the section.
+  const [docsMeta, setDocsMeta] = useState(null)
+  const [docsLoading, setDocsLoading] = useState(true)
+  const [docsError, setDocsError] = useState('')
+  const [docName, setDocName] = useState('')
+  const [docText, setDocText] = useState('')
+  const [docSaving, setDocSaving] = useState(false)
+  const [docDeletingId, setDocDeletingId] = useState(null)
+
+  function loadProductDocs() {
+    return fetch('/api/product-docs')
+      .then(async r => {
+        const json = await r.json()
+        if (!r.ok) throw new Error(json.error || 'Failed to load product documents.')
+        setDocsMeta(json)
+        setDocsLoading(false)
+      })
+      .catch(e => { setDocsError(e.message); setDocsLoading(false) })
+  }
+
+  useEffect(() => {
+    if (!isLoaded || !user) { setDocsLoading(false); return }
+    loadProductDocs()
+  }, [isLoaded, user])
+
+  function handleDocFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setDocsError('')
+    if (!/\.(txt|md|markdown|csv)$/i.test(file.name) && !(file.type || '').startsWith('text/')) {
+      setDocsError('Only plain-text files (.txt, .md, .csv) for now. For a PDF or Word file, copy the text and paste it below.')
+      e.target.value = ''
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      setDocText(String(reader.result || ''))
+      if (!docName) setDocName(file.name.replace(/\.[^.]+$/, ''))
+    }
+    reader.onerror = () => setDocsError('Could not read that file.')
+    reader.readAsText(file)
+    e.target.value = ''
+  }
+
+  async function saveProductDoc() {
+    setDocSaving(true)
+    setDocsError('')
+    try {
+      const res = await fetch('/api/product-docs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: docName, text: docText })
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to save document.')
+      setDocName('')
+      setDocText('')
+      await loadProductDocs()
+    } catch (e) {
+      setDocsError(e.message)
+    } finally {
+      setDocSaving(false)
+    }
+  }
+
+  async function deleteProductDoc(id) {
+    setDocDeletingId(id)
+    setDocsError('')
+    try {
+      const res = await fetch(`/api/product-docs?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to delete document.')
+      await loadProductDocs()
+    } catch (e) {
+      setDocsError(e.message)
+    } finally {
+      setDocDeletingId(null)
+    }
+  }
+
   async function saveCriteria() {
     setCriteriaSaving(true)
     setCriteriaError('')
@@ -473,6 +556,81 @@ export default function DashboardPage() {
                 </div>
               </>
             )}
+          </div>
+        )}
+
+        {/* SECTION 7 - Product documents (shown only when the server says this user can manage them) */}
+        {docsMeta?.canManage && (
+          <div style={{ background: '#0d1117', border: '1px solid rgba(0,200,224,0.15)', padding: 24, marginBottom: 16 }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>PRODUCT DOCUMENTS</div>
+            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 8 }}>
+              Product sheets, pricing guides and FAQs for your team's products. Stored in {docsMeta.workspaceLabel} only
+              {docsMeta.workspaceKind === 'company' ? ` (everyone signed in with an @${docsMeta.workspaceLabel} email belongs to it; only managers can add or delete).` : '.'}
+              {' '}You can delete a document at any time and it is removed from our database.
+            </p>
+            <p style={{ fontSize: 11, color: '#f5a623', marginBottom: 20 }}>
+              Stored privately, but the AI buyer does not use these yet. Using them will send the text to our AI providers (Google for scoring, ElevenLabs for voice); we will say so here before that is switched on.
+            </p>
+            {docsError && <p style={{ color: '#e84545', fontSize: 12, marginBottom: 12 }}>{docsError}</p>}
+            {docsMeta.docs.length === 0 ? (
+              <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, marginBottom: 16 }}>No documents yet.</p>
+            ) : (
+              <div style={{ marginBottom: 16 }}>
+                {docsMeta.docs.map(d => (
+                  <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                    <span style={{ flex: 1, fontSize: 12, color: '#fff' }}>{d.name}</span>
+                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>{d.chars.toLocaleString()} characters</span>
+                    <button
+                      onClick={() => deleteProductDoc(d.id)}
+                      disabled={docDeletingId === d.id}
+                      style={{
+                        fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace',
+                        background: 'transparent', border: '1px solid rgba(232,69,69,0.4)', color: '#e84545',
+                        padding: '6px 10px', cursor: docDeletingId === d.id ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      {docDeletingId === d.id ? 'DELETING…' : 'DELETE'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <input
+              value={docName}
+              onChange={(e) => setDocName(e.target.value)}
+              placeholder="Document name (e.g. Product A pricing guide)"
+              style={{
+                width: '100%', boxSizing: 'border-box', background: '#0a0d14', border: '1px solid rgba(255,255,255,0.15)',
+                color: '#fff', fontSize: 12, fontFamily: 'monospace', padding: '8px 10px', marginBottom: 8
+              }}
+            />
+            <textarea
+              value={docText}
+              onChange={(e) => setDocText(e.target.value)}
+              placeholder="Paste the document text here, or choose a .txt / .md file below"
+              rows={6}
+              style={{
+                width: '100%', boxSizing: 'border-box', background: '#0a0d14', border: '1px solid rgba(255,255,255,0.15)',
+                color: '#fff', fontSize: 12, fontFamily: 'monospace', padding: '8px 10px', marginBottom: 8
+              }}
+            />
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input type="file" accept=".txt,.md,.markdown,.csv,text/*" onChange={handleDocFile} style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }} />
+              <button
+                onClick={saveProductDoc}
+                disabled={docSaving || docsMeta.docs.length >= docsMeta.limits.maxDocs}
+                style={{
+                  fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace',
+                  background: '#00c8e0', border: '1px solid #00c8e0', color: '#0a0d14',
+                  padding: '8px 14px', cursor: docSaving ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {docSaving ? 'SAVING…' : 'SAVE DOCUMENT'}
+              </button>
+              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>
+                Up to {docsMeta.limits.maxDocs} documents, {docsMeta.limits.maxCharsPerDoc.toLocaleString()} characters each.
+              </span>
+            </div>
           </div>
         )}
 

@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { MongoClient } from 'mongodb'
 import { clerkClient } from '@clerk/nextjs/server'
 import { getAuthedEmail, getAuthedUser } from '@/lib/auth'
+import { PRODUCT_DOC_LIMITS, canManageProductDocs, validateProductDocInput, checkProductDocQuota } from '@/lib/productDocs.mjs'
 import { splitTranscriptIntoTurns, validateEvidence } from '@/lib/evidenceValidation.mjs'
 import { hashTranscript, fingerprintCriteria, SCORING_VERSION, SCORING_MODEL_ID, EVALUATION_SOURCE_PRACTICE } from '@/lib/canonicalEvaluation.mjs'
 
@@ -1832,6 +1833,105 @@ Evaluate the sales rep's performance and return JSON with:
       } catch (error) {
         console.error('Admin criteria DELETE error:', error)
         return handleCORS(NextResponse.json({ error: "Failed to reset criteria." }, { status: 500 }))
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // Product documents - GET/POST/DELETE /api/product-docs
+    // Confidential customer material (product sheets, pricing guides, FAQs) that
+    // a manager stores so the AI buyer can later be grounded in it. Protection
+    // rules, all enforced here on the server (never trusted from the client):
+    //  1. Scoped by getAuthedUser().workspaceId, NOT orgId. Company emails share
+    //     their domain's workspace; free-email users (gmail.com etc.) each get a
+    //     private "personal:<userId>" workspace, so strangers never see each other's
+    //     documents. No workspaceId -> 400, never a fallback to a shared one.
+    //  2. Only a manager (or the sole owner of a personal workspace) can upload
+    //     or delete. Other members may only see that documents exist (names/sizes),
+    //     never the text.
+    //  3. Every read/delete filters by workspaceId. A wrong-workspace id returns
+    //     the same 404 as a missing one, so ids can't be probed.
+    //  4. The text is never returned by any endpoint here and never logged.
+    // Stored in MongoDB Atlas (encrypted at rest by Atlas). NOT yet sent to any AI:
+    // wiring documents into the AI buyer / scoring is a separate, later change.
+    // Plain text only for now (.txt/.md/pasted) - PDF/DOCX parsing comes later.
+    // ---------------------------------------------------------------------
+    if (route === '/product-docs' && (method === 'GET' || method === 'POST' || method === 'DELETE')) {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const workspaceId = authedUser.workspaceId
+        if (!workspaceId) {
+          return handleCORS(NextResponse.json(
+            { error: "Unable to determine a private workspace from this account." }, { status: 400 }
+          ))
+        }
+        const canManage = canManageProductDocs(authedUser)
+        const LIMITS = PRODUCT_DOC_LIMITS
+        const db = await getDb()
+        const col = db.collection('productDocs')
+
+        if (method === 'GET') {
+          const docs = await col
+            .find({ workspaceId }, { projection: { _id: 0, id: 1, name: 1, chars: 1, uploadedAt: 1 } })
+            .sort({ uploadedAt: -1 })
+            .toArray()
+          return handleCORS(NextResponse.json({
+            workspaceKind: authedUser.isPersonalWorkspace ? 'personal' : 'company',
+            workspaceLabel: authedUser.isPersonalWorkspace ? 'your private workspace' : workspaceId,
+            canManage,
+            limits: LIMITS,
+            docs
+          }))
+        }
+
+        if (!canManage) {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+
+        if (method === 'POST') {
+          const body = await request.json()
+          const input = validateProductDocInput(body.name, body.text)
+          if (!input.ok) {
+            return handleCORS(NextResponse.json({ error: input.error }, { status: input.status }))
+          }
+          const { name, text } = input
+          const existing = await col
+            .find({ workspaceId }, { projection: { _id: 0, chars: 1 } })
+            .toArray()
+          const quota = checkProductDocQuota(existing, text.length)
+          if (!quota.ok) {
+            return handleCORS(NextResponse.json({ error: quota.error }, { status: quota.status }))
+          }
+          const doc = {
+            id: uuidv4(),
+            workspaceId,
+            name,
+            text,
+            chars: text.length,
+            uploadedBy: authedUser.email,
+            uploadedAt: new Date().toISOString()
+          }
+          await col.insertOne(doc)
+          console.log(`[product-docs] added id=${doc.id} workspace=${workspaceId} chars=${doc.chars}`)
+          return handleCORS(NextResponse.json({ id: doc.id, name: doc.name, chars: doc.chars, uploadedAt: doc.uploadedAt }))
+        }
+
+        // DELETE ?id=<docId>
+        const docId = new URL(request.url).searchParams.get('id')
+        if (!docId || typeof docId !== 'string') {
+          return handleCORS(NextResponse.json({ error: "id is required." }, { status: 400 }))
+        }
+        const result = await col.deleteOne({ id: docId, workspaceId })
+        if (!result.deletedCount) {
+          return handleCORS(NextResponse.json({ error: "Document not found." }, { status: 404 }))
+        }
+        console.log(`[product-docs] deleted id=${docId} workspace=${workspaceId}`)
+        return handleCORS(NextResponse.json({ deleted: true, id: docId }))
+      } catch (error) {
+        console.error('Product docs error:', error?.message)
+        return handleCORS(NextResponse.json({ error: "Product documents request failed." }, { status: 500 }))
       }
     }
 
