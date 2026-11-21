@@ -325,6 +325,41 @@ export default function DashboardPage() {
     }
   }
 
+  // Gong import (keys are secrets: the server returns a masked label only).
+  const [gong, setGong] = useState(null)
+  const [gongForm, setGongForm] = useState({ baseUrl: '', accessKey: '', accessSecret: '' })
+  const [gongBusy, setGongBusy] = useState(false)
+  const [gongMsg, setGongMsg] = useState('')
+
+  useEffect(() => {
+    if (!docsMeta?.canManage) return
+    fetch('/api/admin/gong')
+      .then(async r => { const j = await r.json(); if (r.ok) setGong(j) })
+      .catch(() => {})
+  }, [docsMeta?.canManage])
+
+  async function gongCall(url, method, body, okMsg) {
+    setGongBusy(true)
+    setGongMsg('')
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Request failed.')
+      setGong(json)
+      if (okMsg) setGongMsg(okMsg)
+      return true
+    } catch (e) {
+      setGongMsg(e.message)
+      return false
+    } finally {
+      setGongBusy(false)
+    }
+  }
+
   async function deleteProductDoc(id) {
     setDocDeletingId(id)
     setDocsError('')
@@ -972,6 +1007,68 @@ export default function DashboardPage() {
               </>
             )}
             {crmMsg && <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 10 }}>{crmMsg}</p>}
+          </div>
+          )
+        })()}
+
+        {/* SECTION 10 - Gong import (same visibility rule as the other settings) */}
+        {docsMeta?.canManage && (() => {
+          const inputStyle = { flex: 1, minWidth: 220, background: '#0a0d14', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontSize: 12, fontFamily: 'monospace', padding: '8px 10px' }
+          return (
+          <div style={{ background: '#0d1117', border: '1px solid rgba(0,200,224,0.15)', padding: 24, marginBottom: 16 }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>
+              GONG {gong?.connected ? `· CONNECTED (${gong.credentials})` : '· NOT CONNECTED'}
+            </div>
+            {!gong?.connected ? (
+              <>
+                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6, marginBottom: 12 }}>
+                  In Gong, a technical administrator opens Settings, then Ecosystem, then API, and creates an Access Key and Secret with these permissions: read calls (basic and extensive), read transcripts and read users.
+                  Paste them here. Leave the address blank unless Gong gave you a company-specific one (like https://company-17.api.gong.io).
+                  Gong keys can see every call in your account, so RepReady shows each rep only calls they hosted or took part in, matched by their sign-in email.
+                  The keys are stored privately on our server and never shown again.
+                </p>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <input type="text" autoComplete="off" value={gongForm.baseUrl} onChange={(e) => setGongForm(v => ({ ...v, baseUrl: e.target.value }))} placeholder="API address (optional)" style={inputStyle} />
+                  <input type="password" autoComplete="off" value={gongForm.accessKey} onChange={(e) => setGongForm(v => ({ ...v, accessKey: e.target.value }))} placeholder="Access Key" style={inputStyle} />
+                  <input type="password" autoComplete="off" value={gongForm.accessSecret} onChange={(e) => setGongForm(v => ({ ...v, accessSecret: e.target.value }))} placeholder="Access Key Secret" style={inputStyle} />
+                  <button
+                    onClick={async () => { if (await gongCall('/api/admin/gong', 'POST', gongForm, 'Connected.')) setGongForm({ baseUrl: '', accessKey: '', accessSecret: '' }) }}
+                    disabled={gongBusy || !gongForm.accessKey.trim() || !gongForm.accessSecret.trim()}
+                    style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: '#00c8e0', border: '1px solid #00c8e0', color: '#0a0d14', padding: '8px 14px', cursor: gongBusy ? 'not-allowed' : 'pointer' }}
+                  >
+                    {gongBusy ? 'CHECKING…' : 'CONNECT'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ border: '1px solid rgba(245,166,35,0.35)', padding: 14, marginBottom: 14 }}>
+                  <div style={{ fontSize: 10, letterSpacing: '0.15em', color: '#f5a623', marginBottom: 8 }}>
+                    LET REPS IMPORT THEIR GONG CALLS: {gong.enabled ? 'ON' : 'OFF'}
+                  </div>
+                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, marginBottom: 12 }}>
+                    When on, a rep can pick one of their own recent Gong calls (last 30 days, up to 20) on the Real Calls page. RepReady then copies that call&apos;s transcript, which includes your customer&apos;s words,
+                    into RepReady (MongoDB Atlas, Mumbai) and sends it to Google&apos;s Gemini to be scored. Only the calls a rep chooses are copied. Calls over about 30,000 characters or with more than two speakers are not supported yet.
+                    Turn this on only if the people on those calls know calls are recorded and analysed.
+                  </p>
+                  <button
+                    onClick={() => gongCall('/api/admin/gong/settings', 'POST', { enabled: !gong.enabled })}
+                    disabled={gongBusy}
+                    style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: gong.enabled ? 'transparent' : '#f5a623', border: '1px solid #f5a623', color: gong.enabled ? '#f5a623' : '#0a0d14', padding: '8px 14px', cursor: gongBusy ? 'not-allowed' : 'pointer' }}
+                  >
+                    {gong.enabled ? 'TURN OFF' : 'I UNDERSTAND, TURN ON'}
+                  </button>
+                </div>
+                <button
+                  onClick={() => gongCall('/api/admin/gong', 'DELETE', null, 'Disconnected. The keys were deleted from our server.')}
+                  disabled={gongBusy}
+                  style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: 'transparent', border: '1px solid rgba(232,69,69,0.4)', color: '#e84545', padding: '8px 14px', cursor: gongBusy ? 'not-allowed' : 'pointer' }}
+                >
+                  DISCONNECT GONG
+                </button>
+              </>
+            )}
+            {gongMsg && <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 10 }}>{gongMsg}</p>}
           </div>
           )
         })()}

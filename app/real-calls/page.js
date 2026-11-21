@@ -12,6 +12,7 @@ const UNSUPPORTED_MESSAGES = {
   duration: "Calls longer than 7 minutes aren't supported yet.",
   speaker_count: "This call has more than 2 speakers — not supported yet.",
   no_labels_detected: "We couldn't detect speaker labels in this text — try formatting as `Name: message` per line.",
+  too_long: "This call's transcript is too long to score yet (about 30,000 characters is the limit).",
   single_speaker: "Only one speaker was detected — we need both sides of the conversation to score it. Check that your paste includes both the rep's and the prospect's lines.",
 }
 
@@ -113,6 +114,9 @@ export default function RealCallsPage() {
   const [inputMode, setInputMode] = useState('upload')
   const [file, setFile] = useState(null)
   const [transcriptText, setTranscriptText] = useState('')
+  // Gong import (only shown when a manager has connected Gong and switched it on).
+  const [gongCalls, setGongCalls] = useState(null)
+  const [gongNote, setGongNote] = useState('')
   const [formError, setFormError] = useState('')
 
   // Confirmation state
@@ -171,6 +175,31 @@ export default function RealCallsPage() {
     // not re-run on every state change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoaded, user])
+
+  useEffect(() => {
+    fetch('/api/gong/calls')
+      .then(async r => { const j = await r.json(); if (r.ok && j.enabled) { setGongCalls(j.calls || []); setGongNote(j.error || j.message || '') } })
+      .catch(() => {})
+  }, [])
+
+  async function importGongCall(callId) {
+    setFormError('')
+    setInputMode('gong')
+    setView(VIEW.PROCESSING)
+    try {
+      const res = await fetch('/api/gong/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callId }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setFormError(data.error || 'Could not import that call.'); setView(VIEW.FORM); return }
+      handleIntakeResponse(data)
+    } catch (err) {
+      setFormError('Something went wrong importing that call. Please try again.')
+      setView(VIEW.FORM)
+    }
+  }
 
   function resetToForm() {
     setView(VIEW.FORM)
@@ -316,6 +345,9 @@ export default function RealCallsPage() {
             formError={formError}
             onSubmitUpload={submitUpload}
             onSubmitTranscript={submitTranscript}
+            gongCalls={gongCalls}
+            gongNote={gongNote}
+            onImportGong={importGongCall}
           />
         )}
 
@@ -405,7 +437,7 @@ export default function RealCallsPage() {
   )
 }
 
-function FormState({ inputMode, setInputMode, file, setFile, transcriptText, setTranscriptText, formError, onSubmitUpload, onSubmitTranscript }) {
+function FormState({ inputMode, setInputMode, file, setFile, transcriptText, setTranscriptText, formError, onSubmitUpload, onSubmitTranscript, gongCalls, gongNote, onImportGong }) {
   return (
     <div className="space-y-6">
       <div className="flex border border-white/10 w-fit">
@@ -423,6 +455,15 @@ function FormState({ inputMode, setInputMode, file, setFile, transcriptText, set
         >
           Paste Transcript
         </button>
+        {gongCalls && (
+          <button
+            type="button"
+            onClick={() => setInputMode('gong')}
+            className={`px-6 py-3 text-[10px] font-bold uppercase tracking-[0.2em] transition-all border-l border-white/10 ${inputMode === 'gong' ? 'bg-[#22D3EE]/10 text-[#22D3EE]' : 'text-zinc-500 hover:text-white'}`}
+          >
+            Import From Gong
+          </button>
+        )}
       </div>
 
       {formError && (
@@ -431,7 +472,24 @@ function FormState({ inputMode, setInputMode, file, setFile, transcriptText, set
         </div>
       )}
 
-      {inputMode === 'upload' ? (
+      {inputMode === 'gong' && gongCalls ? (
+        <div className="border border-white/5 bg-[#0a0a0a] p-8 space-y-3">
+          <p className="text-zinc-500 text-[10px] uppercase tracking-widest mb-3">Your Gong calls, last 30 days</p>
+          {gongNote && <p className="text-zinc-500 text-xs">{gongNote}</p>}
+          {gongCalls.length === 0 && !gongNote && <p className="text-zinc-500 text-xs">No recent Gong calls found for you.</p>}
+          {gongCalls.map(c => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => onImportGong(c.id)}
+              className="w-full text-left border border-white/10 hover:border-[#22D3EE]/50 px-4 py-3 transition-all"
+            >
+              <span className="text-white text-xs block">{c.title}</span>
+              <span className="text-zinc-600 text-[10px]">{c.started ? new Date(c.started).toLocaleString() : ''}{c.durationSeconds ? ` · ${Math.round(c.durationSeconds / 60)} min` : ''}</span>
+            </button>
+          ))}
+        </div>
+      ) : inputMode === 'upload' ? (
         <form onSubmit={onSubmitUpload} className="border border-white/5 bg-[#0a0a0a] p-8 space-y-6">
           <div>
             <label className="text-zinc-500 text-[10px] uppercase tracking-widest block mb-3">Call Recording</label>
