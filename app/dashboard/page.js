@@ -403,6 +403,48 @@ export default function DashboardPage() {
     } catch (e) { setAsgMsg(e.message) } finally { setAsgBusy(false) }
   }
 
+  // Custom buyer scenarios (manager / personal-workspace owner; the server re-checks).
+  const [scn, setScn] = useState(null)
+  const [scnForm, setScnForm] = useState({ name: '', buyerRole: '', company: '', situation: '', personality: 'skeptical', difficulty: '3', objections: '', hiddenMotivation: '' })
+  const [scnBusy, setScnBusy] = useState(false)
+  const [scnMsg, setScnMsg] = useState('')
+
+  async function loadScenarios() {
+    try {
+      const r = await fetch('/api/scenarios')
+      const j = await r.json()
+      if (r.ok) setScn(j)
+    } catch (e) { /* leave as is */ }
+  }
+  useEffect(() => {
+    if (!docsMeta?.canManage) return
+    loadScenarios()
+  }, [docsMeta?.canManage])
+
+  async function createScenario() {
+    setScnBusy(true); setScnMsg('')
+    try {
+      const res = await fetch('/api/scenarios', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(scnForm)
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed.')
+      setScnForm({ name: '', buyerRole: '', company: '', situation: '', personality: 'skeptical', difficulty: '3', objections: '', hiddenMotivation: '' })
+      setScnMsg('Saved.')
+      await loadScenarios()
+    } catch (e) { setScnMsg(e.message) } finally { setScnBusy(false) }
+  }
+  async function deleteScenario(id) {
+    setScnBusy(true); setScnMsg('')
+    try {
+      const res = await fetch(`/api/scenarios?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed.')
+      await loadScenarios()
+    } catch (e) { setScnMsg(e.message) } finally { setScnBusy(false) }
+  }
+
   async function deleteProductDoc(id) {
     setDocDeletingId(id)
     setDocsError('')
@@ -1185,6 +1227,59 @@ export default function DashboardPage() {
                     ))}
                   </div>
                 )}
+              </div>
+            ))}
+          </div>
+          )
+        })()}
+
+        {/* SECTION 12 - Custom buyer scenarios (same visibility rule as the other settings) */}
+        {docsMeta?.canManage && (() => {
+          const inputStyle = { background: '#0a0d14', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontSize: 12, fontFamily: 'monospace', padding: '8px 10px', width: '100%', boxSizing: 'border-box', marginBottom: 8 }
+          const agentReady = !!process.env.NEXT_PUBLIC_CUSTOM_AGENT_ID
+          return (
+          <div style={{ background: '#0d1117', border: '1px solid rgba(0,200,224,0.15)', padding: 24, marginBottom: 16 }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>YOUR COMPANY&apos;S BUYERS</div>
+            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6, marginBottom: 12 }}>
+              Describe a buyer your reps meet in real life and they can practise against it. The text you write is shown to your own reps when they start the call and is sent to ElevenLabs, our voice provider (outside India), so the AI can play the buyer. It is not sent to the scoring model.
+              Do not paste customer names or confidential figures you would not want in a voice provider&apos;s hands.
+            </p>
+            {!agentReady && (
+              <p style={{ fontSize: 11, color: '#f5a623', lineHeight: 1.6, marginBottom: 12 }}>
+                Reps will not see these buyers yet: the one-time &quot;Custom Buyer&quot; voice setup has not been done on this deployment.
+              </p>
+            )}
+            <input style={inputStyle} placeholder="Scenario name, e.g. Procurement squeeze at renewal" value={scnForm.name} onChange={e => setScnForm(f => ({ ...f, name: e.target.value }))} />
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <input style={{ ...inputStyle, flex: 1, minWidth: 180, width: 'auto' }} placeholder="Buyer's job title" value={scnForm.buyerRole} onChange={e => setScnForm(f => ({ ...f, buyerRole: e.target.value }))} />
+              <input style={{ ...inputStyle, flex: 1, minWidth: 180, width: 'auto' }} placeholder="Company (optional), e.g. 800-person logistics firm" value={scnForm.company} onChange={e => setScnForm(f => ({ ...f, company: e.target.value }))} />
+            </div>
+            <textarea style={inputStyle} rows={3} placeholder="Situation: what the call is about, what the buyer wants and what they are comparing you with" value={scnForm.situation} onChange={e => setScnForm(f => ({ ...f, situation: e.target.value }))} />
+            <textarea style={inputStyle} rows={3} placeholder="Objections, one per line (up to 5), e.g. Your price is 15% above the other quote" value={scnForm.objections} onChange={e => setScnForm(f => ({ ...f, objections: e.target.value }))} />
+            <input style={inputStyle} placeholder="What the buyer really cares about but will not say unless the rep earns it (optional)" value={scnForm.hiddenMotivation} onChange={e => setScnForm(f => ({ ...f, hiddenMotivation: e.target.value }))} />
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <select style={{ ...inputStyle, width: 'auto', minWidth: 170 }} value={scnForm.personality} onChange={e => setScnForm(f => ({ ...f, personality: e.target.value }))}>
+                {['skeptical', 'analytical', 'impatient', 'friendly but guarded'].map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <select style={{ ...inputStyle, width: 'auto', minWidth: 150 }} value={scnForm.difficulty} onChange={e => setScnForm(f => ({ ...f, difficulty: e.target.value }))}>
+                {[1, 2, 3, 4, 5].map(d => <option key={d} value={String(d)}>Difficulty {d} of 5</option>)}
+              </select>
+              <button
+                onClick={createScenario}
+                disabled={scnBusy || !scnForm.name.trim() || !scnForm.buyerRole.trim() || !scnForm.situation.trim()}
+                style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: '#00c8e0', border: '1px solid #00c8e0', color: '#0a0d14', padding: '8px 14px', marginBottom: 8, cursor: scnBusy ? 'not-allowed' : 'pointer' }}
+              >
+                {scnBusy ? 'SAVING…' : 'SAVE BUYER'}
+              </button>
+            </div>
+            {scnMsg && <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 4 }}>{scnMsg}</p>}
+            {(scn?.scenarios || []).map(sc => (
+              <div key={sc.id} style={{ borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: 12, paddingTop: 10, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 12, color: '#fff' }}>{sc.name}</div>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>{sc.buyerRole}{sc.company ? `, ${sc.company}` : ''} · {sc.personality} · difficulty {sc.difficulty}/5</div>
+                </div>
+                <button onClick={() => deleteScenario(sc.id)} disabled={scnBusy} style={{ fontSize: 10, background: 'none', border: 'none', color: '#e84545', cursor: 'pointer', fontFamily: 'monospace' }}>DELETE</button>
               </div>
             ))}
           </div>
