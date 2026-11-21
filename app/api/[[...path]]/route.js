@@ -9,7 +9,7 @@ import { clerkClient } from '@clerk/nextjs/server'
 import { getAuthedEmail, getAuthedUser } from '@/lib/auth'
 import { PRODUCT_DOC_LIMITS, canManageProductDocs, validateProductDocInput, checkProductDocQuota, buildProductContext, NO_PRODUCT_CONTEXT } from '@/lib/productDocs.mjs'
 import { validateIntegrationUrl, maskUrl, generateWebhookSecret, signBody, buildSessionPayload, buildTestPayload, formatSlack, formatTeams, isPrivateOrLocalAddress, toCsv } from '@/lib/webhooks.mjs'
-import { getCrmAdapter, CRM_PROVIDERS, buildDealContext, NO_DEAL_CONTEXT } from '@/lib/crm.mjs'
+import { getCrmAdapter, CRM_PROVIDERS, buildDealContext, NO_DEAL_CONTEXT, openCrmSession, forgetCrmSession } from '@/lib/crm.mjs'
 import { MAX_RUNS as CONSISTENCY_MAX_RUNS, SAMPLE_TRANSCRIPTS, summarizeRuns } from '@/lib/scoreConsistency.mjs'
 import { splitTranscriptIntoTurns, validateEvidence } from '@/lib/evidenceValidation.mjs'
 import { hashTranscript, fingerprintCriteria, SCORING_VERSION, SCORING_MODEL_ID, EVALUATION_SOURCE_PRACTICE } from '@/lib/canonicalEvaluation.mjs'
@@ -2360,6 +2360,7 @@ Evaluate the sales rep's performance and return JSON with:
             { $set: { crm: { provider: adapter.id, creds: parsed.creds, connectedAt: new Date().toISOString(), connectedBy: authedUser.email }, crmUseDealContext: false, crmWriteback: false } },
             { upsert: true }
           )
+          forgetCrmSession(workspaceId)
           console.log(`[crm] connected provider=${adapter.id} workspace=${workspaceId}`)
           return handleCORS(NextResponse.json(await status()))
         }
@@ -2369,6 +2370,7 @@ Evaluate the sales rep's performance and return JSON with:
             { _id: workspaceId },
             { $unset: { crm: '', crmUseDealContext: '', crmWriteback: '' } }
           )
+          forgetCrmSession(workspaceId)
           console.log(`[crm] disconnected workspace=${workspaceId}`)
           return handleCORS(NextResponse.json(await status()))
         }
@@ -2419,19 +2421,16 @@ Evaluate the sales rep's performance and return JSON with:
             : route === '/crm/deal-context' ? { enabled: false, dealContext: NO_DEAL_CONTEXT } : { enabled: false, deals: [] }))
         }
 
-        // Shared: sign in to the CRM, then find the rep's own owner id (exact email match).
-        const opened = await adapter.open(fetch, doc.crm.creds)
-        if (!opened.ok) {
-          console.warn(`[crm] open failed provider=${adapter.id} workspace=${workspaceId}`)
-          return handleCORS(NextResponse.json({ enabled: false, deals: [], error: opened.error }))
+        // Shared: sign in to the CRM and find the rep's own owner id (exact email match).
+        // Cached in memory for a few minutes; any CRM error below drops the cache.
+        const sess = await openCrmSession(adapter, fetch, doc.crm.creds, workspaceId, authedUser.email)
+        if (!sess.ok) {
+          forgetCrmSession(workspaceId)
+          console.warn(`[crm] sign-in/owner lookup failed provider=${adapter.id} workspace=${workspaceId}`)
+          return handleCORS(NextResponse.json({ enabled: false, deals: [], error: sess.error }))
         }
-        const ctx = opened.ctx
-        const owner = await adapter.findOwner(fetch, ctx, authedUser.email)
-        if (!owner.ok) {
-          console.warn(`[crm] owner lookup failed provider=${adapter.id} workspace=${workspaceId}`)
-          return handleCORS(NextResponse.json({ enabled: false, deals: [], error: owner.error }))
-        }
-        const ownerId = owner.ownerId
+        const ctx = sess.ctx
+        const ownerId = sess.ownerId
 
         if (route === '/crm/deals' && method === 'GET') {
           if (!ownerId) {
@@ -2439,6 +2438,7 @@ Evaluate the sales rep's performance and return JSON with:
           }
           const [list, labels] = await Promise.all([adapter.listDeals(fetch, ctx, ownerId, 25), adapter.stageLabels(fetch, ctx)])
           if (!list.ok) {
+            forgetCrmSession(workspaceId)
             return handleCORS(NextResponse.json({ enabled: true, deals: [], error: list.error }))
           }
           return handleCORS(NextResponse.json({
@@ -2496,6 +2496,7 @@ Evaluate the sales rep's performance and return JSON with:
           if (!created.ok) {
             // Release the claim so the rep can retry.
             await sessions.updateOne({ id: sessionId }, { $unset: { crmNoteLoggedAt: '', crmDealId: '' } })
+            forgetCrmSession(workspaceId)
             console.warn(`[crm] note failed provider=${adapter.id} workspace=${workspaceId}`)
             return handleCORS(NextResponse.json({ logged: false, error: created.error }, { status: 502 }))
           }
