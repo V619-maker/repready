@@ -263,7 +263,14 @@ export default function CoachDashboard() {
                 {/* Skill Matrix — dimensions scored on this org's current criteria */}
                 {isBoardroom && debrief.dimensions && (
                   <div className="border border-white/5 bg-[#0a0a0a] p-6">
-                    <h3 className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.2em] mb-6">Skill Matrix</h3>
+                    <h3 className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.2em] mb-2">Skill Matrix</h3>
+                    {debrief.criteriaSource === 'custom' ? (
+                      <p className="text-[10px] text-[#22D3EE] mb-6">Scored on your team's custom criteria{debrief.orgIdReceived ? ` (@${debrief.orgIdReceived})` : ''}.</p>
+                    ) : debrief.criteriaSource === 'default' ? (
+                      <p className="text-[10px] text-amber-400 mb-6">Scored on the default criteria. Custom criteria apply only to people who sign in with the same email domain{debrief.orgIdReceived ? ` (you are @${debrief.orgIdReceived})` : ''} as the manager who saved them.</p>
+                    ) : (
+                      <div className="mb-4" />
+                    )}
                     {(debrief.criteria || []).map(c => (
                       <DimensionBar key={c.key} label={c.name} score={debrief.dimensions[c.key]} />
                     ))}

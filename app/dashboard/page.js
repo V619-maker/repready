@@ -388,7 +388,7 @@ export default function DashboardPage() {
           <div style={{ background: '#0d1117', border: '1px solid rgba(0,200,224,0.15)', padding: 24, marginBottom: 16 }}>
             <div style={{ fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>SCORING CRITERIA</div>
             <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 8 }}>
-              These are the skill dimensions reps are scored on. All criteria are weighted equally.
+              These are the skill dimensions reps are scored on. All criteria are weighted equally.{orgId ? ` They apply to everyone who signs in with an @${orgId} email, and to no one else.` : ''}
             </p>
             <p style={{ fontSize: 11, color: '#f5a623', marginBottom: 20 }}>
               Renaming a criterion does not retroactively relabel past sessions scored under the old name — historical sessions keep showing the dimension name they were scored with.
