@@ -78,14 +78,6 @@ function RepReadyDashboard() {
   const transcriptRef = useRef([]);
   const pendingSessionSaveRef = useRef(null);
 
-  useEffect(() => {
-    const header = document.querySelector('body > header');
-    if (header) header.style.display = 'none';
-    return () => {
-      if (header) header.style.display = '';
-    };
-  }, []);
-
   const conversation = useConversation({
     onMessage: (message) => {
       if (message.message) {
@@ -466,6 +458,7 @@ function RepReadyDashboard() {
 
  let finalScore = 0;
 let debriefSaved = false;
+      let scoreIsReal = false; // true only when the scorer returned a numeric score (0 is a real score)
 let boardroomDimensions = null;
 let boardroomGrade = null;
 let boardroomProcurementScore = null;
@@ -506,10 +499,9 @@ let boardroomScoreResultId = null;
 
         if (boardroomResponse.ok) {
           const boardroomData = await boardroomResponse.json();
-          console.log("[BOARDROOM RESPONSE]", boardroomData);
-
-          if (boardroomData.finalScore) {
+          if (typeof boardroomData.finalScore === 'number') {
   finalScore = boardroomData.finalScore;
+  scoreIsReal = true;
 
   boardroomDimensions = boardroomData.dimensions || null;
   boardroomGrade = boardroomData.grade || null;
@@ -556,7 +548,7 @@ let boardroomScoreResultId = null;
         }
       }
 
-      if (finalScore > 0) {
+      if (finalScore > 0 || scoreIsReal) {
         setRecentScore(finalScore);
 
         const qualification = getQualificationStatus(hostilityAtSession, finalScore);
