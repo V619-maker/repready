@@ -4,9 +4,11 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { generateObject } from 'ai'
 import { z } from 'zod'
 import { MongoClient } from 'mongodb'
+import dns from 'node:dns/promises'
 import { clerkClient } from '@clerk/nextjs/server'
 import { getAuthedEmail, getAuthedUser } from '@/lib/auth'
 import { PRODUCT_DOC_LIMITS, canManageProductDocs, validateProductDocInput, checkProductDocQuota, buildProductContext, NO_PRODUCT_CONTEXT } from '@/lib/productDocs.mjs'
+import { validateIntegrationUrl, maskUrl, generateWebhookSecret, signBody, buildSessionPayload, buildTestPayload, formatSlack, formatTeams, isPrivateOrLocalAddress, toCsv } from '@/lib/webhooks.mjs'
 import { MAX_RUNS as CONSISTENCY_MAX_RUNS, SAMPLE_TRANSCRIPTS, summarizeRuns } from '@/lib/scoreConsistency.mjs'
 import { splitTranscriptIntoTurns, validateEvidence } from '@/lib/evidenceValidation.mjs'
 import { hashTranscript, fingerprintCriteria, SCORING_VERSION, SCORING_MODEL_ID, EVALUATION_SOURCE_PRACTICE } from '@/lib/canonicalEvaluation.mjs'
@@ -134,6 +136,65 @@ TRANSCRIPT:
 ${transcript}
 
 Be strict and realistic. Do not be generous.`
+}
+
+// ---------------------------------------------------------------------------
+// Outgoing notifications (Slack / Teams / generic webhook). Configured by a manager
+// on the dashboard, stored in workspaceSettings.integrations (keyed by workspaceId).
+// notifyIntegrations() is called AFTER a session is saved and can never throw or
+// delay the save by more than a few seconds; a failed notification is only logged
+// (never the address, which is a secret).
+// ---------------------------------------------------------------------------
+async function sendIntegration(kind, url, secret, payload) {
+  const check = validateIntegrationUrl(kind, url)
+  if (!check.ok) return { ok: false, error: 'invalid_url' }
+  if (kind === 'webhook') {
+    // Resolve the name first and refuse private/internal addresses (stored address
+    // may have been valid when saved but resolve somewhere internal later).
+    const host = new URL(check.url).hostname
+    const addrs = await dns.lookup(host, { all: true })
+    if (!addrs.length || addrs.some((a) => isPrivateOrLocalAddress(a.address))) return { ok: false, error: 'blocked_address' }
+  }
+  let body, headers = { 'Content-Type': 'application/json' }
+  if (kind === 'slack') body = JSON.stringify(formatSlack(payload))
+  else if (kind === 'teams') body = JSON.stringify(formatTeams(payload))
+  else {
+    body = JSON.stringify(payload)
+    if (secret) headers['X-RepReady-Signature'] = signBody(secret, body)
+    headers['X-RepReady-Event'] = payload.event
+  }
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 3000)
+  try {
+    // redirect: 'manual' so a target cannot bounce us to an internal address.
+    const res = await fetch(check.url, { method: 'POST', headers, body, signal: controller.signal, redirect: 'manual' })
+    return { ok: res.status >= 200 && res.status < 300, status: res.status }
+  } catch (e) {
+    return { ok: false, error: e?.name === 'AbortError' ? 'timeout' : 'network' }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function notifyIntegrations(workspaceId, session) {
+  try {
+    if (!workspaceId) return
+    const db = await getDb()
+    const cfg = (await db.collection('workspaceSettings').findOne({ _id: workspaceId }))?.integrations
+    if (!cfg) return
+    const payload = buildSessionPayload(session)
+    const jobs = []
+    if (cfg.slackUrl) jobs.push(['slack', sendIntegration('slack', cfg.slackUrl, null, payload)])
+    if (cfg.teamsUrl) jobs.push(['teams', sendIntegration('teams', cfg.teamsUrl, null, payload)])
+    if (cfg.webhookUrl) jobs.push(['webhook', sendIntegration('webhook', cfg.webhookUrl, cfg.webhookSecret, payload)])
+    const results = await Promise.allSettled(jobs.map(([, p]) => p))
+    results.forEach((r, k) => {
+      const ok = r.status === 'fulfilled' && r.value.ok
+      if (!ok) console.warn(`[integrations] ${jobs[k][0]} notification failed for workspace=${workspaceId}: ${r.status === 'fulfilled' ? (r.value.error || r.value.status) : 'error'}`)
+    })
+  } catch (e) {
+    console.warn('[integrations] notify skipped:', e?.message)
+  }
 }
 
 // `orgId` here is trusted only as far as each caller trusts it — this
@@ -1227,6 +1288,7 @@ Evaluate the sales rep's performance and return JSON with:
           const db = await getDb()
           const transactionSession = cachedClient.startSession()
           let canonicalSession = null
+          let canonicalCreatedNew = false
 
           try {
             await transactionSession.withTransaction(async () => {
@@ -1319,6 +1381,7 @@ Evaluate the sales rep's performance and return JSON with:
               }
 
               canonicalSession = session
+              canonicalCreatedNew = true
             })
 
             console.info('Canonical session save committed', {
@@ -1326,6 +1389,9 @@ Evaluate the sales rep's performance and return JSON with:
               scoreResultId: body.scoreResultId,
               sessionId: canonicalSession?.id
             })
+            // Post-commit notification only for a newly created session (not an
+            // idempotent retry). Cannot throw; adds at most ~3s.
+            if (canonicalCreatedNew) await notifyIntegrations(authedUser.workspaceId, canonicalSession)
             return handleCORS(NextResponse.json(canonicalSession))
           } catch (canonicalSaveError) {
             if (canonicalSaveError.code === 'INVALID_SCORE_RESULT') {
@@ -1396,6 +1462,7 @@ Evaluate the sales rep's performance and return JSON with:
 }
         const db = await getDb()
         await db.collection('sessions').insertOne(session)
+        await notifyIntegrations(authedUser.workspaceId, session)
         return handleCORS(NextResponse.json(session))
       } catch (error) {
         console.error('Save session error:', error)
@@ -2087,6 +2154,140 @@ Evaluate the sales rep's performance and return JSON with:
       } catch (error) {
         console.error('Score consistency error:', error?.message)
         return handleCORS(NextResponse.json({ error: "Consistency check failed." }, { status: 500 }))
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // Integrations settings - /api/admin/integrations (GET, POST) and
+    // /api/admin/integrations/test (POST). Manager (or personal-workspace owner)
+    // only, scoped by workspaceId. Addresses are secrets: stored server-side, and
+    // only ever returned masked. A webhook gets a signing secret (shown once).
+    // ---------------------------------------------------------------------
+    if (route.startsWith('/admin/integrations') && (route === '/admin/integrations' || route === '/admin/integrations/test')) {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const workspaceId = authedUser.workspaceId
+        if (!workspaceId) {
+          return handleCORS(NextResponse.json(
+            { error: "Unable to determine a private workspace from this account." }, { status: 400 }
+          ))
+        }
+        if (!canManageProductDocs(authedUser)) {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+        const db = await getDb()
+        const settingsCol = db.collection('workspaceSettings')
+        const KINDS = { slack: 'slackUrl', teams: 'teamsUrl', webhook: 'webhookUrl' }
+        const view = (cfg) => ({
+          slack: cfg?.slackUrl ? maskUrl(cfg.slackUrl) : null,
+          teams: cfg?.teamsUrl ? maskUrl(cfg.teamsUrl) : null,
+          webhook: cfg?.webhookUrl ? maskUrl(cfg.webhookUrl) : null,
+        })
+
+        if (route === '/admin/integrations' && method === 'GET') {
+          const cfg = (await settingsCol.findOne({ _id: workspaceId }))?.integrations
+          return handleCORS(NextResponse.json({ configured: view(cfg) }))
+        }
+
+        if (route === '/admin/integrations' && method === 'POST') {
+          const body = await request.json()
+          const kind = body.kind
+          if (!KINDS[kind]) {
+            return handleCORS(NextResponse.json({ error: "Unknown integration." }, { status: 400 }))
+          }
+          const field = KINDS[kind]
+          const existing = (await settingsCol.findOne({ _id: workspaceId }))?.integrations || {}
+          const now = new Date().toISOString()
+          // url === null (or empty) removes it.
+          if (body.url === null || body.url === '') {
+            const unset = { [`integrations.${field}`]: '' }
+            if (kind === 'webhook') unset['integrations.webhookSecret'] = ''
+            await settingsCol.updateOne({ _id: workspaceId }, { $unset: unset, $set: { updatedAt: now, updatedBy: authedUser.email } }, { upsert: true })
+            console.log(`[integrations] removed ${kind} workspace=${workspaceId}`)
+            const cfg = (await settingsCol.findOne({ _id: workspaceId }))?.integrations
+            return handleCORS(NextResponse.json({ configured: view(cfg) }))
+          }
+          const check = validateIntegrationUrl(kind, body.url)
+          if (!check.ok) {
+            return handleCORS(NextResponse.json({ error: check.error }, { status: 400 }))
+          }
+          const set = { [`integrations.${field}`]: check.url, updatedAt: now, updatedBy: authedUser.email }
+          let newSecret = null
+          if (kind === 'webhook' && (!existing.webhookSecret || body.rotateSecret === true)) {
+            newSecret = generateWebhookSecret()
+            set['integrations.webhookSecret'] = newSecret
+          }
+          await settingsCol.updateOne({ _id: workspaceId }, { $set: set }, { upsert: true })
+          console.log(`[integrations] saved ${kind} workspace=${workspaceId}`)
+          const cfg = (await settingsCol.findOne({ _id: workspaceId }))?.integrations
+          // The signing secret is shown only in this response.
+          return handleCORS(NextResponse.json({ configured: view(cfg), newSecret }))
+        }
+
+        if (route === '/admin/integrations/test' && method === 'POST') {
+          const body = await request.json()
+          const kind = body.kind
+          if (!KINDS[kind]) {
+            return handleCORS(NextResponse.json({ error: "Unknown integration." }, { status: 400 }))
+          }
+          const cfg = (await settingsCol.findOne({ _id: workspaceId }))?.integrations
+          if (!cfg?.[KINDS[kind]]) {
+            return handleCORS(NextResponse.json({ error: "Save an address first." }, { status: 400 }))
+          }
+          const result = await sendIntegration(kind, cfg[KINDS[kind]], cfg.webhookSecret, buildTestPayload())
+          return handleCORS(NextResponse.json({
+            ok: result.ok === true,
+            detail: result.ok ? 'Sent. Check the channel or your receiving system.' : `Failed (${result.error || result.status}).`
+          }))
+        }
+
+        return handleCORS(NextResponse.json({ error: "Not found" }, { status: 404 }))
+      } catch (error) {
+        console.error('Integrations error:', error?.message)
+        return handleCORS(NextResponse.json({ error: "Integrations request failed." }, { status: 500 }))
+      }
+    }
+
+    // CSV export of practice sessions - GET /api/admin/export-sessions
+    // Manager (or personal-workspace owner) only. Company workspace: every session in
+    // the org. Personal (free-email) workspace: only the caller's own sessions,
+    // never the shared "gmail.com" pool. Capped at 5,000 rows; transcripts are not stored
+    // in sessions so none are exported.
+    if (route === '/admin/export-sessions' && method === 'GET') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        if (!authedUser.workspaceId || !authedUser.orgId) {
+          return handleCORS(NextResponse.json(
+            { error: "Unable to determine a private workspace from this account." }, { status: 400 }
+          ))
+        }
+        if (!canManageProductDocs(authedUser)) {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+        const filter = authedUser.isPersonalWorkspace
+          ? { orgId: authedUser.orgId, userEmail: authedUser.email }
+          : { orgId: authedUser.orgId }
+        const db = await getDb()
+        const rows = await db.collection('sessions')
+          .find(filter, { projection: { _id: 0 } })
+          .sort({ createdAt: -1 })
+          .limit(5000)
+          .toArray()
+        const columns = ['createdAt', 'userEmail', 'persona', 'finalScore', 'grade', 'procurementScore', 'enablementScore', 'qualificationStatus', 'hostilityReached', 'verdict']
+        const csv = toCsv(rows, columns)
+        return handleCORS(new NextResponse(csv, { headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': 'attachment; filename="repready-sessions.csv"'
+        } }))
+      } catch (error) {
+        console.error('Export sessions error:', error?.message)
+        return handleCORS(NextResponse.json({ error: "Export failed." }, { status: 500 }))
       }
     }
 
