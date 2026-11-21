@@ -1,5 +1,18 @@
 import { auth, clerkClient } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
+import { MongoClient } from 'mongodb';
+import { acquireCreditLock, releaseCreditLock } from '../../../lib/creditLock.mjs';
+
+// Same connection settings as the main API route; cached across warm invocations.
+let cachedClient = null;
+async function getLockCollection() {
+  if (!cachedClient) {
+    const client = new MongoClient(process.env.MONGO_URL);
+    await client.connect();
+    cachedClient = client;
+  }
+  return cachedClient.db(process.env.DB_NAME || 'repready').collection('creditLocks');
+}
 
 export async function POST(req) {
   try {
@@ -10,6 +23,23 @@ export async function POST(req) {
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
+    // 1b. Take a short per-user lock so two simultaneous requests can't both
+    // read the same balance and both succeed (Known Issue 0e). Fails closed:
+    // if the lock cannot be taken, nobody is charged and nobody gets a call.
+    let lockCol = null;
+    let lockToken = null;
+    try {
+      lockCol = await getLockCollection();
+      lockToken = await acquireCreditLock(lockCol, userId);
+    } catch (lockError) {
+      console.error("Credit lock unavailable:", lockError);
+      return new NextResponse("Credit service unavailable, please retry", { status: 503 });
+    }
+    if (!lockToken) {
+      return new NextResponse("Another request is in progress, please retry", { status: 409 });
+    }
+
+    try {
     // 2. Fetch the user's data from Clerk's database
     const client = await clerkClient();
     const user = await client.users.getUser(userId);
@@ -35,6 +65,9 @@ export async function POST(req) {
 
     // 6. Tell the frontend the payment was successful
     return NextResponse.json({ success: true, remaining: currentCredits - 1 });
+    } finally {
+      await releaseCreditLock(lockCol, userId, lockToken);
+    }
 
   } catch (error) {
     console.error("Credit deduction error:", error);
