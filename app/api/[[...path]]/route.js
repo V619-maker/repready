@@ -9,6 +9,7 @@ import { clerkClient } from '@clerk/nextjs/server'
 import { getAuthedEmail, getAuthedUser } from '@/lib/auth'
 import { PRODUCT_DOC_LIMITS, canManageProductDocs, validateProductDocInput, checkProductDocQuota, buildProductContext, NO_PRODUCT_CONTEXT } from '@/lib/productDocs.mjs'
 import { validateIntegrationUrl, maskUrl, generateWebhookSecret, signBody, buildSessionPayload, buildTestPayload, formatSlack, formatTeams, isPrivateOrLocalAddress, toCsv } from '@/lib/webhooks.mjs'
+import { validateAssignmentInput, evaluateAssignment, assignmentsForRep, ASSIGNMENT_LIMITS } from '@/lib/assignments.mjs'
 import { parseGongCreds, maskGong, isValidGongCallId, verifyGong, findGongUserId, forgetGongUsers, listGongCalls, getGongCall, isRepsCall, getGongTranscript, buildLabeledLines, GONG_MAX_TRANSCRIPT_CHARS } from '@/lib/gong.mjs'
 import { getCrmAdapter, CRM_PROVIDERS, buildDealContext, NO_DEAL_CONTEXT, openCrmSession, forgetCrmSession } from '@/lib/crm.mjs'
 import { MAX_RUNS as CONSISTENCY_MAX_RUNS, SAMPLE_TRANSCRIPTS, summarizeRuns } from '@/lib/scoreConsistency.mjs'
@@ -2693,6 +2694,97 @@ Evaluate the sales rep's performance and return JSON with:
       } catch (error) {
         console.error('Gong error:', error?.message)
         return handleCORS(NextResponse.json({ enabled: false, calls: [], error: "Gong request failed." }, { status: 500 }))
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // Assigned practice (Sprint 70). A manager assigns "practice <buyer>, optionally
+    // focusing a skill, by <date>" to named reps or everyone in the org, and sees who
+    // has done it. Completion is DERIVED from the existing sessions collection (rep +
+    // buyer + saved after the assignment + score >= optional minimum); the session-save
+    // and scoring paths are untouched. Scoped by the legacy orgId (same as sessions and
+    // the manager dashboard). Free-email orgs (gmail.com etc.) are one big shared bucket,
+    // so assignments are refused there rather than shown to strangers.
+    //   Manager: GET/POST/DELETE /api/admin/assignments
+    //   Any signed-in member: GET /api/assignments/mine (own status only)
+    // ---------------------------------------------------------------------
+    if (route === '/admin/assignments' || (route === '/assignments/mine' && method === 'GET')) {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const orgId = authedUser.orgId
+        if (!orgId) {
+          return handleCORS(NextResponse.json({ error: "Unable to determine organization from account email" }, { status: 400 }))
+        }
+        const sharedOrg = authedUser.isPersonalWorkspace === true
+        const db = await getDb()
+        const acol = db.collection('assignments')
+
+        if (route === '/assignments/mine') {
+          if (sharedOrg) return handleCORS(NextResponse.json({ assignments: [] }))
+          const list = await acol.find({ orgId }).sort({ createdAt: -1 }).limit(ASSIGNMENT_LIMITS.maxOpenPerOrg).toArray()
+          const mySessions = await db.collection('sessions')
+            .find({ orgId, userEmail: authedUser.email }, { projection: { persona: 1, finalScore: 1, createdAt: 1 } })
+            .toArray()
+          return handleCORS(NextResponse.json({ assignments: assignmentsForRep(list, authedUser.email, mySessions) }))
+        }
+
+        if (authedUser.role !== 'manager') {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+        if (sharedOrg) {
+          return handleCORS(NextResponse.json({ error: "Assignments need a company email domain; free email accounts (like gmail.com) share one bucket with strangers." }, { status: 400 }))
+        }
+
+        if (method === 'GET') {
+          const list = await acol.find({ orgId }).sort({ createdAt: -1 }).limit(ASSIGNMENT_LIMITS.maxOpenPerOrg).toArray()
+          const earliest = list.length ? list[list.length - 1].createdAt : null
+          const sessions = earliest
+            ? await db.collection('sessions').find({ orgId, createdAt: { $gte: earliest } }, { projection: { userEmail: 1, persona: 1, finalScore: 1, createdAt: 1 } }).limit(20000).toArray()
+            : []
+          const known = await db.collection('sessions').distinct('userEmail', { orgId })
+          const byEmail = {}
+          for (const x of sessions) { const e = String(x.userEmail || '').toLowerCase(); (byEmail[e] = byEmail[e] || []).push(x) }
+          return handleCORS(NextResponse.json({
+            assignments: list.map((a) => ({
+              id: a.id, title: a.title, persona: a.persona, focus: a.focus, note: a.note, dueDate: a.dueDate,
+              minScore: a.minScore, assignees: a.assignees || [], createdAt: a.createdAt, createdBy: a.createdBy,
+              progress: evaluateAssignment(a, byEmail, known.filter(Boolean)),
+            })),
+            limits: ASSIGNMENT_LIMITS,
+          }))
+        }
+
+        if (method === 'POST') {
+          const body = await request.json()
+          const checked = validateAssignmentInput(body, { orgDomain: orgId })
+          if (!checked.ok) {
+            return handleCORS(NextResponse.json({ error: checked.error }, { status: 400 }))
+          }
+          if ((await acol.countDocuments({ orgId })) >= ASSIGNMENT_LIMITS.maxOpenPerOrg) {
+            return handleCORS(NextResponse.json({ error: `You have ${ASSIGNMENT_LIMITS.maxOpenPerOrg} assignments. Delete an old one first.` }, { status: 409 }))
+          }
+          const doc = { id: uuidv4(), orgId, createdBy: authedUser.email, createdAt: new Date().toISOString(), ...checked.value }
+          await acol.insertOne(doc)
+          console.log(`[assignments] created org=${orgId}`)
+          return handleCORS(NextResponse.json({ id: doc.id }))
+        }
+
+        if (method === 'DELETE') {
+          const id = new URL(request.url).searchParams.get('id') || ''
+          const r = await acol.deleteOne({ id, orgId })
+          if (!r.deletedCount) {
+            return handleCORS(NextResponse.json({ error: "Assignment not found." }, { status: 404 }))
+          }
+          return handleCORS(NextResponse.json({ deleted: true }))
+        }
+
+        return handleCORS(NextResponse.json({ error: "Not found" }, { status: 404 }))
+      } catch (error) {
+        console.error('Assignments error:', error?.message)
+        return handleCORS(NextResponse.json({ error: "Assignments request failed." }, { status: 500 }))
       }
     }
 

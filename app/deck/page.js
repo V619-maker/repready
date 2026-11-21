@@ -247,6 +247,17 @@ function RepReadyDashboard() {
       .catch(() => {});
   }, [isLoaded, user]);
 
+  // Assigned practice: what a manager has asked this rep to do (own status only).
+  const [assignments, setAssignments] = useState([]);
+  useEffect(() => {
+    if (!isLoaded || !user) return;
+    fetch('/api/assignments/mine')
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j && Array.isArray(j.assignments)) setAssignments(j.assignments.filter(a => a.status !== 'done' && a.status !== 'done_late')); })
+      .catch(() => {});
+  }, [isLoaded, user]);
+  const agentForPersona = (persona) => Object.keys(PERSONA_MAP).find(id => PERSONA_MAP[id] === persona);
+
   useEffect(() => {
     if (autoSelectDoneRef.current || !isLoaded || typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
@@ -604,6 +615,41 @@ let boardroomScoreResultId = null;
             </Link>
           </div>
         </header>
+
+        {assignments.length > 0 && (
+          <div className="border border-[#F5A623]/30 bg-[#F5A623]/5 p-6 mb-8">
+            <p className="text-[#F5A623] text-[10px] uppercase tracking-[0.3em] mb-4">Assigned to you</p>
+            <div className="space-y-3">
+              {assignments.map(a => {
+                const agentId = agentForPersona(a.persona);
+                return (
+                  <div key={a.id} className="flex flex-wrap items-center justify-between gap-3 border border-white/10 px-4 py-3">
+                    <div>
+                      <p className="text-white text-xs">{a.title}</p>
+                      <p className="text-zinc-500 text-[10px] mt-1">
+                        {PERSONA_DISPLAY_NAME[agentId] ? `Buyer: ${PERSONA_DISPLAY_NAME[agentId]}` : a.persona}
+                        {a.focus ? ` · Focus: ${a.focus}` : ''}
+                        {a.dueDate ? ` · Due ${a.dueDate}` : ''}
+                        {a.minScore ? ` · Score at least ${a.minScore}` : ''}
+                        {a.status === 'overdue' ? ' · OVERDUE' : ''}
+                        {a.status === 'attempted' && a.bestScore != null ? ` · Your best so far: ${a.bestScore}` : ''}
+                      </p>
+                      {a.note && <p className="text-zinc-400 text-[11px] mt-1">{a.note}</p>}
+                    </div>
+                    {agentId && (
+                      <button
+                        onClick={() => { if (a.focus) setPracticeFocus(String(a.focus).slice(0, 60)); handleSelectPersona(agentId); }}
+                        className="px-4 py-2 border border-[#F5A623]/50 text-[#F5A623] text-[10px] font-bold uppercase tracking-[0.2em] hover:bg-[#F5A623]/10 transition-all"
+                      >
+                        Start
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           {/* Richard Card */}
