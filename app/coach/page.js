@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { marginDefenseLabel } from '@/lib/marginDefense.mjs'
 import Link from 'next/link';
 
 // Evidence-grounded coaching (Sprint 51). `text` is the existing, always-
@@ -283,7 +284,7 @@ export default function CoachDashboard() {
                     <div className="border border-white/5 bg-[#0a0a0a] p-6">
                       <h3 className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.2em] mb-4">Procurement Analysis</h3>
                       <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-1">Margin Defense</p>
-                      <p className="text-xs text-white font-bold uppercase mb-3">{debrief.analysts.procurement.marginDefense}</p>
+                      <p className="text-xs text-white font-bold uppercase mb-3">{marginDefenseLabel(debrief.analysts.procurement.marginDefense)}</p>
                       <p className="text-xs text-zinc-500 leading-relaxed">{debrief.analysts.procurement.reasoning}</p>
                     </div>
                     <div className="border border-white/5 bg-[#0a0a0a] p-6">
