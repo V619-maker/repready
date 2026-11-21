@@ -7,6 +7,7 @@ import { MongoClient } from 'mongodb'
 import { clerkClient } from '@clerk/nextjs/server'
 import { getAuthedEmail, getAuthedUser } from '@/lib/auth'
 import { PRODUCT_DOC_LIMITS, canManageProductDocs, validateProductDocInput, checkProductDocQuota, buildProductContext, NO_PRODUCT_CONTEXT } from '@/lib/productDocs.mjs'
+import { MAX_RUNS as CONSISTENCY_MAX_RUNS, SAMPLE_TRANSCRIPTS, summarizeRuns } from '@/lib/scoreConsistency.mjs'
 import { splitTranscriptIntoTurns, validateEvidence } from '@/lib/evidenceValidation.mjs'
 import { hashTranscript, fingerprintCriteria, SCORING_VERSION, SCORING_MODEL_ID, EVALUATION_SOURCE_PRACTICE } from '@/lib/canonicalEvaluation.mjs'
 
@@ -2006,6 +2007,86 @@ Evaluate the sales rep's performance and return JSON with:
         console.error('Product context error:', error?.message)
         // Fail closed: a practice call must still work without the reference.
         return handleCORS(NextResponse.json({ enabled: false, productContext: NO_PRODUCT_CONTEXT }))
+      }
+    }
+
+    // Scoring consistency check - GET /api/admin/score-consistency?runs=10&format=json
+    // Manager-only. Scores the SAME built-in sample call several times with the real
+    // scoring function (scoreTranscript, same prompt and schema as production, using
+    // the manager's own org criteria) and reports how much the numbers move. Two
+    // sample calls (a strong rep and a weak rep) so it also shows whether scoring can
+    // tell them apart. Each run is a billed Gemini call, so runs are capped at 10 per
+    // sample call and nothing is saved to the database. Default output is plain text.
+    if (route === '/admin/score-consistency' && method === 'GET') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        if (authedUser.role !== 'manager') {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+        const orgId = authedUser.orgId
+        if (!orgId) return handleCORS(NextResponse.json(
+          { error: "Unable to determine organization from account email" }, { status: 400 }
+        ))
+        const url = new URL(request.url)
+        const runs = Math.min(CONSISTENCY_MAX_RUNS, Math.max(2, parseInt(url.searchParams.get('runs') || '10', 10) || 10))
+
+        const report = {}
+        for (const [name, transcript] of Object.entries(SAMPLE_TRANSCRIPTS)) {
+          const ok = []
+          let failed = 0
+          for (let done = 0; done < runs; done += 5) {
+            const batch = Math.min(5, runs - done)
+            const settled = await Promise.allSettled(
+              Array.from({ length: batch }, () => scoreTranscript(transcript, 'richard', orgId))
+            )
+            for (const r of settled) {
+              if (r.status === 'fulfilled') ok.push(r.value)
+              else { failed++; console.error('[score-consistency] run failed:', r.reason?.message) }
+            }
+          }
+          report[name] = { ...summarizeRuns(ok), failedRuns: failed }
+        }
+
+        const gap = (report.strongRep.weightedScore.mean ?? 0) - (report.weakRep.weightedScore.mean ?? 0)
+        const fmt = (label, x) => x.n
+          ? `${label}: average ${x.mean}, lowest ${x.min}, highest ${x.max}, spread ${x.spread} points`
+          : `${label}: no successful runs`
+        const verdict = (x) => x.spread === null ? 'no data'
+          : x.spread <= 5 ? 'steady'
+          : x.spread <= 10 ? 'some wobble'
+          : 'unreliable'
+        const lines = [
+          `SCORING CONSISTENCY CHECK (${runs} runs per call, criteria: ${orgId})`,
+          '',
+          'Same call scored again and again. Smaller spread = more trustworthy scores.',
+          '',
+          'STRONG REP CALL',
+          fmt('  Overall score', report.strongRep.weightedScore) + `  -> ${verdict(report.strongRep.weightedScore)}`,
+          `  Failed runs: ${report.strongRep.failedRuns}`,
+          '',
+          'WEAK REP CALL (gives away 15% and free onboarding immediately)',
+          fmt('  Overall score', report.weakRep.weightedScore) + `  -> ${verdict(report.weakRep.weightedScore)}`,
+          `  Failed runs: ${report.weakRep.failedRuns}`,
+          '',
+          `Gap between average strong and weak score: ${Math.round(gap)} points (should be large and positive).`,
+          '',
+          'Skill by skill, spread in points (strong call / weak call):',
+          ...Object.keys(report.strongRep.dimensions).map((k) =>
+            `  ${k}: ${report.strongRep.dimensions[k].spread} / ${report.weakRep.dimensions[k]?.spread ?? 'n/a'}`),
+          '',
+          'How to read this: my own rule of thumb, not an industry standard. 5 points or less = steady, 6-10 = some wobble, over 10 = unreliable.',
+          'Nothing was saved. Each run is one billed Gemini call.',
+        ]
+        if (url.searchParams.get('format') === 'json') {
+          return handleCORS(NextResponse.json({ runs, orgId, gap: Math.round(gap), report }))
+        }
+        return handleCORS(new NextResponse(lines.join('\n'), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } }))
+      } catch (error) {
+        console.error('Score consistency error:', error?.message)
+        return handleCORS(NextResponse.json({ error: "Consistency check failed." }, { status: 500 }))
       }
     }
 
