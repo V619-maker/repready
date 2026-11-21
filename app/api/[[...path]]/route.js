@@ -9,6 +9,7 @@ import { clerkClient } from '@clerk/nextjs/server'
 import { getAuthedEmail, getAuthedUser } from '@/lib/auth'
 import { PRODUCT_DOC_LIMITS, canManageProductDocs, validateProductDocInput, checkProductDocQuota, buildProductContext, NO_PRODUCT_CONTEXT } from '@/lib/productDocs.mjs'
 import { validateIntegrationUrl, maskUrl, generateWebhookSecret, signBody, buildSessionPayload, buildTestPayload, formatSlack, formatTeams, isPrivateOrLocalAddress, toCsv } from '@/lib/webhooks.mjs'
+import { parseGongCreds, maskGong, isValidGongCallId, verifyGong, findGongUserId, forgetGongUsers, listGongCalls, getGongCall, isRepsCall, getGongTranscript, buildLabeledLines, GONG_MAX_TRANSCRIPT_CHARS } from '@/lib/gong.mjs'
 import { getCrmAdapter, CRM_PROVIDERS, buildDealContext, NO_DEAL_CONTEXT, openCrmSession, forgetCrmSession } from '@/lib/crm.mjs'
 import { MAX_RUNS as CONSISTENCY_MAX_RUNS, SAMPLE_TRANSCRIPTS, summarizeRuns } from '@/lib/scoreConsistency.mjs'
 import { splitTranscriptIntoTurns, validateEvidence } from '@/lib/evidenceValidation.mjs'
@@ -2507,6 +2508,191 @@ Evaluate the sales rep's performance and return JSON with:
       } catch (error) {
         console.error('CRM error:', error?.message)
         return handleCORS(NextResponse.json({ enabled: false, deals: [], error: "CRM request failed." }, { status: 500 }))
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // Gong import (Sprint 69). The customer's Gong admin creates an access key +
+    // secret (Settings, Ecosystem, API) and pastes them here. Secrets are stored
+    // server-side in workspaceSettings.gong and never returned (masked label only).
+    //   Manager (or personal-workspace owner): /api/admin/gong (GET, POST, DELETE),
+    //                                          /api/admin/gong/settings (POST { enabled })
+    //   Any signed-in member, own calls only:   GET /api/gong/calls, POST /api/gong/import
+    // Gong keys see every call in the account, so own-calls-only is enforced HERE:
+    // the call's primary user or a participant email must match the rep's sign-in email.
+    // An import creates a normal realCalls record (same as a pasted transcript), so the
+    // existing speaker-confirmation and scoring flow runs unchanged.
+    // ---------------------------------------------------------------------
+    if (route === '/admin/gong' || route === '/admin/gong/settings') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const workspaceId = authedUser.workspaceId
+        if (!workspaceId) {
+          return handleCORS(NextResponse.json(
+            { error: "Unable to determine a private workspace from this account." }, { status: 400 }
+          ))
+        }
+        if (!canManageProductDocs(authedUser)) {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+        const db = await getDb()
+        const col = db.collection('workspaceSettings')
+        const status = async () => {
+          const doc = await col.findOne({ _id: workspaceId })
+          const connected = !!doc?.gong?.creds
+          return {
+            connected,
+            credentials: connected ? maskGong(doc.gong.creds) : null,
+            enabled: doc?.gongEnabled === true,
+          }
+        }
+
+        if (route === '/admin/gong' && method === 'GET') {
+          return handleCORS(NextResponse.json(await status()))
+        }
+
+        if (route === '/admin/gong' && method === 'POST') {
+          const body = await request.json()
+          const parsed = parseGongCreds(body)
+          if (!parsed.ok) {
+            return handleCORS(NextResponse.json({ error: parsed.error }, { status: 400 }))
+          }
+          const check = await verifyGong(fetch, parsed.creds)
+          if (!check.ok) {
+            return handleCORS(NextResponse.json({ error: check.error }, { status: 400 }))
+          }
+          await col.updateOne(
+            { _id: workspaceId },
+            { $set: { gong: { creds: parsed.creds, connectedAt: new Date().toISOString(), connectedBy: authedUser.email }, gongEnabled: false } },
+            { upsert: true }
+          )
+          forgetGongUsers(`${workspaceId}`)
+          console.log(`[gong] connected workspace=${workspaceId}`)
+          return handleCORS(NextResponse.json(await status()))
+        }
+
+        if (route === '/admin/gong' && method === 'DELETE') {
+          await col.updateOne({ _id: workspaceId }, { $unset: { gong: '', gongEnabled: '' } })
+          forgetGongUsers(`${workspaceId}`)
+          console.log(`[gong] disconnected workspace=${workspaceId}`)
+          return handleCORS(NextResponse.json(await status()))
+        }
+
+        if (route === '/admin/gong/settings' && method === 'POST') {
+          const body = await request.json()
+          const current = await status()
+          if (!current.connected) {
+            return handleCORS(NextResponse.json({ error: "Connect Gong first." }, { status: 400 }))
+          }
+          if (typeof body.enabled !== 'boolean') {
+            return handleCORS(NextResponse.json({ error: "Nothing to change." }, { status: 400 }))
+          }
+          await col.updateOne({ _id: workspaceId }, { $set: { gongEnabled: body.enabled } })
+          console.log(`[gong] enabled=${body.enabled} workspace=${workspaceId}`)
+          return handleCORS(NextResponse.json(await status()))
+        }
+
+        return handleCORS(NextResponse.json({ error: "Not found" }, { status: 404 }))
+      } catch (error) {
+        console.error('Gong admin error:', error?.message)
+        return handleCORS(NextResponse.json({ error: "Gong request failed." }, { status: 500 }))
+      }
+    }
+
+    if ((route === '/gong/calls' && method === 'GET') || (route === '/gong/import' && method === 'POST')) {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const workspaceId = authedUser.workspaceId
+        const db = await getDb()
+        const doc = workspaceId ? await db.collection('workspaceSettings').findOne({ _id: workspaceId }) : null
+        const creds = doc?.gong?.creds
+        if (!creds || doc.gongEnabled !== true) {
+          return handleCORS(NextResponse.json({ enabled: false, calls: [] }))
+        }
+        const user = await findGongUserId(fetch, creds, authedUser.email, `${workspaceId}`)
+        if (!user.ok) {
+          forgetGongUsers(`${workspaceId}`)
+          return handleCORS(NextResponse.json({ enabled: false, calls: [], error: user.error }))
+        }
+
+        if (route === '/gong/calls') {
+          if (!user.userId) {
+            return handleCORS(NextResponse.json({ enabled: true, calls: [], message: "No Gong user found with your sign-in email." }))
+          }
+          const list = await listGongCalls(fetch, creds, user.userId)
+          if (!list.ok) {
+            return handleCORS(NextResponse.json({ enabled: true, calls: [], error: list.error }))
+          }
+          return handleCORS(NextResponse.json({
+            enabled: true,
+            calls: list.calls.map((c) => ({ id: c.id, title: c.title, started: c.started, durationSeconds: c.durationSeconds }))
+          }))
+        }
+
+        // POST /gong/import
+        const orgId = authedUser.orgId
+        if (!orgId) {
+          return handleCORS(NextResponse.json({ error: "Unable to determine organization from account email" }, { status: 400 }))
+        }
+        const body = await request.json()
+        const callId = body?.callId
+        if (!isValidGongCallId(callId)) {
+          return handleCORS(NextResponse.json({ error: "Invalid call." }, { status: 400 }))
+        }
+        const got = await getGongCall(fetch, creds, callId)
+        // Same answer for "not found" and "not yours" so ids cannot be probed.
+        if (!got.ok || !isRepsCall(got.call, user.userId, authedUser.email)) {
+          return handleCORS(NextResponse.json({ error: "That call was not found in your Gong calls." }, { status: 404 }))
+        }
+        const tr = await getGongTranscript(fetch, creds, callId, got.call.started)
+        if (!tr.ok) {
+          return handleCORS(NextResponse.json({ error: tr.error }, { status: 502 }))
+        }
+        if (!tr.transcript || !tr.transcript.length) {
+          return handleCORS(NextResponse.json({ error: "Gong has no transcript for this call yet. Transcripts can take a while after a call ends." }, { status: 409 }))
+        }
+        const { lines, labels, chars, labelBySpeaker } = buildLabeledLines(got.call.parties, tr.transcript)
+        const record = {
+          id: uuidv4(),
+          orgId,
+          userEmail: authedUser.email,
+          createdAt: new Date().toISOString(),
+          source: 'gong',
+          gongCallId: callId,
+        }
+        // Same outcomes as a pasted transcript, plus a length cap (the scoring call has to finish on Vercel Hobby).
+        const unsupported = labels.length === 0 ? 'no_labels_detected'
+          : labels.length === 1 ? 'single_speaker'
+          : labels.length > 2 ? 'speaker_count'
+          : chars > GONG_MAX_TRANSCRIPT_CHARS ? 'too_long' : null
+        if (unsupported) {
+          record.status = 'unsupported'
+          record.unsupportedReason = unsupported
+          await db.collection('realCalls').insertOne(record)
+          return handleCORS(NextResponse.json({ id: record.id, status: 'unsupported', reason: unsupported }))
+        }
+        record.status = 'ready_for_confirmation'
+        record.pastedLines = lines
+        await db.collection('realCalls').insertOne(record)
+        // Gong parties tell us who is internal: pre-select the likely rep so the confirm step is one click.
+        const me = got.call.parties.find((p) => p.email === String(authedUser.email).toLowerCase())
+        const speakers = labels.map((label) => {
+          const first = lines.find((l) => l.label === label)
+          return { label, snippet: first ? first.text.slice(0, 300) : '' }
+        })
+        return handleCORS(NextResponse.json({
+          id: record.id, status: 'ready_for_confirmation', speakers,
+          suggestedRepLabel: (me?.speakerId && labelBySpeaker[me.speakerId]) || null
+        }))
+      } catch (error) {
+        console.error('Gong error:', error?.message)
+        return handleCORS(NextResponse.json({ enabled: false, calls: [], error: "Gong request failed." }, { status: 500 }))
       }
     }
 
