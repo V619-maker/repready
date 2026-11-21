@@ -9,6 +9,7 @@ import { clerkClient } from '@clerk/nextjs/server'
 import { getAuthedEmail, getAuthedUser } from '@/lib/auth'
 import { PRODUCT_DOC_LIMITS, canManageProductDocs, validateProductDocInput, checkProductDocQuota, buildProductContext, NO_PRODUCT_CONTEXT } from '@/lib/productDocs.mjs'
 import { validateIntegrationUrl, maskUrl, generateWebhookSecret, signBody, buildSessionPayload, buildTestPayload, formatSlack, formatTeams, isPrivateOrLocalAddress, toCsv } from '@/lib/webhooks.mjs'
+import { validateScenarioInput, buildScenarioBrief, NO_SCENARIO, SCENARIO_LIMITS } from '@/lib/scenarios.mjs'
 import { validateAssignmentInput, evaluateAssignment, assignmentsForRep, ASSIGNMENT_LIMITS } from '@/lib/assignments.mjs'
 import { parseGongCreds, maskGong, isValidGongCallId, verifyGong, findGongUserId, forgetGongUsers, listGongCalls, getGongCall, isRepsCall, getGongTranscript, buildLabeledLines, GONG_MAX_TRANSCRIPT_CHARS } from '@/lib/gong.mjs'
 import { getCrmAdapter, CRM_PROVIDERS, buildDealContext, NO_DEAL_CONTEXT, openCrmSession, forgetCrmSession } from '@/lib/crm.mjs'
@@ -2785,6 +2786,87 @@ Evaluate the sales rep's performance and return JSON with:
       } catch (error) {
         console.error('Assignments error:', error?.message)
         return handleCORS(NextResponse.json({ error: "Assignments request failed." }, { status: 500 }))
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // Custom buyer scenarios (Sprint 71). A manager describes a buyer; reps practise
+    // against it through ONE generic "Custom Buyer" ElevenLabs agent that reads the
+    // {{scenario_brief}} variable (the four named personas are untouched). Scoped by
+    // workspaceId (company domain, or a personal workspace for free-email users).
+    //   Manager / personal-workspace owner: POST /api/scenarios, DELETE /api/scenarios?id=
+    //   Any member of the workspace:         GET /api/scenarios (names only),
+    //                                        GET /api/scenarios/brief?id= (the brief text)
+    // The brief text reaches members' browsers at call start and ElevenLabs (outside India);
+    // it is never sent to Gemini scoring (scoring is unchanged).
+    // ---------------------------------------------------------------------
+    if (route === '/scenarios' || (route === '/scenarios/brief' && method === 'GET')) {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const workspaceId = authedUser.workspaceId
+        if (!workspaceId) {
+          return handleCORS(NextResponse.json(
+            { error: "Unable to determine a private workspace from this account." }, { status: 400 }
+          ))
+        }
+        const db = await getDb()
+        const col = db.collection('scenarios')
+        const canManage = canManageProductDocs(authedUser)
+
+        if (route === '/scenarios/brief') {
+          const id = new URL(request.url).searchParams.get('id') || ''
+          const doc = await col.findOne({ id, workspaceId })
+          // Same answer for "missing" and "someone else's" so ids cannot be probed.
+          return handleCORS(NextResponse.json({ brief: doc ? buildScenarioBrief(doc) : NO_SCENARIO, found: !!doc }))
+        }
+
+        if (method === 'GET') {
+          const docs = await col.find({ workspaceId }).sort({ createdAt: -1 }).limit(SCENARIO_LIMITS.maxPerWorkspace).toArray()
+          return handleCORS(NextResponse.json({
+            canManage,
+            limits: SCENARIO_LIMITS,
+            scenarios: docs.map((d) => ({
+              id: d.id, name: d.name, buyerRole: d.buyerRole, company: d.company, personality: d.personality, difficulty: d.difficulty,
+              // The manager sees the content to maintain it; reps see names only.
+              ...(canManage ? { situation: d.situation, objections: d.objections, hiddenMotivation: d.hiddenMotivation } : {}),
+            })),
+          }))
+        }
+
+        if (!canManage) {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+
+        if (method === 'POST') {
+          const body = await request.json()
+          const checked = validateScenarioInput(body)
+          if (!checked.ok) {
+            return handleCORS(NextResponse.json({ error: checked.error }, { status: 400 }))
+          }
+          if ((await col.countDocuments({ workspaceId })) >= SCENARIO_LIMITS.maxPerWorkspace) {
+            return handleCORS(NextResponse.json({ error: `You have ${SCENARIO_LIMITS.maxPerWorkspace} scenarios. Delete one first.` }, { status: 409 }))
+          }
+          const doc = { id: uuidv4(), workspaceId, createdBy: authedUser.email, createdAt: new Date().toISOString(), ...checked.value }
+          await col.insertOne(doc)
+          return handleCORS(NextResponse.json({ id: doc.id }))
+        }
+
+        if (method === 'DELETE') {
+          const id = new URL(request.url).searchParams.get('id') || ''
+          const r = await col.deleteOne({ id, workspaceId })
+          if (!r.deletedCount) {
+            return handleCORS(NextResponse.json({ error: "Scenario not found." }, { status: 404 }))
+          }
+          return handleCORS(NextResponse.json({ deleted: true }))
+        }
+
+        return handleCORS(NextResponse.json({ error: "Not found" }, { status: 404 }))
+      } catch (error) {
+        console.error('Scenarios error:', error?.message)
+        return handleCORS(NextResponse.json({ error: "Scenarios request failed." }, { status: 500 }))
       }
     }
 

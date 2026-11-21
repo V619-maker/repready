@@ -11,11 +11,16 @@ const PRIYA_ID = "agent_5701kzmwc61jfq59zjnvrvb1pxmt";
 const RAKESH_ID = "agent_4901m021sybbenebrf04zntdad30";
 const TRIAL_TIME_LIMIT = 90;
 
+// Optional generic "Custom Buyer" agent that reads {{scenario_brief}} (Sprint 71). Unset =
+// the feature stays hidden and nothing else changes. NEXT_PUBLIC_ so the browser can see it.
+const CUSTOM_ID = process.env.NEXT_PUBLIC_CUSTOM_AGENT_ID || '';
+
 const PERSONA_MAP = {
   [RICHARD_ID]: 'richard',
   [SANDRA_ID]: 'sandra',
   [PRIYA_ID]: 'priya',
-  [RAKESH_ID]: 'rakesh'
+  [RAKESH_ID]: 'rakesh',
+  ...(CUSTOM_ID ? { [CUSTOM_ID]: 'custom' } : {})
 };
 
 // Display labels for the live-call transcript speaker tag. Keyed by agent ID
@@ -25,7 +30,8 @@ const PERSONA_DISPLAY_NAME = {
   [RICHARD_ID]: 'VANCE',
   [SANDRA_ID]: 'CHEN',
   [PRIYA_ID]: 'MALHOTRA',
-  [RAKESH_ID]: 'IYER'
+  [RAKESH_ID]: 'IYER',
+  ...(CUSTOM_ID ? { [CUSTOM_ID]: 'BUYER' } : {})
 };
 
 function getHostilityLabel(percent) {
@@ -184,6 +190,7 @@ function RepReadyDashboard() {
   }, []);
 
   const isLocked = (personaKey) => {
+    if (personaKey === 'custom') return false; // company-made scenarios are not part of the starter-tier persona lock
     if (!personaAccess || personaAccess.planTier !== 'starter') return false;
     return !(personaAccess.unlocked || []).includes(personaKey);
   };
@@ -244,6 +251,17 @@ function RepReadyDashboard() {
     fetch('/api/crm/deals')
       .then(r => (r.ok ? r.json() : null))
       .then(j => { if (j?.enabled && Array.isArray(j.deals)) setCrmDeals(j.deals); })
+      .catch(() => {});
+  }, [isLoaded, user]);
+
+  // Company-made buyers (Sprint 71). Only fetched when the Custom Buyer agent is configured.
+  const [scenarios, setScenarios] = useState([]);
+  const [selectedScenarioId, setSelectedScenarioId] = useState('');
+  useEffect(() => {
+    if (!CUSTOM_ID || !isLoaded || !user) return;
+    fetch('/api/scenarios')
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j && Array.isArray(j.scenarios)) setScenarios(j.scenarios); })
       .catch(() => {});
   }, [isLoaded, user]);
 
@@ -339,6 +357,27 @@ function RepReadyDashboard() {
           console.error("Product context fetch failed:", ctxError);
         } finally {
           clearTimeout(ctxTimeout);
+        }
+      }
+
+      // Scenario brief for the generic Custom Buyer agent. Always passed (fixed string
+      // otherwise) so a prompt mentioning {{scenario_brief}} never sees an unset variable.
+      dynamicVariables.scenario_brief = 'No custom scenario.';
+      if (userEmail && activeAgent === CUSTOM_ID && CUSTOM_ID && selectedScenarioId) {
+        const scController = new AbortController();
+        const scTimeout = setTimeout(() => scController.abort(), 4000);
+        try {
+          const scResponse = await fetch(`/api/scenarios/brief?id=${encodeURIComponent(selectedScenarioId)}`, { signal: scController.signal });
+          if (scResponse.ok) {
+            const scData = await scResponse.json();
+            if (scData.found === true && typeof scData.brief === 'string' && scData.brief) {
+              dynamicVariables.scenario_brief = scData.brief;
+            }
+          }
+        } catch (scError) {
+          console.error("Scenario fetch failed:", scError);
+        } finally {
+          clearTimeout(scTimeout);
         }
       }
 
@@ -647,6 +686,28 @@ let boardroomScoreResultId = null;
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {CUSTOM_ID && scenarios.length > 0 && (
+          <div className="border border-[#22D3EE]/30 bg-[#22D3EE]/5 p-6 mb-8">
+            <p className="text-[#22D3EE] text-[10px] uppercase tracking-[0.3em] mb-4">Your company&apos;s buyers</p>
+            <div className="space-y-3">
+              {scenarios.map(sc => (
+                <div key={sc.id} className="flex flex-wrap items-center justify-between gap-3 border border-white/10 px-4 py-3">
+                  <div>
+                    <p className="text-white text-xs">{sc.name}</p>
+                    <p className="text-zinc-500 text-[10px] mt-1">{sc.buyerRole}{sc.company ? `, ${sc.company}` : ''} · {sc.personality} · difficulty {sc.difficulty}/5</p>
+                  </div>
+                  <button
+                    onClick={() => { setSelectedScenarioId(sc.id); handleSelectPersona(CUSTOM_ID); }}
+                    className="px-4 py-2 border border-[#22D3EE]/50 text-[#22D3EE] text-[10px] font-bold uppercase tracking-[0.2em] hover:bg-[#22D3EE]/10 transition-all"
+                  >
+                    Start
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         )}
