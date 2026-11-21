@@ -262,6 +262,41 @@ export default function DashboardPage() {
     }
   }
 
+  // HubSpot (token is a secret: server returns it masked only).
+  const [hs, setHs] = useState(null)
+  const [hsToken, setHsToken] = useState('')
+  const [hsBusy, setHsBusy] = useState(false)
+  const [hsMsg, setHsMsg] = useState('')
+
+  useEffect(() => {
+    if (!docsMeta?.canManage) return
+    fetch('/api/admin/hubspot')
+      .then(async r => { const j = await r.json(); if (r.ok) setHs(j) })
+      .catch(() => {})
+  }, [docsMeta?.canManage])
+
+  async function hsCall(url, method, body, okMsg) {
+    setHsBusy(true)
+    setHsMsg('')
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Request failed.')
+      setHs(json)
+      if (okMsg) setHsMsg(okMsg)
+      return true
+    } catch (e) {
+      setHsMsg(e.message)
+      return false
+    } finally {
+      setHsBusy(false)
+    }
+  }
+
   async function deleteProductDoc(id) {
     setDocDeletingId(id)
     setDocsError('')
@@ -807,6 +842,85 @@ export default function DashboardPage() {
               </a>
               <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginLeft: 12 }}>One row per practice call, up to 5,000. Opens in Excel or Google Sheets.</span>
             </div>
+          </div>
+        )}
+
+        {/* SECTION 9 - HubSpot (same visibility rule as the other settings) */}
+        {docsMeta?.canManage && (
+          <div style={{ background: '#0d1117', border: '1px solid rgba(0,200,224,0.15)', padding: 24, marginBottom: 16 }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>
+              HUBSPOT {hs?.connected ? `· CONNECTED (${hs.token})` : '· NOT CONNECTED'}
+            </div>
+            {!hs?.connected ? (
+              <>
+                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6, marginBottom: 12 }}>
+                  In HubSpot, a super admin creates a private app (Development, then Legacy apps, then Create legacy app, then Private) and copies its access token.
+                  Scopes to grant: crm.objects.deals.read and crm.objects.owners.read. Optional: crm.schemas.deals.read (shows stage names).
+                  For writing notes back, also crm.objects.deals.write and crm.objects.contacts.write. If a step fails with a permission message, add the scope it names.
+                  The token is stored privately on our server and is never shown again.
+                </p>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <input
+                    type="password"
+                    value={hsToken}
+                    onChange={(e) => setHsToken(e.target.value)}
+                    placeholder="HubSpot private app access token (starts with pat-)"
+                    style={{ flex: 1, minWidth: 240, background: '#0a0d14', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontSize: 12, fontFamily: 'monospace', padding: '8px 10px' }}
+                  />
+                  <button
+                    onClick={async () => { if (await hsCall('/api/admin/hubspot', 'POST', { token: hsToken }, 'Connected.')) setHsToken('') }}
+                    disabled={hsBusy || !hsToken}
+                    style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: '#00c8e0', border: '1px solid #00c8e0', color: '#0a0d14', padding: '8px 14px', cursor: hsBusy ? 'not-allowed' : 'pointer' }}
+                  >
+                    {hsBusy ? 'CHECKING…' : 'CONNECT'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ border: '1px solid rgba(245,166,35,0.35)', padding: 14, marginBottom: 14 }}>
+                  <div style={{ fontSize: 10, letterSpacing: '0.15em', color: '#f5a623', marginBottom: 8 }}>
+                    REHEARSE REAL DEALS: {hs.useDealContext ? 'ON' : 'OFF'}
+                  </div>
+                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, marginBottom: 12 }}>
+                    When on, a rep can pick one of their own open HubSpot deals (matched by their sign-in email) before a practice call. The deal name, value,
+                    stage, expected close date and deal notes (up to about 1,000 characters) are sent to ElevenLabs, our voice provider, at the start of that call,
+                    so the AI buyer can play that deal. ElevenLabs processes it outside India. Reps only ever see their own deals. Nothing is sent unless the rep picks a deal.
+                  </p>
+                  <button
+                    onClick={() => hsCall('/api/admin/hubspot/settings', 'POST', { useDealContext: !hs.useDealContext })}
+                    disabled={hsBusy}
+                    style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: hs.useDealContext ? 'transparent' : '#f5a623', border: '1px solid #f5a623', color: hs.useDealContext ? '#f5a623' : '#0a0d14', padding: '8px 14px', cursor: hsBusy ? 'not-allowed' : 'pointer' }}
+                  >
+                    {hs.useDealContext ? 'TURN OFF' : 'I UNDERSTAND, TURN ON'}
+                  </button>
+                </div>
+                <div style={{ border: '1px solid rgba(245,166,35,0.35)', padding: 14, marginBottom: 14 }}>
+                  <div style={{ fontSize: 10, letterSpacing: '0.15em', color: '#f5a623', marginBottom: 8 }}>
+                    WRITE RESULTS TO THE DEAL: {hs.writeback ? 'ON' : 'OFF'}
+                  </div>
+                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, marginBottom: 12 }}>
+                    When on, after a rep rehearses a deal, RepReady adds one note to that deal in HubSpot: the buyer, score, grade, status, the one-sentence verdict
+                    and skill scores. Anyone who can see that deal in HubSpot can read the note. It never includes the transcript.
+                  </p>
+                  <button
+                    onClick={() => hsCall('/api/admin/hubspot/settings', 'POST', { writeback: !hs.writeback })}
+                    disabled={hsBusy}
+                    style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: hs.writeback ? 'transparent' : '#f5a623', border: '1px solid #f5a623', color: hs.writeback ? '#f5a623' : '#0a0d14', padding: '8px 14px', cursor: hsBusy ? 'not-allowed' : 'pointer' }}
+                  >
+                    {hs.writeback ? 'TURN OFF' : 'I UNDERSTAND, TURN ON'}
+                  </button>
+                </div>
+                <button
+                  onClick={() => hsCall('/api/admin/hubspot', 'DELETE', null, 'Disconnected. The token was deleted from our server.')}
+                  disabled={hsBusy}
+                  style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: 'transparent', border: '1px solid rgba(232,69,69,0.4)', color: '#e84545', padding: '8px 14px', cursor: hsBusy ? 'not-allowed' : 'pointer' }}
+                >
+                  DISCONNECT HUBSPOT
+                </button>
+              </>
+            )}
+            {hsMsg && <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 10 }}>{hsMsg}</p>}
           </div>
         )}
 
