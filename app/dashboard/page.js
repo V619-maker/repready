@@ -262,22 +262,50 @@ export default function DashboardPage() {
     }
   }
 
-  // HubSpot (token is a secret: server returns it masked only).
-  const [hs, setHs] = useState(null)
-  const [hsToken, setHsToken] = useState('')
-  const [hsBusy, setHsBusy] = useState(false)
-  const [hsMsg, setHsMsg] = useState('')
+  // CRM link (HubSpot / Salesforce / Zoho). Credentials are secrets: the server returns a masked label only.
+  const CRM_FORMS = {
+    hubspot: {
+      fields: [{ key: 'token', label: 'Private app access token (starts with pat-)', secret: true }],
+      help: 'In HubSpot, a super admin creates a private app (Development, then Legacy apps, then Create legacy app, then Private) and copies its access token. ' +
+        'Scopes: crm.objects.deals.read and crm.objects.owners.read. Optional: crm.schemas.deals.read (stage names). For writing notes back, also crm.objects.deals.write and crm.objects.contacts.write.',
+    },
+    salesforce: {
+      fields: [
+        { key: 'domain', label: 'My Domain address, like https://yourcompany.my.salesforce.com' },
+        { key: 'clientId', label: 'Consumer Key', secret: true },
+        { key: 'clientSecret', label: 'Consumer Secret', secret: true },
+      ],
+      help: 'In Salesforce Setup, a system admin creates an External Client App (or Connected App), turns on the Client Credentials flow, and picks a "Run As" user. ' +
+        'Give the app the "api" scope and make sure the Run As user can read Opportunities and create Tasks. Paste your My Domain address and the app\'s Consumer Key and Secret here. ' +
+        'Important: Salesforce lets this app see whatever the Run As user can see, so Salesforce itself will not limit it to one rep. RepReady shows each rep only the Opportunities where the owner\'s email matches their own sign-in email.',
+    },
+    zoho: {
+      fields: [
+        { key: 'dc', label: 'Zoho data centre', type: 'select', options: [['com', 'zoho.com (US)'], ['in', 'zoho.in (India)'], ['eu', 'zoho.eu (Europe)'], ['com.au', 'zoho.com.au (Australia)'], ['jp', 'zoho.jp (Japan)']] },
+        { key: 'clientId', label: 'Client ID', secret: true },
+        { key: 'clientSecret', label: 'Client Secret', secret: true },
+        { key: 'orgId', label: 'Zoho CRM organisation ID (digits)' },
+      ],
+      help: 'In the Zoho API Console (use the console for your data centre), create a Self Client (server-based client). Allow these scopes: ZohoCRM.modules.deals.READ, ZohoCRM.users.READ and ZohoCRM.modules.notes.CREATE. ' +
+        'Paste its Client ID and Secret, and your CRM organisation ID. Zoho\'s access is account-wide, so RepReady shows each rep only the deals owned by the user whose email matches their own sign-in email.',
+    },
+  }
+  const [crm, setCrm] = useState(null)
+  const [crmProvider, setCrmProvider] = useState('hubspot')
+  const [crmForm, setCrmForm] = useState({})
+  const [crmBusy, setCrmBusy] = useState(false)
+  const [crmMsg, setCrmMsg] = useState('')
 
   useEffect(() => {
     if (!docsMeta?.canManage) return
-    fetch('/api/admin/hubspot')
-      .then(async r => { const j = await r.json(); if (r.ok) setHs(j) })
+    fetch('/api/admin/crm')
+      .then(async r => { const j = await r.json(); if (r.ok) setCrm(j) })
       .catch(() => {})
   }, [docsMeta?.canManage])
 
-  async function hsCall(url, method, body, okMsg) {
-    setHsBusy(true)
-    setHsMsg('')
+  async function crmCall(url, method, body, okMsg) {
+    setCrmBusy(true)
+    setCrmMsg('')
     try {
       const res = await fetch(url, {
         method,
@@ -286,14 +314,14 @@ export default function DashboardPage() {
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Request failed.')
-      setHs(json)
-      if (okMsg) setHsMsg(okMsg)
+      setCrm(json)
+      if (okMsg) setCrmMsg(okMsg)
       return true
     } catch (e) {
-      setHsMsg(e.message)
+      setCrmMsg(e.message)
       return false
     } finally {
-      setHsBusy(false)
+      setCrmBusy(false)
     }
   }
 
@@ -845,34 +873,65 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* SECTION 9 - HubSpot (same visibility rule as the other settings) */}
-        {docsMeta?.canManage && (
+        {/* SECTION 9 - CRM link: HubSpot, Salesforce or Zoho (same visibility rule as the other settings) */}
+        {docsMeta?.canManage && (() => {
+          const label = crm?.providerLabel || 'your CRM'
+          const form = CRM_FORMS[crmProvider]
+          const inputStyle = { flex: 1, minWidth: 220, background: '#0a0d14', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontSize: 12, fontFamily: 'monospace', padding: '8px 10px' }
+          const toggleBtn = (on) => ({ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: on ? 'transparent' : '#f5a623', border: '1px solid #f5a623', color: on ? '#f5a623' : '#0a0d14', padding: '8px 14px', cursor: crmBusy ? 'not-allowed' : 'pointer' })
+          const ready = form.fields.every(f => f.type === 'select' ? true : (crmForm[f.key] || '').trim())
+          return (
           <div style={{ background: '#0d1117', border: '1px solid rgba(0,200,224,0.15)', padding: 24, marginBottom: 16 }}>
             <div style={{ fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>
-              HUBSPOT {hs?.connected ? `· CONNECTED (${hs.token})` : '· NOT CONNECTED'}
+              CRM {crm?.connected ? `· ${crm.providerLabel.toUpperCase()} CONNECTED (${crm.credentials})` : '· NOT CONNECTED'}
             </div>
-            {!hs?.connected ? (
+            {!crm?.connected ? (
               <>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                  {(crm?.providers || [{ id: 'hubspot', label: 'HubSpot' }, { id: 'salesforce', label: 'Salesforce' }, { id: 'zoho', label: 'Zoho CRM' }]).map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => { setCrmProvider(p.id); setCrmForm({}); setCrmMsg('') }}
+                      style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: crmProvider === p.id ? '#00c8e0' : 'transparent', border: '1px solid #00c8e0', color: crmProvider === p.id ? '#0a0d14' : '#00c8e0', padding: '6px 12px', cursor: 'pointer' }}
+                    >
+                      {p.label.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
                 <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6, marginBottom: 12 }}>
-                  In HubSpot, a super admin creates a private app (Development, then Legacy apps, then Create legacy app, then Private) and copies its access token.
-                  Scopes to grant: crm.objects.deals.read and crm.objects.owners.read. Optional: crm.schemas.deals.read (shows stage names).
-                  For writing notes back, also crm.objects.deals.write and crm.objects.contacts.write. If a step fails with a permission message, add the scope it names.
-                  The token is stored privately on our server and is never shown again.
+                  {form.help} If a step fails with a permission message, add the permission it names. Credentials are stored privately on our server and are never shown again.
                 </p>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <input
-                    type="password"
-                    value={hsToken}
-                    onChange={(e) => setHsToken(e.target.value)}
-                    placeholder="HubSpot private app access token (starts with pat-)"
-                    style={{ flex: 1, minWidth: 240, background: '#0a0d14', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontSize: 12, fontFamily: 'monospace', padding: '8px 10px' }}
-                  />
+                  {form.fields.map(f => f.type === 'select' ? (
+                    <select
+                      key={f.key}
+                      value={crmForm[f.key] || f.options[0][0]}
+                      onChange={(e) => setCrmForm(v => ({ ...v, [f.key]: e.target.value }))}
+                      style={inputStyle}
+                    >
+                      {f.options.map(([val, text]) => <option key={val} value={val}>{text}</option>)}
+                    </select>
+                  ) : (
+                    <input
+                      key={f.key}
+                      type={f.secret ? 'password' : 'text'}
+                      autoComplete="off"
+                      value={crmForm[f.key] || ''}
+                      onChange={(e) => setCrmForm(v => ({ ...v, [f.key]: e.target.value }))}
+                      placeholder={f.label}
+                      style={inputStyle}
+                    />
+                  ))}
                   <button
-                    onClick={async () => { if (await hsCall('/api/admin/hubspot', 'POST', { token: hsToken }, 'Connected.')) setHsToken('') }}
-                    disabled={hsBusy || !hsToken}
-                    style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: '#00c8e0', border: '1px solid #00c8e0', color: '#0a0d14', padding: '8px 14px', cursor: hsBusy ? 'not-allowed' : 'pointer' }}
+                    onClick={async () => {
+                      const payload = { provider: crmProvider }
+                      for (const f of form.fields) payload[f.key] = f.type === 'select' ? (crmForm[f.key] || f.options[0][0]) : (crmForm[f.key] || '').trim()
+                      if (await crmCall('/api/admin/crm', 'POST', payload, 'Connected.')) setCrmForm({})
+                    }}
+                    disabled={crmBusy || !ready}
+                    style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: '#00c8e0', border: '1px solid #00c8e0', color: '#0a0d14', padding: '8px 14px', cursor: crmBusy ? 'not-allowed' : 'pointer' }}
                   >
-                    {hsBusy ? 'CHECKING…' : 'CONNECT'}
+                    {crmBusy ? 'CHECKING…' : 'CONNECT'}
                   </button>
                 </div>
               </>
@@ -880,49 +939,42 @@ export default function DashboardPage() {
               <>
                 <div style={{ border: '1px solid rgba(245,166,35,0.35)', padding: 14, marginBottom: 14 }}>
                   <div style={{ fontSize: 10, letterSpacing: '0.15em', color: '#f5a623', marginBottom: 8 }}>
-                    REHEARSE REAL DEALS: {hs.useDealContext ? 'ON' : 'OFF'}
+                    REHEARSE REAL DEALS: {crm.useDealContext ? 'ON' : 'OFF'}
                   </div>
                   <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, marginBottom: 12 }}>
-                    When on, a rep can pick one of their own open HubSpot deals (matched by their sign-in email) before a practice call. The deal name, value,
+                    When on, a rep can pick one of their own open {label} deals (matched by their sign-in email) before a practice call. The deal name, company (where {label} has one), value,
                     stage, expected close date and deal notes (up to about 1,000 characters) are sent to ElevenLabs, our voice provider, at the start of that call,
-                    so the AI buyer can play that deal. ElevenLabs processes it outside India. Reps only ever see their own deals. Nothing is sent unless the rep picks a deal.
+                    so the AI buyer can play that deal. ElevenLabs processes it outside India. Reps only see deals whose owner email matches their own. Nothing is sent unless the rep picks a deal.
                   </p>
-                  <button
-                    onClick={() => hsCall('/api/admin/hubspot/settings', 'POST', { useDealContext: !hs.useDealContext })}
-                    disabled={hsBusy}
-                    style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: hs.useDealContext ? 'transparent' : '#f5a623', border: '1px solid #f5a623', color: hs.useDealContext ? '#f5a623' : '#0a0d14', padding: '8px 14px', cursor: hsBusy ? 'not-allowed' : 'pointer' }}
-                  >
-                    {hs.useDealContext ? 'TURN OFF' : 'I UNDERSTAND, TURN ON'}
+                  <button onClick={() => crmCall('/api/admin/crm/settings', 'POST', { useDealContext: !crm.useDealContext })} disabled={crmBusy} style={toggleBtn(crm.useDealContext)}>
+                    {crm.useDealContext ? 'TURN OFF' : 'I UNDERSTAND, TURN ON'}
                   </button>
                 </div>
                 <div style={{ border: '1px solid rgba(245,166,35,0.35)', padding: 14, marginBottom: 14 }}>
                   <div style={{ fontSize: 10, letterSpacing: '0.15em', color: '#f5a623', marginBottom: 8 }}>
-                    WRITE RESULTS TO THE DEAL: {hs.writeback ? 'ON' : 'OFF'}
+                    WRITE RESULTS TO THE DEAL: {crm.writeback ? 'ON' : 'OFF'}
                   </div>
                   <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, marginBottom: 12 }}>
-                    When on, after a rep rehearses a deal, RepReady adds one note to that deal in HubSpot: the buyer, score, grade, status, the one-sentence verdict
-                    and skill scores. Anyone who can see that deal in HubSpot can read the note. It never includes the transcript.
+                    When on, after a rep rehearses a deal, RepReady adds one {crm.provider === 'salesforce' ? 'completed activity (Task)' : 'note'} to that deal in {label}: the buyer, score, grade, status, the one-sentence verdict
+                    and skill scores. Anyone who can see that deal in {label} can read it. It never includes the transcript.
                   </p>
-                  <button
-                    onClick={() => hsCall('/api/admin/hubspot/settings', 'POST', { writeback: !hs.writeback })}
-                    disabled={hsBusy}
-                    style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: hs.writeback ? 'transparent' : '#f5a623', border: '1px solid #f5a623', color: hs.writeback ? '#f5a623' : '#0a0d14', padding: '8px 14px', cursor: hsBusy ? 'not-allowed' : 'pointer' }}
-                  >
-                    {hs.writeback ? 'TURN OFF' : 'I UNDERSTAND, TURN ON'}
+                  <button onClick={() => crmCall('/api/admin/crm/settings', 'POST', { writeback: !crm.writeback })} disabled={crmBusy} style={toggleBtn(crm.writeback)}>
+                    {crm.writeback ? 'TURN OFF' : 'I UNDERSTAND, TURN ON'}
                   </button>
                 </div>
                 <button
-                  onClick={() => hsCall('/api/admin/hubspot', 'DELETE', null, 'Disconnected. The token was deleted from our server.')}
-                  disabled={hsBusy}
-                  style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: 'transparent', border: '1px solid rgba(232,69,69,0.4)', color: '#e84545', padding: '8px 14px', cursor: hsBusy ? 'not-allowed' : 'pointer' }}
+                  onClick={() => crmCall('/api/admin/crm', 'DELETE', null, 'Disconnected. The credentials were deleted from our server.')}
+                  disabled={crmBusy}
+                  style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: 'transparent', border: '1px solid rgba(232,69,69,0.4)', color: '#e84545', padding: '8px 14px', cursor: crmBusy ? 'not-allowed' : 'pointer' }}
                 >
-                  DISCONNECT HUBSPOT
+                  DISCONNECT {label.toUpperCase()}
                 </button>
               </>
             )}
-            {hsMsg && <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 10 }}>{hsMsg}</p>}
+            {crmMsg && <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 10 }}>{crmMsg}</p>}
           </div>
-        )}
+          )
+        })()}
 
         <div style={{ border: '1px solid rgba(0,200,224,0.1)', padding: '12px 16px', fontSize: 11, color: 'rgba(255,255,255,0.3)', lineHeight: 1.6 }}>
           SESSION DATA · MONGODB ATLAS MUMBAI · NEVER USED TO TRAIN AI · DPDP ACT 2023 COMPLIANT · DELETE: privacy@repready.site
