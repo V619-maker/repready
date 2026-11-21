@@ -290,7 +290,13 @@ function RepReadyDashboard() {
       const creditCheck = await fetch('/api/deduct-credit', { method: 'POST' });
 
       if (!creditCheck.ok) {
-        setCreditsDepleted(true);
+        // Only a real "no credits left" (403) shows the paywall. A busy or
+        // unavailable credit service (409/503/500) must not look like an empty balance.
+        if (creditCheck.status === 403) {
+          setCreditsDepleted(true);
+        } else {
+          setLiveTranscript([{ speaker: 'System', text: 'COULD NOT START THE CALL. NO CREDIT WAS USED. PLEASE TRY AGAIN.' }]);
+        }
         setIsVerifying(false);
         return;
       }
