@@ -186,6 +186,265 @@ export default function DashboardPage() {
     }
   }
 
+  const [switchSaving, setSwitchSaving] = useState(false)
+
+  async function setUseInCalls(enabled) {
+    setSwitchSaving(true)
+    setDocsError('')
+    try {
+      const res = await fetch('/api/product-docs/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled })
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to save the setting.')
+      await loadProductDocs()
+    } catch (e) {
+      setDocsError(e.message)
+    } finally {
+      setSwitchSaving(false)
+    }
+  }
+
+  // Integrations (Slack / Teams / webhook). Addresses are secrets: the server only
+  // ever returns them masked, and the signing secret exactly once.
+  const [integ, setInteg] = useState(null)
+  const [integInputs, setIntegInputs] = useState({ slack: '', teams: '', webhook: '' })
+  const [integBusy, setIntegBusy] = useState('')
+  const [integMsg, setIntegMsg] = useState({})
+  const [newSecret, setNewSecret] = useState('')
+
+  useEffect(() => {
+    if (!docsMeta?.canManage) return
+    fetch('/api/admin/integrations')
+      .then(async r => { const j = await r.json(); if (r.ok) setInteg(j.configured) })
+      .catch(() => {})
+  }, [docsMeta?.canManage])
+
+  async function saveIntegration(kind, url) {
+    setIntegBusy(kind)
+    setIntegMsg(m => ({ ...m, [kind]: '' }))
+    try {
+      const res = await fetch('/api/admin/integrations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind, url })
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to save.')
+      setInteg(json.configured)
+      setIntegInputs(v => ({ ...v, [kind]: '' }))
+      if (json.newSecret) setNewSecret(json.newSecret)
+      setIntegMsg(m => ({ ...m, [kind]: url ? 'Saved.' : 'Removed.' }))
+    } catch (e) {
+      setIntegMsg(m => ({ ...m, [kind]: e.message }))
+    } finally {
+      setIntegBusy('')
+    }
+  }
+
+  async function testIntegration(kind) {
+    setIntegBusy(kind)
+    setIntegMsg(m => ({ ...m, [kind]: '' }))
+    try {
+      const res = await fetch('/api/admin/integrations/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind })
+      })
+      const json = await res.json()
+      setIntegMsg(m => ({ ...m, [kind]: json.detail || json.error || 'Failed.' }))
+    } catch (e) {
+      setIntegMsg(m => ({ ...m, [kind]: 'Failed.' }))
+    } finally {
+      setIntegBusy('')
+    }
+  }
+
+  // CRM link (HubSpot / Salesforce / Zoho). Credentials are secrets: the server returns a masked label only.
+  const CRM_FORMS = {
+    hubspot: {
+      fields: [{ key: 'token', label: 'Private app access token (starts with pat-)', secret: true }],
+      help: 'In HubSpot, a super admin creates a private app (Development, then Legacy apps, then Create legacy app, then Private) and copies its access token. ' +
+        'Scopes: crm.objects.deals.read and crm.objects.owners.read. Optional: crm.schemas.deals.read (stage names). For writing notes back, also crm.objects.deals.write and crm.objects.contacts.write.',
+    },
+    salesforce: {
+      fields: [
+        { key: 'domain', label: 'My Domain address, like https://yourcompany.my.salesforce.com' },
+        { key: 'clientId', label: 'Consumer Key', secret: true },
+        { key: 'clientSecret', label: 'Consumer Secret', secret: true },
+      ],
+      help: 'In Salesforce Setup, a system admin creates an External Client App (or Connected App), turns on the Client Credentials flow, and picks a "Run As" user. ' +
+        'Give the app the "api" scope and make sure the Run As user can read Opportunities and create Tasks. Paste your My Domain address and the app\'s Consumer Key and Secret here. ' +
+        'Important: Salesforce lets this app see whatever the Run As user can see, so Salesforce itself will not limit it to one rep. RepReady shows each rep only the Opportunities where the owner\'s email matches their own sign-in email.',
+    },
+    zoho: {
+      fields: [
+        { key: 'dc', label: 'Zoho data centre', type: 'select', options: [['com', 'zoho.com (US)'], ['in', 'zoho.in (India)'], ['eu', 'zoho.eu (Europe)'], ['com.au', 'zoho.com.au (Australia)'], ['jp', 'zoho.jp (Japan)']] },
+        { key: 'clientId', label: 'Client ID', secret: true },
+        { key: 'clientSecret', label: 'Client Secret', secret: true },
+        { key: 'orgId', label: 'Zoho CRM organisation ID (digits)' },
+      ],
+      help: 'In the Zoho API Console (use the console for your data centre), create a Self Client (server-based client). Allow these scopes: ZohoCRM.modules.deals.READ, ZohoCRM.users.READ and ZohoCRM.modules.notes.CREATE. ' +
+        'Paste its Client ID and Secret, and your CRM organisation ID. Zoho\'s access is account-wide, so RepReady shows each rep only the deals owned by the user whose email matches their own sign-in email.',
+    },
+  }
+  const [crm, setCrm] = useState(null)
+  const [crmProvider, setCrmProvider] = useState('hubspot')
+  const [crmForm, setCrmForm] = useState({})
+  const [crmBusy, setCrmBusy] = useState(false)
+  const [crmMsg, setCrmMsg] = useState('')
+
+  useEffect(() => {
+    if (!docsMeta?.canManage) return
+    fetch('/api/admin/crm')
+      .then(async r => { const j = await r.json(); if (r.ok) setCrm(j) })
+      .catch(() => {})
+  }, [docsMeta?.canManage])
+
+  async function crmCall(url, method, body, okMsg) {
+    setCrmBusy(true)
+    setCrmMsg('')
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Request failed.')
+      setCrm(json)
+      if (okMsg) setCrmMsg(okMsg)
+      return true
+    } catch (e) {
+      setCrmMsg(e.message)
+      return false
+    } finally {
+      setCrmBusy(false)
+    }
+  }
+
+  // Gong import (keys are secrets: the server returns a masked label only).
+  const [gong, setGong] = useState(null)
+  const [gongForm, setGongForm] = useState({ baseUrl: '', accessKey: '', accessSecret: '' })
+  const [gongBusy, setGongBusy] = useState(false)
+  const [gongMsg, setGongMsg] = useState('')
+
+  useEffect(() => {
+    if (!docsMeta?.canManage) return
+    fetch('/api/admin/gong')
+      .then(async r => { const j = await r.json(); if (r.ok) setGong(j) })
+      .catch(() => {})
+  }, [docsMeta?.canManage])
+
+  async function gongCall(url, method, body, okMsg) {
+    setGongBusy(true)
+    setGongMsg('')
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Request failed.')
+      setGong(json)
+      if (okMsg) setGongMsg(okMsg)
+      return true
+    } catch (e) {
+      setGongMsg(e.message)
+      return false
+    } finally {
+      setGongBusy(false)
+    }
+  }
+
+  // Assigned practice (manager only; the server re-checks the role).
+  const [asg, setAsg] = useState(null)
+  const [asgForm, setAsgForm] = useState({ title: '', persona: 'richard', focus: '', dueDate: '', minScore: '', assignees: '', note: '' })
+  const [asgBusy, setAsgBusy] = useState(false)
+  const [asgMsg, setAsgMsg] = useState('')
+  const [asgOpen, setAsgOpen] = useState('')
+
+  async function loadAssignments() {
+    try {
+      const r = await fetch('/api/admin/assignments')
+      const j = await r.json()
+      if (r.ok) { setAsg(j); setAsgMsg('') } else { setAsg({ assignments: [] }); setAsgMsg(j.error || '') }
+    } catch (e) { /* leave as is */ }
+  }
+  useEffect(() => {
+    if (!isLoaded || !user || !isManager) return
+    loadAssignments()
+  }, [isLoaded, user, isManager])
+
+  async function createAssignment() {
+    setAsgBusy(true); setAsgMsg('')
+    try {
+      const res = await fetch('/api/admin/assignments', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(asgForm)
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed.')
+      setAsgForm({ title: '', persona: asgForm.persona, focus: '', dueDate: '', minScore: '', assignees: '', note: '' })
+      setAsgMsg('Assigned. Reps will see it on the call-selection screen.')
+      await loadAssignments()
+    } catch (e) { setAsgMsg(e.message) } finally { setAsgBusy(false) }
+  }
+  async function deleteAssignment(id) {
+    setAsgBusy(true); setAsgMsg('')
+    try {
+      const res = await fetch(`/api/admin/assignments?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed.')
+      await loadAssignments()
+    } catch (e) { setAsgMsg(e.message) } finally { setAsgBusy(false) }
+  }
+
+  // Custom buyer scenarios (manager / personal-workspace owner; the server re-checks).
+  const [scn, setScn] = useState(null)
+  const [scnForm, setScnForm] = useState({ name: '', buyerRole: '', company: '', situation: '', personality: 'skeptical', difficulty: '3', objections: '', hiddenMotivation: '' })
+  const [scnBusy, setScnBusy] = useState(false)
+  const [scnMsg, setScnMsg] = useState('')
+
+  async function loadScenarios() {
+    try {
+      const r = await fetch('/api/scenarios')
+      const j = await r.json()
+      if (r.ok) setScn(j)
+    } catch (e) { /* leave as is */ }
+  }
+  useEffect(() => {
+    if (!docsMeta?.canManage) return
+    loadScenarios()
+  }, [docsMeta?.canManage])
+
+  async function createScenario() {
+    setScnBusy(true); setScnMsg('')
+    try {
+      const res = await fetch('/api/scenarios', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(scnForm)
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed.')
+      setScnForm({ name: '', buyerRole: '', company: '', situation: '', personality: 'skeptical', difficulty: '3', objections: '', hiddenMotivation: '' })
+      setScnMsg('Saved.')
+      await loadScenarios()
+    } catch (e) { setScnMsg(e.message) } finally { setScnBusy(false) }
+  }
+  async function deleteScenario(id) {
+    setScnBusy(true); setScnMsg('')
+    try {
+      const res = await fetch(`/api/scenarios?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed.')
+      await loadScenarios()
+    } catch (e) { setScnMsg(e.message) } finally { setScnBusy(false) }
+  }
+
   async function deleteProductDoc(id) {
     setDocDeletingId(id)
     setDocsError('')
@@ -568,9 +827,34 @@ export default function DashboardPage() {
               {docsMeta.workspaceKind === 'company' ? ` (everyone signed in with an @${docsMeta.workspaceLabel} email belongs to it; only managers can add or delete).` : '.'}
               {' '}You can delete a document at any time and it is removed from our database.
             </p>
-            <p style={{ fontSize: 11, color: '#f5a623', marginBottom: 20 }}>
-              Stored privately, but the AI buyer does not use these yet. Using them will send the text to our AI providers (Google for scoring, ElevenLabs for voice); we will say so here before that is switched on.
-            </p>
+            <div style={{ border: '1px solid rgba(245,166,35,0.35)', padding: 14, marginBottom: 20 }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.15em', color: '#f5a623', marginBottom: 8 }}>
+                USE IN PRACTICE CALLS: {docsMeta.useInPracticeCalls ? 'ON' : 'OFF'}
+              </div>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, marginBottom: 12 }}>
+                When this is on, the AI buyer in practice calls knows your products and asks about them. To do that, the text of your documents
+                (newest first, up to about 12,000 characters) is sent to ElevenLabs, our voice provider, at the start of each call. ElevenLabs
+                processes it outside India. Everyone in your workspace who practises receives it in their browser during the call. It is not
+                sent to the scoring AI. Turning this off stops all future sending. Deleting a document removes it from our database;
+                copies already sent during calls follow ElevenLabs' retention, and we delete call records after 90 days.
+              </p>
+              <button
+                onClick={() => setUseInCalls(!docsMeta.useInPracticeCalls)}
+                disabled={switchSaving || (!docsMeta.useInPracticeCalls && docsMeta.docs.length === 0)}
+                style={{
+                  fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace',
+                  background: docsMeta.useInPracticeCalls ? 'transparent' : '#f5a623',
+                  border: '1px solid #f5a623',
+                  color: docsMeta.useInPracticeCalls ? '#f5a623' : '#0a0d14',
+                  padding: '8px 14px', cursor: switchSaving ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {switchSaving ? 'SAVING…' : docsMeta.useInPracticeCalls ? 'TURN OFF' : 'I UNDERSTAND, TURN ON'}
+              </button>
+              {!docsMeta.useInPracticeCalls && docsMeta.docs.length === 0 && (
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginLeft: 12 }}>Add a document first.</span>
+              )}
+            </div>
             {docsError && <p style={{ color: '#e84545', fontSize: 12, marginBottom: 12 }}>{docsError}</p>}
             {docsMeta.docs.length === 0 ? (
               <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, marginBottom: 16 }}>No documents yet.</p>
@@ -633,6 +917,374 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
+
+        {/* SECTION 8 - Integrations (same visibility rule as product documents) */}
+        {docsMeta?.canManage && (
+          <div style={{ background: '#0d1117', border: '1px solid rgba(0,200,224,0.15)', padding: 24, marginBottom: 16 }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>INTEGRATIONS</div>
+            <p style={{ fontSize: 11, color: '#f5a623', lineHeight: 1.6, marginBottom: 16 }}>
+              When a rep finishes a practice call, RepReady sends one message to each address you add below: the rep's email, the buyer,
+              the score, grade and status, and a one-sentence verdict. It never sends the transcript or any recording. Anyone who can read that
+              Slack channel or receive that webhook will see it. Remove an address to stop sending.
+            </p>
+            {[
+              { kind: 'slack', label: 'SLACK', hint: 'Slack incoming webhook address (https://hooks.slack.com/...)' },
+              { kind: 'teams', label: 'MICROSOFT TEAMS', hint: 'Teams Workflows (Power Automate) webhook address' },
+              { kind: 'webhook', label: 'GENERIC WEBHOOK', hint: 'Any https address (for Zapier, n8n, your CRM or learning system)' },
+            ].map(({ kind, label, hint }) => (
+              <div key={kind} style={{ marginBottom: 18 }}>
+                <div style={{ fontSize: 10, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.5)', marginBottom: 6 }}>
+                  {label}{integ?.[kind] ? `  ·  connected (${integ[kind]})` : '  ·  not connected'}
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <input
+                    value={integInputs[kind]}
+                    onChange={(e) => setIntegInputs(v => ({ ...v, [kind]: e.target.value }))}
+                    placeholder={hint}
+                    style={{ flex: 1, minWidth: 220, background: '#0a0d14', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontSize: 12, fontFamily: 'monospace', padding: '8px 10px' }}
+                  />
+                  <button
+                    onClick={() => saveIntegration(kind, integInputs[kind])}
+                    disabled={integBusy === kind || !integInputs[kind]}
+                    style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: '#00c8e0', border: '1px solid #00c8e0', color: '#0a0d14', padding: '8px 14px', cursor: integBusy === kind ? 'not-allowed' : 'pointer' }}
+                  >
+                    SAVE
+                  </button>
+                  {integ?.[kind] && (
+                    <>
+                      <button
+                        onClick={() => testIntegration(kind)}
+                        disabled={integBusy === kind}
+                        style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: 'transparent', border: '1px solid rgba(0,200,224,0.4)', color: '#00c8e0', padding: '8px 14px', cursor: 'pointer' }}
+                      >
+                        SEND TEST
+                      </button>
+                      <button
+                        onClick={() => saveIntegration(kind, null)}
+                        disabled={integBusy === kind}
+                        style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: 'transparent', border: '1px solid rgba(232,69,69,0.4)', color: '#e84545', padding: '8px 14px', cursor: 'pointer' }}
+                      >
+                        REMOVE
+                      </button>
+                    </>
+                  )}
+                </div>
+                {integMsg[kind] && <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 6 }}>{integMsg[kind]}</p>}
+              </div>
+            ))}
+            {newSecret && (
+              <div style={{ border: '1px solid rgba(245,166,35,0.35)', padding: 12, marginBottom: 16 }}>
+                <p style={{ fontSize: 11, color: '#f5a623', marginBottom: 6 }}>
+                  Webhook signing secret. Copy it now: it is shown only once. Your system can use it to check that a message really came from RepReady (header X-RepReady-Signature).
+                </p>
+                <code style={{ fontSize: 12, color: '#fff', wordBreak: 'break-all' }}>{newSecret}</code>
+              </div>
+            )}
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 14 }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.5)', marginBottom: 6 }}>EXPORT SCORES</div>
+              <a
+                href="/api/admin/export-sessions"
+                style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', border: '1px solid rgba(0,200,224,0.4)', color: '#00c8e0', padding: '8px 14px', textDecoration: 'none', display: 'inline-block' }}
+              >
+                DOWNLOAD CSV
+              </a>
+              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginLeft: 12 }}>One row per practice call, up to 5,000. Opens in Excel or Google Sheets.</span>
+            </div>
+          </div>
+        )}
+
+        {/* SECTION 9 - CRM link: HubSpot, Salesforce or Zoho (same visibility rule as the other settings) */}
+        {docsMeta?.canManage && (() => {
+          const label = crm?.providerLabel || 'your CRM'
+          const form = CRM_FORMS[crmProvider]
+          const inputStyle = { flex: 1, minWidth: 220, background: '#0a0d14', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontSize: 12, fontFamily: 'monospace', padding: '8px 10px' }
+          const toggleBtn = (on) => ({ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: on ? 'transparent' : '#f5a623', border: '1px solid #f5a623', color: on ? '#f5a623' : '#0a0d14', padding: '8px 14px', cursor: crmBusy ? 'not-allowed' : 'pointer' })
+          const ready = form.fields.every(f => f.type === 'select' ? true : (crmForm[f.key] || '').trim())
+          return (
+          <div style={{ background: '#0d1117', border: '1px solid rgba(0,200,224,0.15)', padding: 24, marginBottom: 16 }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>
+              CRM {crm?.connected ? `· ${crm.providerLabel.toUpperCase()} CONNECTED (${crm.credentials})` : '· NOT CONNECTED'}
+            </div>
+            {!crm?.connected ? (
+              <>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                  {(crm?.providers || [{ id: 'hubspot', label: 'HubSpot' }, { id: 'salesforce', label: 'Salesforce' }, { id: 'zoho', label: 'Zoho CRM' }]).map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => { setCrmProvider(p.id); setCrmForm({}); setCrmMsg('') }}
+                      style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: crmProvider === p.id ? '#00c8e0' : 'transparent', border: '1px solid #00c8e0', color: crmProvider === p.id ? '#0a0d14' : '#00c8e0', padding: '6px 12px', cursor: 'pointer' }}
+                    >
+                      {p.label.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6, marginBottom: 12 }}>
+                  {form.help} If a step fails with a permission message, add the permission it names. Credentials are stored privately on our server and are never shown again.
+                </p>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {form.fields.map(f => f.type === 'select' ? (
+                    <select
+                      key={f.key}
+                      value={crmForm[f.key] || f.options[0][0]}
+                      onChange={(e) => setCrmForm(v => ({ ...v, [f.key]: e.target.value }))}
+                      style={inputStyle}
+                    >
+                      {f.options.map(([val, text]) => <option key={val} value={val}>{text}</option>)}
+                    </select>
+                  ) : (
+                    <input
+                      key={f.key}
+                      type={f.secret ? 'password' : 'text'}
+                      autoComplete="off"
+                      value={crmForm[f.key] || ''}
+                      onChange={(e) => setCrmForm(v => ({ ...v, [f.key]: e.target.value }))}
+                      placeholder={f.label}
+                      style={inputStyle}
+                    />
+                  ))}
+                  <button
+                    onClick={async () => {
+                      const payload = { provider: crmProvider }
+                      for (const f of form.fields) payload[f.key] = f.type === 'select' ? (crmForm[f.key] || f.options[0][0]) : (crmForm[f.key] || '').trim()
+                      if (await crmCall('/api/admin/crm', 'POST', payload, 'Connected.')) setCrmForm({})
+                    }}
+                    disabled={crmBusy || !ready}
+                    style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: '#00c8e0', border: '1px solid #00c8e0', color: '#0a0d14', padding: '8px 14px', cursor: crmBusy ? 'not-allowed' : 'pointer' }}
+                  >
+                    {crmBusy ? 'CHECKING…' : 'CONNECT'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ border: '1px solid rgba(245,166,35,0.35)', padding: 14, marginBottom: 14 }}>
+                  <div style={{ fontSize: 10, letterSpacing: '0.15em', color: '#f5a623', marginBottom: 8 }}>
+                    REHEARSE REAL DEALS: {crm.useDealContext ? 'ON' : 'OFF'}
+                  </div>
+                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, marginBottom: 12 }}>
+                    When on, a rep can pick one of their own open {label} deals (matched by their sign-in email) before a practice call. The deal name, company (where {label} has one), value,
+                    stage, expected close date and deal notes (up to about 1,000 characters) are sent to ElevenLabs, our voice provider, at the start of that call,
+                    so the AI buyer can play that deal. ElevenLabs processes it outside India. Reps only see deals whose owner email matches their own. Nothing is sent unless the rep picks a deal.
+                  </p>
+                  <button onClick={() => crmCall('/api/admin/crm/settings', 'POST', { useDealContext: !crm.useDealContext })} disabled={crmBusy} style={toggleBtn(crm.useDealContext)}>
+                    {crm.useDealContext ? 'TURN OFF' : 'I UNDERSTAND, TURN ON'}
+                  </button>
+                </div>
+                <div style={{ border: '1px solid rgba(245,166,35,0.35)', padding: 14, marginBottom: 14 }}>
+                  <div style={{ fontSize: 10, letterSpacing: '0.15em', color: '#f5a623', marginBottom: 8 }}>
+                    WRITE RESULTS TO THE DEAL: {crm.writeback ? 'ON' : 'OFF'}
+                  </div>
+                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, marginBottom: 12 }}>
+                    When on, after a rep rehearses a deal, RepReady adds one {crm.provider === 'salesforce' ? 'completed activity (Task)' : 'note'} to that deal in {label}: the buyer, score, grade, status, the one-sentence verdict
+                    and skill scores. Anyone who can see that deal in {label} can read it. It never includes the transcript.
+                  </p>
+                  <button onClick={() => crmCall('/api/admin/crm/settings', 'POST', { writeback: !crm.writeback })} disabled={crmBusy} style={toggleBtn(crm.writeback)}>
+                    {crm.writeback ? 'TURN OFF' : 'I UNDERSTAND, TURN ON'}
+                  </button>
+                </div>
+                <button
+                  onClick={() => crmCall('/api/admin/crm', 'DELETE', null, 'Disconnected. The credentials were deleted from our server.')}
+                  disabled={crmBusy}
+                  style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: 'transparent', border: '1px solid rgba(232,69,69,0.4)', color: '#e84545', padding: '8px 14px', cursor: crmBusy ? 'not-allowed' : 'pointer' }}
+                >
+                  DISCONNECT {label.toUpperCase()}
+                </button>
+              </>
+            )}
+            {crmMsg && <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 10 }}>{crmMsg}</p>}
+          </div>
+          )
+        })()}
+
+        {/* SECTION 10 - Gong import (same visibility rule as the other settings) */}
+        {docsMeta?.canManage && (() => {
+          const inputStyle = { flex: 1, minWidth: 220, background: '#0a0d14', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontSize: 12, fontFamily: 'monospace', padding: '8px 10px' }
+          return (
+          <div style={{ background: '#0d1117', border: '1px solid rgba(0,200,224,0.15)', padding: 24, marginBottom: 16 }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>
+              GONG {gong?.connected ? `· CONNECTED (${gong.credentials})` : '· NOT CONNECTED'}
+            </div>
+            {!gong?.connected ? (
+              <>
+                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6, marginBottom: 12 }}>
+                  In Gong, a technical administrator opens Settings, then Ecosystem, then API, and creates an Access Key and Secret with these permissions: read calls (basic and extensive), read transcripts and read users.
+                  Paste them here. Leave the address blank unless Gong gave you a company-specific one (like https://company-17.api.gong.io).
+                  Gong keys can see every call in your account, so RepReady shows each rep only calls they hosted or took part in, matched by their sign-in email.
+                  The keys are stored privately on our server and never shown again.
+                </p>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <input type="text" autoComplete="off" value={gongForm.baseUrl} onChange={(e) => setGongForm(v => ({ ...v, baseUrl: e.target.value }))} placeholder="API address (optional)" style={inputStyle} />
+                  <input type="password" autoComplete="off" value={gongForm.accessKey} onChange={(e) => setGongForm(v => ({ ...v, accessKey: e.target.value }))} placeholder="Access Key" style={inputStyle} />
+                  <input type="password" autoComplete="off" value={gongForm.accessSecret} onChange={(e) => setGongForm(v => ({ ...v, accessSecret: e.target.value }))} placeholder="Access Key Secret" style={inputStyle} />
+                  <button
+                    onClick={async () => { if (await gongCall('/api/admin/gong', 'POST', gongForm, 'Connected.')) setGongForm({ baseUrl: '', accessKey: '', accessSecret: '' }) }}
+                    disabled={gongBusy || !gongForm.accessKey.trim() || !gongForm.accessSecret.trim()}
+                    style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: '#00c8e0', border: '1px solid #00c8e0', color: '#0a0d14', padding: '8px 14px', cursor: gongBusy ? 'not-allowed' : 'pointer' }}
+                  >
+                    {gongBusy ? 'CHECKING…' : 'CONNECT'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ border: '1px solid rgba(245,166,35,0.35)', padding: 14, marginBottom: 14 }}>
+                  <div style={{ fontSize: 10, letterSpacing: '0.15em', color: '#f5a623', marginBottom: 8 }}>
+                    LET REPS IMPORT THEIR GONG CALLS: {gong.enabled ? 'ON' : 'OFF'}
+                  </div>
+                  <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, marginBottom: 12 }}>
+                    When on, a rep can pick one of their own recent Gong calls (last 30 days, up to 20) on the Real Calls page. RepReady then copies that call&apos;s transcript, which includes your customer&apos;s words,
+                    into RepReady (MongoDB Atlas, Mumbai) and sends it to Google&apos;s Gemini to be scored. Only the calls a rep chooses are copied. Calls over about 30,000 characters or with more than two speakers are not supported yet.
+                    Turn this on only if the people on those calls know calls are recorded and analysed.
+                  </p>
+                  <button
+                    onClick={() => gongCall('/api/admin/gong/settings', 'POST', { enabled: !gong.enabled })}
+                    disabled={gongBusy}
+                    style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: gong.enabled ? 'transparent' : '#f5a623', border: '1px solid #f5a623', color: gong.enabled ? '#f5a623' : '#0a0d14', padding: '8px 14px', cursor: gongBusy ? 'not-allowed' : 'pointer' }}
+                  >
+                    {gong.enabled ? 'TURN OFF' : 'I UNDERSTAND, TURN ON'}
+                  </button>
+                </div>
+                <button
+                  onClick={() => gongCall('/api/admin/gong', 'DELETE', null, 'Disconnected. The keys were deleted from our server.')}
+                  disabled={gongBusy}
+                  style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: 'transparent', border: '1px solid rgba(232,69,69,0.4)', color: '#e84545', padding: '8px 14px', cursor: gongBusy ? 'not-allowed' : 'pointer' }}
+                >
+                  DISCONNECT GONG
+                </button>
+              </>
+            )}
+            {gongMsg && <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 10 }}>{gongMsg}</p>}
+          </div>
+          )
+        })()}
+
+        {/* SECTION 11 - Assigned practice (manager-only) */}
+        {isManager && (() => {
+          const inputStyle = { background: '#0a0d14', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontSize: 12, fontFamily: 'monospace', padding: '8px 10px', minWidth: 140 }
+          const STATUS = { done: ['DONE', '#3ecf8e'], done_late: ['DONE LATE', '#f5a623'], attempted: ['TRIED, BELOW TARGET', '#f5a623'], overdue: ['OVERDUE', '#e84545'], pending: ['NOT STARTED', 'rgba(255,255,255,0.4)'] }
+          const NAMES = { richard: 'Richard Vance', sandra: 'Sandra Chen', priya: 'Priya Malhotra', rakesh: 'Rakesh Iyer' }
+          return (
+          <div style={{ background: '#0d1117', border: '1px solid rgba(0,200,224,0.15)', padding: 24, marginBottom: 16 }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>ASSIGNED PRACTICE</div>
+            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6, marginBottom: 12 }}>
+              Ask your reps to practise a specific buyer by a date. A rep counts as done when they finish a call with that buyer after you create the assignment
+              (and score at least the minimum, if you set one). Leave the email box empty to assign everyone who has practised before; list emails to include people who have not started yet.
+              Due dates end at midnight India time.
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+              <input style={{ ...inputStyle, flex: 1, minWidth: 220 }} placeholder="Title, e.g. Hold your price against procurement" value={asgForm.title} onChange={e => setAsgForm(f => ({ ...f, title: e.target.value }))} />
+              <select style={inputStyle} value={asgForm.persona} onChange={e => setAsgForm(f => ({ ...f, persona: e.target.value }))}>
+                {Object.entries(NAMES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+              <select style={inputStyle} value={asgForm.focus} onChange={e => setAsgForm(f => ({ ...f, focus: e.target.value }))}>
+                <option value="">Focus skill (optional)</option>
+                {criteria.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+              </select>
+              <input style={inputStyle} type="date" value={asgForm.dueDate} onChange={e => setAsgForm(f => ({ ...f, dueDate: e.target.value }))} />
+              <input style={{ ...inputStyle, minWidth: 110, width: 110 }} type="number" min="1" max="100" placeholder="Min score" value={asgForm.minScore} onChange={e => setAsgForm(f => ({ ...f, minScore: e.target.value }))} />
+            </div>
+            <textarea style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', marginBottom: 8 }} rows={2} placeholder="Emails of the reps to assign (optional, comma or line separated)" value={asgForm.assignees} onChange={e => setAsgForm(f => ({ ...f, assignees: e.target.value }))} />
+            <input style={{ ...inputStyle, width: '100%', boxSizing: 'border-box', marginBottom: 8 }} placeholder="Note to reps (optional)" value={asgForm.note} onChange={e => setAsgForm(f => ({ ...f, note: e.target.value }))} />
+            <button
+              onClick={createAssignment}
+              disabled={asgBusy || !asgForm.title.trim()}
+              style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: '#00c8e0', border: '1px solid #00c8e0', color: '#0a0d14', padding: '8px 14px', cursor: asgBusy ? 'not-allowed' : 'pointer' }}
+            >
+              {asgBusy ? 'SAVING…' : 'ASSIGN'}
+            </button>
+            {asgMsg && <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 10 }}>{asgMsg}</p>}
+
+            {(asg?.assignments || []).map(a => (
+              <div key={a.id} style={{ borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: 16, paddingTop: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ fontSize: 12, color: '#fff' }}>{a.title}</div>
+                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
+                      {NAMES[a.persona] || a.persona}{a.focus ? ` · focus: ${a.focus}` : ''}{a.dueDate ? ` · due ${a.dueDate}` : ''}{a.minScore ? ` · min score ${a.minScore}` : ''}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 12, color: '#fff' }}>
+                      {a.progress.completionPct == null ? 'No reps yet' : `${a.progress.done} of ${a.progress.total} done (${a.progress.completionPct}%)`}
+                      {a.progress.overdue > 0 && <span style={{ color: '#e84545' }}> · {a.progress.overdue} overdue</span>}
+                    </div>
+                    <button onClick={() => setAsgOpen(asgOpen === a.id ? '' : a.id)} style={{ fontSize: 10, background: 'none', border: 'none', color: '#00c8e0', cursor: 'pointer', fontFamily: 'monospace', padding: 0, marginRight: 12 }}>
+                      {asgOpen === a.id ? 'HIDE REPS' : 'SHOW REPS'}
+                    </button>
+                    <button onClick={() => deleteAssignment(a.id)} disabled={asgBusy} style={{ fontSize: 10, background: 'none', border: 'none', color: '#e84545', cursor: 'pointer', fontFamily: 'monospace', padding: 0 }}>DELETE</button>
+                  </div>
+                </div>
+                {asgOpen === a.id && (
+                  <div style={{ marginTop: 8 }}>
+                    {a.progress.reps.length === 0 && <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Nobody to show yet: no rep in your company has practised, and no emails were listed.</div>}
+                    {a.progress.reps.map(r => (
+                      <div key={r.email} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, padding: '3px 0', color: 'rgba(255,255,255,0.7)' }}>
+                        <span>{r.email}</span>
+                        <span style={{ color: (STATUS[r.status] || STATUS.pending)[1] }}>
+                          {(STATUS[r.status] || STATUS.pending)[0]}{r.bestScore != null ? ` · best ${r.bestScore}` : ''}{r.attempts ? ` · ${r.attempts} call${r.attempts > 1 ? 's' : ''}` : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          )
+        })()}
+
+        {/* SECTION 12 - Custom buyer scenarios (same visibility rule as the other settings) */}
+        {docsMeta?.canManage && (() => {
+          const inputStyle = { background: '#0a0d14', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', fontSize: 12, fontFamily: 'monospace', padding: '8px 10px', width: '100%', boxSizing: 'border-box', marginBottom: 8 }
+          const agentReady = !!process.env.NEXT_PUBLIC_CUSTOM_AGENT_ID
+          return (
+          <div style={{ background: '#0d1117', border: '1px solid rgba(0,200,224,0.15)', padding: 24, marginBottom: 16 }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)', marginBottom: 8 }}>YOUR COMPANY&apos;S BUYERS</div>
+            <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.6, marginBottom: 12 }}>
+              Describe a buyer your reps meet in real life and they can practise against it. The text you write is shown to your own reps when they start the call and is sent to ElevenLabs, our voice provider (outside India), so the AI can play the buyer. It is not sent to the scoring model.
+              Do not paste customer names or confidential figures you would not want in a voice provider&apos;s hands.
+            </p>
+            {!agentReady && (
+              <p style={{ fontSize: 11, color: '#f5a623', lineHeight: 1.6, marginBottom: 12 }}>
+                Reps will not see these buyers yet: the one-time &quot;Custom Buyer&quot; voice setup has not been done on this deployment.
+              </p>
+            )}
+            <input style={inputStyle} placeholder="Scenario name, e.g. Procurement squeeze at renewal" value={scnForm.name} onChange={e => setScnForm(f => ({ ...f, name: e.target.value }))} />
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <input style={{ ...inputStyle, flex: 1, minWidth: 180, width: 'auto' }} placeholder="Buyer's job title" value={scnForm.buyerRole} onChange={e => setScnForm(f => ({ ...f, buyerRole: e.target.value }))} />
+              <input style={{ ...inputStyle, flex: 1, minWidth: 180, width: 'auto' }} placeholder="Company (optional), e.g. 800-person logistics firm" value={scnForm.company} onChange={e => setScnForm(f => ({ ...f, company: e.target.value }))} />
+            </div>
+            <textarea style={inputStyle} rows={3} placeholder="Situation: what the call is about, what the buyer wants and what they are comparing you with" value={scnForm.situation} onChange={e => setScnForm(f => ({ ...f, situation: e.target.value }))} />
+            <textarea style={inputStyle} rows={3} placeholder="Objections, one per line (up to 5), e.g. Your price is 15% above the other quote" value={scnForm.objections} onChange={e => setScnForm(f => ({ ...f, objections: e.target.value }))} />
+            <input style={inputStyle} placeholder="What the buyer really cares about but will not say unless the rep earns it (optional)" value={scnForm.hiddenMotivation} onChange={e => setScnForm(f => ({ ...f, hiddenMotivation: e.target.value }))} />
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <select style={{ ...inputStyle, width: 'auto', minWidth: 170 }} value={scnForm.personality} onChange={e => setScnForm(f => ({ ...f, personality: e.target.value }))}>
+                {['skeptical', 'analytical', 'impatient', 'friendly but guarded'].map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <select style={{ ...inputStyle, width: 'auto', minWidth: 150 }} value={scnForm.difficulty} onChange={e => setScnForm(f => ({ ...f, difficulty: e.target.value }))}>
+                {[1, 2, 3, 4, 5].map(d => <option key={d} value={String(d)}>Difficulty {d} of 5</option>)}
+              </select>
+              <button
+                onClick={createScenario}
+                disabled={scnBusy || !scnForm.name.trim() || !scnForm.buyerRole.trim() || !scnForm.situation.trim()}
+                style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace', background: '#00c8e0', border: '1px solid #00c8e0', color: '#0a0d14', padding: '8px 14px', marginBottom: 8, cursor: scnBusy ? 'not-allowed' : 'pointer' }}
+              >
+                {scnBusy ? 'SAVING…' : 'SAVE BUYER'}
+              </button>
+            </div>
+            {scnMsg && <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 4 }}>{scnMsg}</p>}
+            {(scn?.scenarios || []).map(sc => (
+              <div key={sc.id} style={{ borderTop: '1px solid rgba(255,255,255,0.08)', marginTop: 12, paddingTop: 10, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 12, color: '#fff' }}>{sc.name}</div>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>{sc.buyerRole}{sc.company ? `, ${sc.company}` : ''} · {sc.personality} · difficulty {sc.difficulty}/5</div>
+                </div>
+                <button onClick={() => deleteScenario(sc.id)} disabled={scnBusy} style={{ fontSize: 10, background: 'none', border: 'none', color: '#e84545', cursor: 'pointer', fontFamily: 'monospace' }}>DELETE</button>
+              </div>
+            ))}
+          </div>
+          )
+        })()}
 
         <div style={{ border: '1px solid rgba(0,200,224,0.1)', padding: '12px 16px', fontSize: 11, color: 'rgba(255,255,255,0.3)', lineHeight: 1.6 }}>
           SESSION DATA · MONGODB ATLAS MUMBAI · NEVER USED TO TRAIN AI · DPDP ACT 2023 COMPLIANT · DELETE: privacy@repready.site

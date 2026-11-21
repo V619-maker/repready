@@ -4,9 +4,16 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { generateObject } from 'ai'
 import { z } from 'zod'
 import { MongoClient } from 'mongodb'
+import dns from 'node:dns/promises'
 import { clerkClient } from '@clerk/nextjs/server'
 import { getAuthedEmail, getAuthedUser } from '@/lib/auth'
-import { PRODUCT_DOC_LIMITS, canManageProductDocs, validateProductDocInput, checkProductDocQuota } from '@/lib/productDocs.mjs'
+import { PRODUCT_DOC_LIMITS, canManageProductDocs, validateProductDocInput, checkProductDocQuota, buildProductContext, NO_PRODUCT_CONTEXT } from '@/lib/productDocs.mjs'
+import { validateIntegrationUrl, maskUrl, generateWebhookSecret, signBody, buildSessionPayload, buildTestPayload, formatSlack, formatTeams, isPrivateOrLocalAddress, toCsv } from '@/lib/webhooks.mjs'
+import { validateScenarioInput, buildScenarioBrief, NO_SCENARIO, SCENARIO_LIMITS } from '@/lib/scenarios.mjs'
+import { validateAssignmentInput, evaluateAssignment, assignmentsForRep, ASSIGNMENT_LIMITS } from '@/lib/assignments.mjs'
+import { parseGongCreds, maskGong, isValidGongCallId, verifyGong, findGongUserId, forgetGongUsers, listGongCalls, getGongCall, isRepsCall, getGongTranscript, buildLabeledLines, GONG_MAX_TRANSCRIPT_CHARS } from '@/lib/gong.mjs'
+import { getCrmAdapter, CRM_PROVIDERS, buildDealContext, NO_DEAL_CONTEXT, openCrmSession, forgetCrmSession } from '@/lib/crm.mjs'
+import { MAX_RUNS as CONSISTENCY_MAX_RUNS, SAMPLE_TRANSCRIPTS, summarizeRuns } from '@/lib/scoreConsistency.mjs'
 import { splitTranscriptIntoTurns, validateEvidence } from '@/lib/evidenceValidation.mjs'
 import { hashTranscript, fingerprintCriteria, SCORING_VERSION, SCORING_MODEL_ID, EVALUATION_SOURCE_PRACTICE } from '@/lib/canonicalEvaluation.mjs'
 
@@ -133,6 +140,65 @@ TRANSCRIPT:
 ${transcript}
 
 Be strict and realistic. Do not be generous.`
+}
+
+// ---------------------------------------------------------------------------
+// Outgoing notifications (Slack / Teams / generic webhook). Configured by a manager
+// on the dashboard, stored in workspaceSettings.integrations (keyed by workspaceId).
+// notifyIntegrations() is called AFTER a session is saved and can never throw or
+// delay the save by more than a few seconds; a failed notification is only logged
+// (never the address, which is a secret).
+// ---------------------------------------------------------------------------
+async function sendIntegration(kind, url, secret, payload) {
+  const check = validateIntegrationUrl(kind, url)
+  if (!check.ok) return { ok: false, error: 'invalid_url' }
+  if (kind === 'webhook') {
+    // Resolve the name first and refuse private/internal addresses (stored address
+    // may have been valid when saved but resolve somewhere internal later).
+    const host = new URL(check.url).hostname
+    const addrs = await dns.lookup(host, { all: true })
+    if (!addrs.length || addrs.some((a) => isPrivateOrLocalAddress(a.address))) return { ok: false, error: 'blocked_address' }
+  }
+  let body, headers = { 'Content-Type': 'application/json' }
+  if (kind === 'slack') body = JSON.stringify(formatSlack(payload))
+  else if (kind === 'teams') body = JSON.stringify(formatTeams(payload))
+  else {
+    body = JSON.stringify(payload)
+    if (secret) headers['X-RepReady-Signature'] = signBody(secret, body)
+    headers['X-RepReady-Event'] = payload.event
+  }
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 3000)
+  try {
+    // redirect: 'manual' so a target cannot bounce us to an internal address.
+    const res = await fetch(check.url, { method: 'POST', headers, body, signal: controller.signal, redirect: 'manual' })
+    return { ok: res.status >= 200 && res.status < 300, status: res.status }
+  } catch (e) {
+    return { ok: false, error: e?.name === 'AbortError' ? 'timeout' : 'network' }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function notifyIntegrations(workspaceId, session) {
+  try {
+    if (!workspaceId) return
+    const db = await getDb()
+    const cfg = (await db.collection('workspaceSettings').findOne({ _id: workspaceId }))?.integrations
+    if (!cfg) return
+    const payload = buildSessionPayload(session)
+    const jobs = []
+    if (cfg.slackUrl) jobs.push(['slack', sendIntegration('slack', cfg.slackUrl, null, payload)])
+    if (cfg.teamsUrl) jobs.push(['teams', sendIntegration('teams', cfg.teamsUrl, null, payload)])
+    if (cfg.webhookUrl) jobs.push(['webhook', sendIntegration('webhook', cfg.webhookUrl, cfg.webhookSecret, payload)])
+    const results = await Promise.allSettled(jobs.map(([, p]) => p))
+    results.forEach((r, k) => {
+      const ok = r.status === 'fulfilled' && r.value.ok
+      if (!ok) console.warn(`[integrations] ${jobs[k][0]} notification failed for workspace=${workspaceId}: ${r.status === 'fulfilled' ? (r.value.error || r.value.status) : 'error'}`)
+    })
+  } catch (e) {
+    console.warn('[integrations] notify skipped:', e?.message)
+  }
 }
 
 // `orgId` here is trusted only as far as each caller trusts it — this
@@ -1226,6 +1292,7 @@ Evaluate the sales rep's performance and return JSON with:
           const db = await getDb()
           const transactionSession = cachedClient.startSession()
           let canonicalSession = null
+          let canonicalCreatedNew = false
 
           try {
             await transactionSession.withTransaction(async () => {
@@ -1318,6 +1385,7 @@ Evaluate the sales rep's performance and return JSON with:
               }
 
               canonicalSession = session
+              canonicalCreatedNew = true
             })
 
             console.info('Canonical session save committed', {
@@ -1325,6 +1393,9 @@ Evaluate the sales rep's performance and return JSON with:
               scoreResultId: body.scoreResultId,
               sessionId: canonicalSession?.id
             })
+            // Post-commit notification only for a newly created session (not an
+            // idempotent retry). Cannot throw; adds at most ~3s.
+            if (canonicalCreatedNew) await notifyIntegrations(authedUser.workspaceId, canonicalSession)
             return handleCORS(NextResponse.json(canonicalSession))
           } catch (canonicalSaveError) {
             if (canonicalSaveError.code === 'INVALID_SCORE_RESULT') {
@@ -1395,6 +1466,7 @@ Evaluate the sales rep's performance and return JSON with:
 }
         const db = await getDb()
         await db.collection('sessions').insertOne(session)
+        await notifyIntegrations(authedUser.workspaceId, session)
         return handleCORS(NextResponse.json(session))
       } catch (error) {
         console.error('Save session error:', error)
@@ -1850,9 +1922,11 @@ Evaluate the sales rep's performance and return JSON with:
     //     never the text.
     //  3. Every read/delete filters by workspaceId. A wrong-workspace id returns
     //     the same 404 as a missing one, so ids can't be probed.
-    //  4. The text is never returned by any endpoint here and never logged.
-    // Stored in MongoDB Atlas (encrypted at rest by Atlas). NOT yet sent to any AI:
-    // wiring documents into the AI buyer / scoring is a separate, later change.
+    //  4. This endpoint never returns the text and nothing logs it. The only way text leaves
+    //     is /api/product-context below, and only after a manager switches
+    //     'use in practice calls' on (default off).
+    // Stored in MongoDB Atlas (encrypted at rest by Atlas). Sent to the AI buyer (ElevenLabs)
+    // only via the opt-in /api/product-context. Never sent to Gemini scoring.
     // Plain text only for now (.txt/.md/pasted) - PDF/DOCX parsing comes later.
     // ---------------------------------------------------------------------
     if (route === '/product-docs' && (method === 'GET' || method === 'POST' || method === 'DELETE')) {
@@ -1881,6 +1955,7 @@ Evaluate the sales rep's performance and return JSON with:
             workspaceKind: authedUser.isPersonalWorkspace ? 'personal' : 'company',
             workspaceLabel: authedUser.isPersonalWorkspace ? 'your private workspace' : workspaceId,
             canManage,
+            useInPracticeCalls: (await db.collection('workspaceSettings').findOne({ _id: workspaceId }))?.useProductDocs === true,
             limits: LIMITS,
             docs
           }))
@@ -1932,6 +2007,866 @@ Evaluate the sales rep's performance and return JSON with:
       } catch (error) {
         console.error('Product docs error:', error?.message)
         return handleCORS(NextResponse.json({ error: "Product documents request failed." }, { status: 500 }))
+      }
+    }
+
+    // Opt-in switch - POST /api/product-docs/settings  { enabled: boolean }
+    // Off by default. Turning it on lets practice calls send the workspace's
+    // product text to the voice provider (ElevenLabs). Manager (or personal-workspace
+    // owner) only; the dashboard shows the disclosure before offering the switch.
+    if (route === '/product-docs/settings' && method === 'POST') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const workspaceId = authedUser.workspaceId
+        if (!workspaceId) {
+          return handleCORS(NextResponse.json(
+            { error: "Unable to determine a private workspace from this account." }, { status: 400 }
+          ))
+        }
+        if (!canManageProductDocs(authedUser)) {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+        const body = await request.json()
+        if (typeof body.enabled !== 'boolean') {
+          return handleCORS(NextResponse.json({ error: "enabled must be true or false." }, { status: 400 }))
+        }
+        const db = await getDb()
+        await db.collection('workspaceSettings').updateOne(
+          { _id: workspaceId },
+          { $set: { useProductDocs: body.enabled, updatedAt: new Date().toISOString(), updatedBy: authedUser.email } },
+          { upsert: true }
+        )
+        console.log(`[product-docs] use_in_practice_calls=${body.enabled} workspace=${workspaceId}`)
+        return handleCORS(NextResponse.json({ useInPracticeCalls: body.enabled }))
+      } catch (error) {
+        console.error('Product docs settings error:', error?.message)
+        return handleCORS(NextResponse.json({ error: "Failed to save the setting." }, { status: 500 }))
+      }
+    }
+
+    // Product context for a practice call - GET /api/product-context
+    // Any signed-in member of the workspace. Returns the capped, labelled text
+    // ONLY when a manager switched the opt-in on; otherwise a fixed "no reference"
+    // string. The call screen passes this to ElevenLabs as {{product_context}}
+    // (the voice session is started in the browser, so the text does reach the
+    // member's browser - that is the point of the feature, and the dashboard
+    // disclosure says so).
+    if (route === '/product-context' && method === 'GET') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const workspaceId = authedUser.workspaceId
+        if (!workspaceId) {
+          return handleCORS(NextResponse.json({ enabled: false, productContext: NO_PRODUCT_CONTEXT }))
+        }
+        const db = await getDb()
+        const settings = await db.collection('workspaceSettings').findOne({ _id: workspaceId })
+        if (settings?.useProductDocs !== true) {
+          return handleCORS(NextResponse.json({ enabled: false, productContext: NO_PRODUCT_CONTEXT }))
+        }
+        const docs = await db.collection('productDocs')
+          .find({ workspaceId }, { projection: { _id: 0, name: 1, text: 1, uploadedAt: 1 } })
+          .toArray()
+        const productContext = buildProductContext(docs)
+        return handleCORS(NextResponse.json({ enabled: productContext !== NO_PRODUCT_CONTEXT, productContext }))
+      } catch (error) {
+        console.error('Product context error:', error?.message)
+        // Fail closed: a practice call must still work without the reference.
+        return handleCORS(NextResponse.json({ enabled: false, productContext: NO_PRODUCT_CONTEXT }))
+      }
+    }
+
+    // Scoring consistency check - GET /api/admin/score-consistency?runs=10&format=json
+    // Manager-only. Scores the SAME built-in sample call several times with the real
+    // scoring function (scoreTranscript, same prompt and schema as production, using
+    // the manager's own org criteria) and reports how much the numbers move. Two
+    // sample calls (a strong rep and a weak rep) so it also shows whether scoring can
+    // tell them apart. Each run is a billed Gemini call, so runs are capped at 10 per
+    // sample call and nothing is saved to the database. Default output is plain text.
+    if (route === '/admin/score-consistency' && method === 'GET') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        if (authedUser.role !== 'manager') {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+        const orgId = authedUser.orgId
+        if (!orgId) return handleCORS(NextResponse.json(
+          { error: "Unable to determine organization from account email" }, { status: 400 }
+        ))
+        const url = new URL(request.url)
+        const runs = Math.min(CONSISTENCY_MAX_RUNS, Math.max(2, parseInt(url.searchParams.get('runs') || '10', 10) || 10))
+
+        const report = {}
+        for (const [name, transcript] of Object.entries(SAMPLE_TRANSCRIPTS)) {
+          const ok = []
+          let failed = 0
+          for (let done = 0; done < runs; done += 5) {
+            const batch = Math.min(5, runs - done)
+            const settled = await Promise.allSettled(
+              Array.from({ length: batch }, () => scoreTranscript(transcript, 'richard', orgId))
+            )
+            for (const r of settled) {
+              if (r.status === 'fulfilled') ok.push(r.value)
+              else { failed++; console.error('[score-consistency] run failed:', r.reason?.message) }
+            }
+          }
+          report[name] = { ...summarizeRuns(ok), failedRuns: failed }
+        }
+
+        const gap = (report.strongRep.weightedScore.mean ?? 0) - (report.weakRep.weightedScore.mean ?? 0)
+        const fmt = (label, x) => x.n
+          ? `${label}: average ${x.mean}, lowest ${x.min}, highest ${x.max}, spread ${x.spread} points`
+          : `${label}: no successful runs`
+        const verdict = (x) => x.spread === null ? 'no data'
+          : x.spread <= 5 ? 'steady'
+          : x.spread <= 10 ? 'some wobble'
+          : 'unreliable'
+        const lines = [
+          `SCORING CONSISTENCY CHECK (${runs} runs per call, criteria: ${orgId})`,
+          '',
+          'Same call scored again and again. Smaller spread = more trustworthy scores.',
+          '',
+          'STRONG REP CALL',
+          fmt('  Overall score', report.strongRep.weightedScore) + `  -> ${verdict(report.strongRep.weightedScore)}`,
+          `  Failed runs: ${report.strongRep.failedRuns}`,
+          '',
+          'WEAK REP CALL (gives away 15% and free onboarding immediately)',
+          fmt('  Overall score', report.weakRep.weightedScore) + `  -> ${verdict(report.weakRep.weightedScore)}`,
+          `  Failed runs: ${report.weakRep.failedRuns}`,
+          '',
+          `Gap between average strong and weak score: ${Math.round(gap)} points (should be large and positive).`,
+          '',
+          'Skill by skill, spread in points (strong call / weak call):',
+          ...Object.keys(report.strongRep.dimensions).map((k) =>
+            `  ${k}: ${report.strongRep.dimensions[k].spread} / ${report.weakRep.dimensions[k]?.spread ?? 'n/a'}`),
+          '',
+          'How to read this: my own rule of thumb, not an industry standard. 5 points or less = steady, 6-10 = some wobble, over 10 = unreliable.',
+          'Nothing was saved. Each run is one billed Gemini call.',
+        ]
+        if (url.searchParams.get('format') === 'json') {
+          return handleCORS(NextResponse.json({ runs, orgId, gap: Math.round(gap), report }))
+        }
+        return handleCORS(new NextResponse(lines.join('\n'), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } }))
+      } catch (error) {
+        console.error('Score consistency error:', error?.message)
+        return handleCORS(NextResponse.json({ error: "Consistency check failed." }, { status: 500 }))
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // Integrations settings - /api/admin/integrations (GET, POST) and
+    // /api/admin/integrations/test (POST). Manager (or personal-workspace owner)
+    // only, scoped by workspaceId. Addresses are secrets: stored server-side, and
+    // only ever returned masked. A webhook gets a signing secret (shown once).
+    // ---------------------------------------------------------------------
+    if (route.startsWith('/admin/integrations') && (route === '/admin/integrations' || route === '/admin/integrations/test')) {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const workspaceId = authedUser.workspaceId
+        if (!workspaceId) {
+          return handleCORS(NextResponse.json(
+            { error: "Unable to determine a private workspace from this account." }, { status: 400 }
+          ))
+        }
+        if (!canManageProductDocs(authedUser)) {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+        const db = await getDb()
+        const settingsCol = db.collection('workspaceSettings')
+        const KINDS = { slack: 'slackUrl', teams: 'teamsUrl', webhook: 'webhookUrl' }
+        const view = (cfg) => ({
+          slack: cfg?.slackUrl ? maskUrl(cfg.slackUrl) : null,
+          teams: cfg?.teamsUrl ? maskUrl(cfg.teamsUrl) : null,
+          webhook: cfg?.webhookUrl ? maskUrl(cfg.webhookUrl) : null,
+        })
+
+        if (route === '/admin/integrations' && method === 'GET') {
+          const cfg = (await settingsCol.findOne({ _id: workspaceId }))?.integrations
+          return handleCORS(NextResponse.json({ configured: view(cfg) }))
+        }
+
+        if (route === '/admin/integrations' && method === 'POST') {
+          const body = await request.json()
+          const kind = body.kind
+          if (!KINDS[kind]) {
+            return handleCORS(NextResponse.json({ error: "Unknown integration." }, { status: 400 }))
+          }
+          const field = KINDS[kind]
+          const existing = (await settingsCol.findOne({ _id: workspaceId }))?.integrations || {}
+          const now = new Date().toISOString()
+          // url === null (or empty) removes it.
+          if (body.url === null || body.url === '') {
+            const unset = { [`integrations.${field}`]: '' }
+            if (kind === 'webhook') unset['integrations.webhookSecret'] = ''
+            await settingsCol.updateOne({ _id: workspaceId }, { $unset: unset, $set: { updatedAt: now, updatedBy: authedUser.email } }, { upsert: true })
+            console.log(`[integrations] removed ${kind} workspace=${workspaceId}`)
+            const cfg = (await settingsCol.findOne({ _id: workspaceId }))?.integrations
+            return handleCORS(NextResponse.json({ configured: view(cfg) }))
+          }
+          const check = validateIntegrationUrl(kind, body.url)
+          if (!check.ok) {
+            return handleCORS(NextResponse.json({ error: check.error }, { status: 400 }))
+          }
+          const set = { [`integrations.${field}`]: check.url, updatedAt: now, updatedBy: authedUser.email }
+          let newSecret = null
+          if (kind === 'webhook' && (!existing.webhookSecret || body.rotateSecret === true)) {
+            newSecret = generateWebhookSecret()
+            set['integrations.webhookSecret'] = newSecret
+          }
+          await settingsCol.updateOne({ _id: workspaceId }, { $set: set }, { upsert: true })
+          console.log(`[integrations] saved ${kind} workspace=${workspaceId}`)
+          const cfg = (await settingsCol.findOne({ _id: workspaceId }))?.integrations
+          // The signing secret is shown only in this response.
+          return handleCORS(NextResponse.json({ configured: view(cfg), newSecret }))
+        }
+
+        if (route === '/admin/integrations/test' && method === 'POST') {
+          const body = await request.json()
+          const kind = body.kind
+          if (!KINDS[kind]) {
+            return handleCORS(NextResponse.json({ error: "Unknown integration." }, { status: 400 }))
+          }
+          const cfg = (await settingsCol.findOne({ _id: workspaceId }))?.integrations
+          if (!cfg?.[KINDS[kind]]) {
+            return handleCORS(NextResponse.json({ error: "Save an address first." }, { status: 400 }))
+          }
+          const result = await sendIntegration(kind, cfg[KINDS[kind]], cfg.webhookSecret, buildTestPayload())
+          return handleCORS(NextResponse.json({
+            ok: result.ok === true,
+            detail: result.ok ? 'Sent. Check the channel or your receiving system.' : `Failed (${result.error || result.status}).`
+          }))
+        }
+
+        return handleCORS(NextResponse.json({ error: "Not found" }, { status: 404 }))
+      } catch (error) {
+        console.error('Integrations error:', error?.message)
+        return handleCORS(NextResponse.json({ error: "Integrations request failed." }, { status: 500 }))
+      }
+    }
+
+    // CSV export of practice sessions - GET /api/admin/export-sessions
+    // Manager (or personal-workspace owner) only. Company workspace: every session in
+    // the org. Personal (free-email) workspace: only the caller's own sessions,
+    // never the shared "gmail.com" pool. Capped at 5,000 rows; transcripts are not stored
+    // in sessions so none are exported.
+    if (route === '/admin/export-sessions' && method === 'GET') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        if (!authedUser.workspaceId || !authedUser.orgId) {
+          return handleCORS(NextResponse.json(
+            { error: "Unable to determine a private workspace from this account." }, { status: 400 }
+          ))
+        }
+        if (!canManageProductDocs(authedUser)) {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+        const filter = authedUser.isPersonalWorkspace
+          ? { orgId: authedUser.orgId, userEmail: authedUser.email }
+          : { orgId: authedUser.orgId }
+        const db = await getDb()
+        const rows = await db.collection('sessions')
+          .find(filter, { projection: { _id: 0 } })
+          .sort({ createdAt: -1 })
+          .limit(5000)
+          .toArray()
+        const columns = ['createdAt', 'userEmail', 'persona', 'finalScore', 'grade', 'procurementScore', 'enablementScore', 'qualificationStatus', 'hostilityReached', 'verdict']
+        const csv = toCsv(rows, columns)
+        return handleCORS(new NextResponse(csv, { headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': 'attachment; filename="repready-sessions.csv"'
+        } }))
+      } catch (error) {
+        console.error('Export sessions error:', error?.message)
+        return handleCORS(NextResponse.json({ error: "Export failed." }, { status: 500 }))
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // CRM link (Sprints 67-68): HubSpot, Salesforce or Zoho CRM, one per workspace.
+    // The customer's admin creates an API client in their own CRM and pastes its
+    // credentials here; RepReady hosts no marketplace app. Credentials are secrets:
+    // stored server-side in workspaceSettings.crm, never returned (masked label only).
+    //   Manager (or personal-workspace owner): /api/admin/crm (GET, POST, DELETE),
+    //                                          /api/admin/crm/settings (POST)
+    //   Any signed-in member, own deals only:   /api/crm/deals, /api/crm/deal-context,
+    //                                          /api/crm/log-practice (POST)
+    // Own-deals-only is enforced HERE by matching the deal owner to the rep's sign-in
+    // email. The CRM credentials themselves are workspace-wide (Salesforce acts as the
+    // app's "Run As" user), so the CRM does not enforce it for us.
+    // ---------------------------------------------------------------------
+    if (route === '/admin/crm' || route === '/admin/crm/settings') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const workspaceId = authedUser.workspaceId
+        if (!workspaceId) {
+          return handleCORS(NextResponse.json(
+            { error: "Unable to determine a private workspace from this account." }, { status: 400 }
+          ))
+        }
+        if (!canManageProductDocs(authedUser)) {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+        const db = await getDb()
+        const col = db.collection('workspaceSettings')
+        const status = async () => {
+          const doc = await col.findOne({ _id: workspaceId })
+          const adapter = getCrmAdapter(doc?.crm?.provider)
+          const connected = !!(adapter && doc?.crm?.creds)
+          return {
+            connected,
+            provider: connected ? adapter.id : null,
+            providerLabel: connected ? adapter.label : null,
+            credentials: connected ? adapter.mask(doc.crm.creds) : null,
+            useDealContext: doc?.crmUseDealContext === true,
+            writeback: doc?.crmWriteback === true,
+            providers: Object.values(CRM_PROVIDERS).map((a) => ({ id: a.id, label: a.label })),
+          }
+        }
+
+        if (route === '/admin/crm' && method === 'GET') {
+          return handleCORS(NextResponse.json(await status()))
+        }
+
+        if (route === '/admin/crm' && method === 'POST') {
+          const body = await request.json()
+          const adapter = getCrmAdapter(body?.provider)
+          if (!adapter) {
+            return handleCORS(NextResponse.json({ error: "Choose HubSpot, Salesforce or Zoho CRM." }, { status: 400 }))
+          }
+          const parsed = adapter.parseCreds(body)
+          if (!parsed.ok) {
+            return handleCORS(NextResponse.json({ error: parsed.error }, { status: 400 }))
+          }
+          const check = await adapter.verify(fetch, parsed.creds)
+          if (!check.ok) {
+            return handleCORS(NextResponse.json({ error: check.error }, { status: 400 }))
+          }
+          await col.updateOne(
+            { _id: workspaceId },
+            { $set: { crm: { provider: adapter.id, creds: parsed.creds, connectedAt: new Date().toISOString(), connectedBy: authedUser.email }, crmUseDealContext: false, crmWriteback: false } },
+            { upsert: true }
+          )
+          forgetCrmSession(workspaceId)
+          console.log(`[crm] connected provider=${adapter.id} workspace=${workspaceId}`)
+          return handleCORS(NextResponse.json(await status()))
+        }
+
+        if (route === '/admin/crm' && method === 'DELETE') {
+          await col.updateOne(
+            { _id: workspaceId },
+            { $unset: { crm: '', crmUseDealContext: '', crmWriteback: '' } }
+          )
+          forgetCrmSession(workspaceId)
+          console.log(`[crm] disconnected workspace=${workspaceId}`)
+          return handleCORS(NextResponse.json(await status()))
+        }
+
+        if (route === '/admin/crm/settings' && method === 'POST') {
+          const body = await request.json()
+          const current = await status()
+          if (!current.connected) {
+            return handleCORS(NextResponse.json({ error: "Connect your CRM first." }, { status: 400 }))
+          }
+          const set = {}
+          if (typeof body.useDealContext === 'boolean') set.crmUseDealContext = body.useDealContext
+          if (typeof body.writeback === 'boolean') set.crmWriteback = body.writeback
+          if (!Object.keys(set).length) {
+            return handleCORS(NextResponse.json({ error: "Nothing to change." }, { status: 400 }))
+          }
+          await col.updateOne({ _id: workspaceId }, { $set: set })
+          console.log(`[crm] settings ${JSON.stringify(set)} workspace=${workspaceId}`)
+          return handleCORS(NextResponse.json(await status()))
+        }
+
+        return handleCORS(NextResponse.json({ error: "Not found" }, { status: 404 }))
+      } catch (error) {
+        console.error('CRM admin error:', error?.message)
+        return handleCORS(NextResponse.json({ error: "CRM request failed." }, { status: 500 }))
+      }
+    }
+
+    if (route === '/crm/deals' || route === '/crm/deal-context' || route === '/crm/log-practice') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const workspaceId = authedUser.workspaceId
+        const db = await getDb()
+        const doc = workspaceId ? await db.collection('workspaceSettings').findOne({ _id: workspaceId }) : null
+        const adapter = getCrmAdapter(doc?.crm?.provider)
+        if (!adapter || !doc?.crm?.creds) {
+          return handleCORS(NextResponse.json({ enabled: false, deals: [] }))
+        }
+        // Cheap switch checks first so a disabled workspace makes no calls to the CRM.
+        const wantsContext = doc.crmUseDealContext === true
+        const wantsWriteback = doc.crmWriteback === true
+        if ((route !== '/crm/log-practice' && !wantsContext) || (route === '/crm/log-practice' && !wantsWriteback)) {
+          return handleCORS(NextResponse.json(route === '/crm/log-practice'
+            ? { logged: false, reason: 'not_enabled' }
+            : route === '/crm/deal-context' ? { enabled: false, dealContext: NO_DEAL_CONTEXT } : { enabled: false, deals: [] }))
+        }
+
+        // Shared: sign in to the CRM and find the rep's own owner id (exact email match).
+        // Cached in memory for a few minutes; any CRM error below drops the cache.
+        const sess = await openCrmSession(adapter, fetch, doc.crm.creds, workspaceId, authedUser.email)
+        if (!sess.ok) {
+          forgetCrmSession(workspaceId)
+          console.warn(`[crm] sign-in/owner lookup failed provider=${adapter.id} workspace=${workspaceId}`)
+          return handleCORS(NextResponse.json({ enabled: false, deals: [], error: sess.error }))
+        }
+        const ctx = sess.ctx
+        const ownerId = sess.ownerId
+
+        if (route === '/crm/deals' && method === 'GET') {
+          if (!ownerId) {
+            return handleCORS(NextResponse.json({ enabled: true, deals: [], message: `No ${adapter.label} user found with your sign-in email.` }))
+          }
+          const [list, labels] = await Promise.all([adapter.listDeals(fetch, ctx, ownerId, 25), adapter.stageLabels(fetch, ctx)])
+          if (!list.ok) {
+            forgetCrmSession(workspaceId)
+            return handleCORS(NextResponse.json({ enabled: true, deals: [], error: list.error }))
+          }
+          return handleCORS(NextResponse.json({
+            enabled: true,
+            deals: list.deals.map((d) => ({ id: d.id, name: d.name, amount: d.amount, stage: labels[d.stage] || d.stage, closeDate: d.closeDate }))
+          }))
+        }
+
+        if (route === '/crm/deal-context' && method === 'GET') {
+          if (!ownerId) {
+            return handleCORS(NextResponse.json({ enabled: false, dealContext: NO_DEAL_CONTEXT }))
+          }
+          const dealId = new URL(request.url).searchParams.get('dealId')
+          if (!adapter.isValidDealId(dealId)) {
+            return handleCORS(NextResponse.json({ error: "Invalid deal." }, { status: 400 }))
+          }
+          const got = await adapter.getDeal(fetch, ctx, dealId)
+          // Same answer for "not found" and "not yours" so ids cannot be probed.
+          if (!got.ok || !got.deal || got.deal.ownerId !== ownerId) {
+            return handleCORS(NextResponse.json({ enabled: false, dealContext: NO_DEAL_CONTEXT }))
+          }
+          const labels = await adapter.stageLabels(fetch, ctx)
+          return handleCORS(NextResponse.json({ enabled: true, dealContext: buildDealContext(got.deal, labels) }))
+        }
+
+        if (route === '/crm/log-practice' && method === 'POST') {
+          if (!ownerId) {
+            return handleCORS(NextResponse.json({ logged: false, reason: 'not_enabled' }))
+          }
+          const body = await request.json()
+          const dealId = body.dealId
+          const sessionId = typeof body.sessionId === 'string' ? body.sessionId : ''
+          if (!adapter.isValidDealId(dealId) || !sessionId) {
+            return handleCORS(NextResponse.json({ error: "dealId and sessionId are required." }, { status: 400 }))
+          }
+          const sessions = db.collection('sessions')
+          const session = await sessions.findOne({ id: sessionId, userEmail: authedUser.email })
+          if (!session) {
+            return handleCORS(NextResponse.json({ error: "Session not found." }, { status: 404 }))
+          }
+          const got = await adapter.getDeal(fetch, ctx, dealId)
+          if (!got.ok || !got.deal || got.deal.ownerId !== ownerId) {
+            return handleCORS(NextResponse.json({ logged: false, reason: 'deal_not_yours' }, { status: 403 }))
+          }
+          // Claim once: a retry or double-click can never write two notes.
+          const claim = await sessions.updateOne(
+            { id: sessionId, userEmail: authedUser.email, crmNoteLoggedAt: { $exists: false } },
+            { $set: { crmNoteLoggedAt: new Date().toISOString(), crmDealId: dealId } }
+          )
+          if (!claim.matchedCount) {
+            return handleCORS(NextResponse.json({ logged: false, reason: 'already_logged' }))
+          }
+          const PERSONA_LABELS = { richard: 'Richard Vance', sandra: 'Sandra Chen', priya: 'Priya Malhotra', rakesh: 'Rakesh Iyer' }
+          const created = await adapter.createNote(fetch, ctx, got.deal, session, PERSONA_LABELS[session.persona] || session.persona, ownerId)
+          if (!created.ok) {
+            // Release the claim so the rep can retry.
+            await sessions.updateOne({ id: sessionId }, { $unset: { crmNoteLoggedAt: '', crmDealId: '' } })
+            forgetCrmSession(workspaceId)
+            console.warn(`[crm] note failed provider=${adapter.id} workspace=${workspaceId}`)
+            return handleCORS(NextResponse.json({ logged: false, error: created.error }, { status: 502 }))
+          }
+          return handleCORS(NextResponse.json({ logged: true }))
+        }
+
+        return handleCORS(NextResponse.json({ error: "Not found" }, { status: 404 }))
+      } catch (error) {
+        console.error('CRM error:', error?.message)
+        return handleCORS(NextResponse.json({ enabled: false, deals: [], error: "CRM request failed." }, { status: 500 }))
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // Gong import (Sprint 69). The customer's Gong admin creates an access key +
+    // secret (Settings, Ecosystem, API) and pastes them here. Secrets are stored
+    // server-side in workspaceSettings.gong and never returned (masked label only).
+    //   Manager (or personal-workspace owner): /api/admin/gong (GET, POST, DELETE),
+    //                                          /api/admin/gong/settings (POST { enabled })
+    //   Any signed-in member, own calls only:   GET /api/gong/calls, POST /api/gong/import
+    // Gong keys see every call in the account, so own-calls-only is enforced HERE:
+    // the call's primary user or a participant email must match the rep's sign-in email.
+    // An import creates a normal realCalls record (same as a pasted transcript), so the
+    // existing speaker-confirmation and scoring flow runs unchanged.
+    // ---------------------------------------------------------------------
+    if (route === '/admin/gong' || route === '/admin/gong/settings') {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const workspaceId = authedUser.workspaceId
+        if (!workspaceId) {
+          return handleCORS(NextResponse.json(
+            { error: "Unable to determine a private workspace from this account." }, { status: 400 }
+          ))
+        }
+        if (!canManageProductDocs(authedUser)) {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+        const db = await getDb()
+        const col = db.collection('workspaceSettings')
+        const status = async () => {
+          const doc = await col.findOne({ _id: workspaceId })
+          const connected = !!doc?.gong?.creds
+          return {
+            connected,
+            credentials: connected ? maskGong(doc.gong.creds) : null,
+            enabled: doc?.gongEnabled === true,
+          }
+        }
+
+        if (route === '/admin/gong' && method === 'GET') {
+          return handleCORS(NextResponse.json(await status()))
+        }
+
+        if (route === '/admin/gong' && method === 'POST') {
+          const body = await request.json()
+          const parsed = parseGongCreds(body)
+          if (!parsed.ok) {
+            return handleCORS(NextResponse.json({ error: parsed.error }, { status: 400 }))
+          }
+          const check = await verifyGong(fetch, parsed.creds)
+          if (!check.ok) {
+            return handleCORS(NextResponse.json({ error: check.error }, { status: 400 }))
+          }
+          await col.updateOne(
+            { _id: workspaceId },
+            { $set: { gong: { creds: parsed.creds, connectedAt: new Date().toISOString(), connectedBy: authedUser.email }, gongEnabled: false } },
+            { upsert: true }
+          )
+          forgetGongUsers(`${workspaceId}`)
+          console.log(`[gong] connected workspace=${workspaceId}`)
+          return handleCORS(NextResponse.json(await status()))
+        }
+
+        if (route === '/admin/gong' && method === 'DELETE') {
+          await col.updateOne({ _id: workspaceId }, { $unset: { gong: '', gongEnabled: '' } })
+          forgetGongUsers(`${workspaceId}`)
+          console.log(`[gong] disconnected workspace=${workspaceId}`)
+          return handleCORS(NextResponse.json(await status()))
+        }
+
+        if (route === '/admin/gong/settings' && method === 'POST') {
+          const body = await request.json()
+          const current = await status()
+          if (!current.connected) {
+            return handleCORS(NextResponse.json({ error: "Connect Gong first." }, { status: 400 }))
+          }
+          if (typeof body.enabled !== 'boolean') {
+            return handleCORS(NextResponse.json({ error: "Nothing to change." }, { status: 400 }))
+          }
+          await col.updateOne({ _id: workspaceId }, { $set: { gongEnabled: body.enabled } })
+          console.log(`[gong] enabled=${body.enabled} workspace=${workspaceId}`)
+          return handleCORS(NextResponse.json(await status()))
+        }
+
+        return handleCORS(NextResponse.json({ error: "Not found" }, { status: 404 }))
+      } catch (error) {
+        console.error('Gong admin error:', error?.message)
+        return handleCORS(NextResponse.json({ error: "Gong request failed." }, { status: 500 }))
+      }
+    }
+
+    if ((route === '/gong/calls' && method === 'GET') || (route === '/gong/import' && method === 'POST')) {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const workspaceId = authedUser.workspaceId
+        const db = await getDb()
+        const doc = workspaceId ? await db.collection('workspaceSettings').findOne({ _id: workspaceId }) : null
+        const creds = doc?.gong?.creds
+        if (!creds || doc.gongEnabled !== true) {
+          return handleCORS(NextResponse.json({ enabled: false, calls: [] }))
+        }
+        const user = await findGongUserId(fetch, creds, authedUser.email, `${workspaceId}`)
+        if (!user.ok) {
+          forgetGongUsers(`${workspaceId}`)
+          return handleCORS(NextResponse.json({ enabled: false, calls: [], error: user.error }))
+        }
+
+        if (route === '/gong/calls') {
+          if (!user.userId) {
+            return handleCORS(NextResponse.json({ enabled: true, calls: [], message: "No Gong user found with your sign-in email." }))
+          }
+          const list = await listGongCalls(fetch, creds, user.userId)
+          if (!list.ok) {
+            return handleCORS(NextResponse.json({ enabled: true, calls: [], error: list.error }))
+          }
+          return handleCORS(NextResponse.json({
+            enabled: true,
+            calls: list.calls.map((c) => ({ id: c.id, title: c.title, started: c.started, durationSeconds: c.durationSeconds }))
+          }))
+        }
+
+        // POST /gong/import
+        const orgId = authedUser.orgId
+        if (!orgId) {
+          return handleCORS(NextResponse.json({ error: "Unable to determine organization from account email" }, { status: 400 }))
+        }
+        const body = await request.json()
+        const callId = body?.callId
+        if (!isValidGongCallId(callId)) {
+          return handleCORS(NextResponse.json({ error: "Invalid call." }, { status: 400 }))
+        }
+        const got = await getGongCall(fetch, creds, callId)
+        // Same answer for "not found" and "not yours" so ids cannot be probed.
+        if (!got.ok || !isRepsCall(got.call, user.userId, authedUser.email)) {
+          return handleCORS(NextResponse.json({ error: "That call was not found in your Gong calls." }, { status: 404 }))
+        }
+        const tr = await getGongTranscript(fetch, creds, callId, got.call.started)
+        if (!tr.ok) {
+          return handleCORS(NextResponse.json({ error: tr.error }, { status: 502 }))
+        }
+        if (!tr.transcript || !tr.transcript.length) {
+          return handleCORS(NextResponse.json({ error: "Gong has no transcript for this call yet. Transcripts can take a while after a call ends." }, { status: 409 }))
+        }
+        const { lines, labels, chars, labelBySpeaker } = buildLabeledLines(got.call.parties, tr.transcript)
+        const record = {
+          id: uuidv4(),
+          orgId,
+          userEmail: authedUser.email,
+          createdAt: new Date().toISOString(),
+          source: 'gong',
+          gongCallId: callId,
+        }
+        // Same outcomes as a pasted transcript, plus a length cap (the scoring call has to finish on Vercel Hobby).
+        const unsupported = labels.length === 0 ? 'no_labels_detected'
+          : labels.length === 1 ? 'single_speaker'
+          : labels.length > 2 ? 'speaker_count'
+          : chars > GONG_MAX_TRANSCRIPT_CHARS ? 'too_long' : null
+        if (unsupported) {
+          record.status = 'unsupported'
+          record.unsupportedReason = unsupported
+          await db.collection('realCalls').insertOne(record)
+          return handleCORS(NextResponse.json({ id: record.id, status: 'unsupported', reason: unsupported }))
+        }
+        record.status = 'ready_for_confirmation'
+        record.pastedLines = lines
+        await db.collection('realCalls').insertOne(record)
+        // Gong parties tell us who is internal: pre-select the likely rep so the confirm step is one click.
+        const me = got.call.parties.find((p) => p.email === String(authedUser.email).toLowerCase())
+        const speakers = labels.map((label) => {
+          const first = lines.find((l) => l.label === label)
+          return { label, snippet: first ? first.text.slice(0, 300) : '' }
+        })
+        return handleCORS(NextResponse.json({
+          id: record.id, status: 'ready_for_confirmation', speakers,
+          suggestedRepLabel: (me?.speakerId && labelBySpeaker[me.speakerId]) || null
+        }))
+      } catch (error) {
+        console.error('Gong error:', error?.message)
+        return handleCORS(NextResponse.json({ enabled: false, calls: [], error: "Gong request failed." }, { status: 500 }))
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // Assigned practice (Sprint 70). A manager assigns "practice <buyer>, optionally
+    // focusing a skill, by <date>" to named reps or everyone in the org, and sees who
+    // has done it. Completion is DERIVED from the existing sessions collection (rep +
+    // buyer + saved after the assignment + score >= optional minimum); the session-save
+    // and scoring paths are untouched. Scoped by the legacy orgId (same as sessions and
+    // the manager dashboard). Free-email orgs (gmail.com etc.) are one big shared bucket,
+    // so assignments are refused there rather than shown to strangers.
+    //   Manager: GET/POST/DELETE /api/admin/assignments
+    //   Any signed-in member: GET /api/assignments/mine (own status only)
+    // ---------------------------------------------------------------------
+    if (route === '/admin/assignments' || (route === '/assignments/mine' && method === 'GET')) {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const orgId = authedUser.orgId
+        if (!orgId) {
+          return handleCORS(NextResponse.json({ error: "Unable to determine organization from account email" }, { status: 400 }))
+        }
+        const sharedOrg = authedUser.isPersonalWorkspace === true
+        const db = await getDb()
+        const acol = db.collection('assignments')
+
+        if (route === '/assignments/mine') {
+          if (sharedOrg) return handleCORS(NextResponse.json({ assignments: [] }))
+          const list = await acol.find({ orgId }).sort({ createdAt: -1 }).limit(ASSIGNMENT_LIMITS.maxOpenPerOrg).toArray()
+          const mySessions = await db.collection('sessions')
+            .find({ orgId, userEmail: authedUser.email }, { projection: { persona: 1, finalScore: 1, createdAt: 1 } })
+            .toArray()
+          return handleCORS(NextResponse.json({ assignments: assignmentsForRep(list, authedUser.email, mySessions) }))
+        }
+
+        if (authedUser.role !== 'manager') {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+        if (sharedOrg) {
+          return handleCORS(NextResponse.json({ error: "Assignments need a company email domain; free email accounts (like gmail.com) share one bucket with strangers." }, { status: 400 }))
+        }
+
+        if (method === 'GET') {
+          const list = await acol.find({ orgId }).sort({ createdAt: -1 }).limit(ASSIGNMENT_LIMITS.maxOpenPerOrg).toArray()
+          const earliest = list.length ? list[list.length - 1].createdAt : null
+          const sessions = earliest
+            ? await db.collection('sessions').find({ orgId, createdAt: { $gte: earliest } }, { projection: { userEmail: 1, persona: 1, finalScore: 1, createdAt: 1 } }).limit(20000).toArray()
+            : []
+          const known = await db.collection('sessions').distinct('userEmail', { orgId })
+          const byEmail = {}
+          for (const x of sessions) { const e = String(x.userEmail || '').toLowerCase(); (byEmail[e] = byEmail[e] || []).push(x) }
+          return handleCORS(NextResponse.json({
+            assignments: list.map((a) => ({
+              id: a.id, title: a.title, persona: a.persona, focus: a.focus, note: a.note, dueDate: a.dueDate,
+              minScore: a.minScore, assignees: a.assignees || [], createdAt: a.createdAt, createdBy: a.createdBy,
+              progress: evaluateAssignment(a, byEmail, known.filter(Boolean)),
+            })),
+            limits: ASSIGNMENT_LIMITS,
+          }))
+        }
+
+        if (method === 'POST') {
+          const body = await request.json()
+          const checked = validateAssignmentInput(body, { orgDomain: orgId })
+          if (!checked.ok) {
+            return handleCORS(NextResponse.json({ error: checked.error }, { status: 400 }))
+          }
+          if ((await acol.countDocuments({ orgId })) >= ASSIGNMENT_LIMITS.maxOpenPerOrg) {
+            return handleCORS(NextResponse.json({ error: `You have ${ASSIGNMENT_LIMITS.maxOpenPerOrg} assignments. Delete an old one first.` }, { status: 409 }))
+          }
+          const doc = { id: uuidv4(), orgId, createdBy: authedUser.email, createdAt: new Date().toISOString(), ...checked.value }
+          await acol.insertOne(doc)
+          console.log(`[assignments] created org=${orgId}`)
+          return handleCORS(NextResponse.json({ id: doc.id }))
+        }
+
+        if (method === 'DELETE') {
+          const id = new URL(request.url).searchParams.get('id') || ''
+          const r = await acol.deleteOne({ id, orgId })
+          if (!r.deletedCount) {
+            return handleCORS(NextResponse.json({ error: "Assignment not found." }, { status: 404 }))
+          }
+          return handleCORS(NextResponse.json({ deleted: true }))
+        }
+
+        return handleCORS(NextResponse.json({ error: "Not found" }, { status: 404 }))
+      } catch (error) {
+        console.error('Assignments error:', error?.message)
+        return handleCORS(NextResponse.json({ error: "Assignments request failed." }, { status: 500 }))
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // Custom buyer scenarios (Sprint 71). A manager describes a buyer; reps practise
+    // against it through ONE generic "Custom Buyer" ElevenLabs agent that reads the
+    // {{scenario_brief}} variable (the four named personas are untouched). Scoped by
+    // workspaceId (company domain, or a personal workspace for free-email users).
+    //   Manager / personal-workspace owner: POST /api/scenarios, DELETE /api/scenarios?id=
+    //   Any member of the workspace:         GET /api/scenarios (names only),
+    //                                        GET /api/scenarios/brief?id= (the brief text)
+    // The brief text reaches members' browsers at call start and ElevenLabs (outside India);
+    // it is never sent to Gemini scoring (scoring is unchanged).
+    // ---------------------------------------------------------------------
+    if (route === '/scenarios' || (route === '/scenarios/brief' && method === 'GET')) {
+      try {
+        const authedUser = await getAuthedUser()
+        if (!authedUser) {
+          return handleCORS(NextResponse.json({ error: "Unauthorized" }, { status: 401 }))
+        }
+        const workspaceId = authedUser.workspaceId
+        if (!workspaceId) {
+          return handleCORS(NextResponse.json(
+            { error: "Unable to determine a private workspace from this account." }, { status: 400 }
+          ))
+        }
+        const db = await getDb()
+        const col = db.collection('scenarios')
+        const canManage = canManageProductDocs(authedUser)
+
+        if (route === '/scenarios/brief') {
+          const id = new URL(request.url).searchParams.get('id') || ''
+          const doc = await col.findOne({ id, workspaceId })
+          // Same answer for "missing" and "someone else's" so ids cannot be probed.
+          return handleCORS(NextResponse.json({ brief: doc ? buildScenarioBrief(doc) : NO_SCENARIO, found: !!doc }))
+        }
+
+        if (method === 'GET') {
+          const docs = await col.find({ workspaceId }).sort({ createdAt: -1 }).limit(SCENARIO_LIMITS.maxPerWorkspace).toArray()
+          return handleCORS(NextResponse.json({
+            canManage,
+            limits: SCENARIO_LIMITS,
+            scenarios: docs.map((d) => ({
+              id: d.id, name: d.name, buyerRole: d.buyerRole, company: d.company, personality: d.personality, difficulty: d.difficulty,
+              // The manager sees the content to maintain it; reps see names only.
+              ...(canManage ? { situation: d.situation, objections: d.objections, hiddenMotivation: d.hiddenMotivation } : {}),
+            })),
+          }))
+        }
+
+        if (!canManage) {
+          return handleCORS(NextResponse.json({ error: "Forbidden" }, { status: 403 }))
+        }
+
+        if (method === 'POST') {
+          const body = await request.json()
+          const checked = validateScenarioInput(body)
+          if (!checked.ok) {
+            return handleCORS(NextResponse.json({ error: checked.error }, { status: 400 }))
+          }
+          if ((await col.countDocuments({ workspaceId })) >= SCENARIO_LIMITS.maxPerWorkspace) {
+            return handleCORS(NextResponse.json({ error: `You have ${SCENARIO_LIMITS.maxPerWorkspace} scenarios. Delete one first.` }, { status: 409 }))
+          }
+          const doc = { id: uuidv4(), workspaceId, createdBy: authedUser.email, createdAt: new Date().toISOString(), ...checked.value }
+          await col.insertOne(doc)
+          return handleCORS(NextResponse.json({ id: doc.id }))
+        }
+
+        if (method === 'DELETE') {
+          const id = new URL(request.url).searchParams.get('id') || ''
+          const r = await col.deleteOne({ id, workspaceId })
+          if (!r.deletedCount) {
+            return handleCORS(NextResponse.json({ error: "Scenario not found." }, { status: 404 }))
+          }
+          return handleCORS(NextResponse.json({ deleted: true }))
+        }
+
+        return handleCORS(NextResponse.json({ error: "Not found" }, { status: 404 }))
+      } catch (error) {
+        console.error('Scenarios error:', error?.message)
+        return handleCORS(NextResponse.json({ error: "Scenarios request failed." }, { status: 500 }))
       }
     }
 

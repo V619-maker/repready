@@ -11,11 +11,16 @@ const PRIYA_ID = "agent_5701kzmwc61jfq59zjnvrvb1pxmt";
 const RAKESH_ID = "agent_4901m021sybbenebrf04zntdad30";
 const TRIAL_TIME_LIMIT = 90;
 
+// Optional generic "Custom Buyer" agent that reads {{scenario_brief}} (Sprint 71). Unset =
+// the feature stays hidden and nothing else changes. NEXT_PUBLIC_ so the browser can see it.
+const CUSTOM_ID = process.env.NEXT_PUBLIC_CUSTOM_AGENT_ID || '';
+
 const PERSONA_MAP = {
   [RICHARD_ID]: 'richard',
   [SANDRA_ID]: 'sandra',
   [PRIYA_ID]: 'priya',
-  [RAKESH_ID]: 'rakesh'
+  [RAKESH_ID]: 'rakesh',
+  ...(CUSTOM_ID ? { [CUSTOM_ID]: 'custom' } : {})
 };
 
 // Display labels for the live-call transcript speaker tag. Keyed by agent ID
@@ -25,7 +30,8 @@ const PERSONA_DISPLAY_NAME = {
   [RICHARD_ID]: 'VANCE',
   [SANDRA_ID]: 'CHEN',
   [PRIYA_ID]: 'MALHOTRA',
-  [RAKESH_ID]: 'IYER'
+  [RAKESH_ID]: 'IYER',
+  ...(CUSTOM_ID ? { [CUSTOM_ID]: 'BUYER' } : {})
 };
 
 function getHostilityLabel(percent) {
@@ -184,6 +190,7 @@ function RepReadyDashboard() {
   }, []);
 
   const isLocked = (personaKey) => {
+    if (personaKey === 'custom') return false; // company-made scenarios are not part of the starter-tier persona lock
     if (!personaAccess || personaAccess.planTier !== 'starter') return false;
     return !(personaAccess.unlocked || []).includes(personaKey);
   };
@@ -232,6 +239,42 @@ function RepReadyDashboard() {
   // presses INITIATE LINK, so consent and credit checks are unchanged.
   const [practiceFocus, setPracticeFocus] = useState(null);
   const autoSelectDoneRef = useRef(false);
+
+  // Real-deal rehearsal (HubSpot / Salesforce / Zoho). Only populated when a manager has connected
+  // a CRM and switched it on; reps only ever get their own deals from the server.
+  const [crmDeals, setCrmDeals] = useState([]);
+  const [selectedDealId, setSelectedDealId] = useState('');
+  const activeDealRef = useRef(null); // the deal actually used for the call in progress
+
+  useEffect(() => {
+    if (!isLoaded || !user) return;
+    fetch('/api/crm/deals')
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j?.enabled && Array.isArray(j.deals)) setCrmDeals(j.deals); })
+      .catch(() => {});
+  }, [isLoaded, user]);
+
+  // Company-made buyers (Sprint 71). Only fetched when the Custom Buyer agent is configured.
+  const [scenarios, setScenarios] = useState([]);
+  const [selectedScenarioId, setSelectedScenarioId] = useState('');
+  useEffect(() => {
+    if (!CUSTOM_ID || !isLoaded || !user) return;
+    fetch('/api/scenarios')
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j && Array.isArray(j.scenarios)) setScenarios(j.scenarios); })
+      .catch(() => {});
+  }, [isLoaded, user]);
+
+  // Assigned practice: what a manager has asked this rep to do (own status only).
+  const [assignments, setAssignments] = useState([]);
+  useEffect(() => {
+    if (!isLoaded || !user) return;
+    fetch('/api/assignments/mine')
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j && Array.isArray(j.assignments)) setAssignments(j.assignments.filter(a => a.status !== 'done' && a.status !== 'done_late')); })
+      .catch(() => {});
+  }, [isLoaded, user]);
+  const agentForPersona = (persona) => Object.keys(PERSONA_MAP).find(id => PERSONA_MAP[id] === persona);
 
   useEffect(() => {
     if (autoSelectDoneRef.current || !isLoaded || typeof window === 'undefined') return;
@@ -292,6 +335,73 @@ function RepReadyDashboard() {
           console.error("Rep memory fetch failed:", repMemoryError);
         } finally {
           clearTimeout(repMemoryTimeout);
+        }
+      }
+
+      // Product reference (only when a manager opted in; see /api/product-context).
+      // Always passed - a fixed "none" string when off or on any failure - so an
+      // agent prompt that mentions {{product_context}} never sees an unset variable.
+      dynamicVariables.product_context = 'No product reference provided.';
+      if (userEmail) {
+        const ctxController = new AbortController();
+        const ctxTimeout = setTimeout(() => ctxController.abort(), 3000);
+        try {
+          const ctxResponse = await fetch('/api/product-context', { signal: ctxController.signal });
+          if (ctxResponse.ok) {
+            const ctxData = await ctxResponse.json();
+            if (ctxData.enabled === true && typeof ctxData.productContext === 'string' && ctxData.productContext) {
+              dynamicVariables.product_context = ctxData.productContext;
+            }
+          }
+        } catch (ctxError) {
+          console.error("Product context fetch failed:", ctxError);
+        } finally {
+          clearTimeout(ctxTimeout);
+        }
+      }
+
+      // Scenario brief for the generic Custom Buyer agent. Always passed (fixed string
+      // otherwise) so a prompt mentioning {{scenario_brief}} never sees an unset variable.
+      dynamicVariables.scenario_brief = 'No custom scenario.';
+      if (userEmail && activeAgent === CUSTOM_ID && CUSTOM_ID && selectedScenarioId) {
+        const scController = new AbortController();
+        const scTimeout = setTimeout(() => scController.abort(), 4000);
+        try {
+          const scResponse = await fetch(`/api/scenarios/brief?id=${encodeURIComponent(selectedScenarioId)}`, { signal: scController.signal });
+          if (scResponse.ok) {
+            const scData = await scResponse.json();
+            if (scData.found === true && typeof scData.brief === 'string' && scData.brief) {
+              dynamicVariables.scenario_brief = scData.brief;
+            }
+          }
+        } catch (scError) {
+          console.error("Scenario fetch failed:", scError);
+        } finally {
+          clearTimeout(scTimeout);
+        }
+      }
+
+      // Deal context (only when the rep picked one of their own CRM deals).
+      // Always passed - a fixed "none" string otherwise - so a prompt mentioning
+      // {{deal_context}} never sees an unset variable.
+      dynamicVariables.deal_context = 'No deal selected.';
+      activeDealRef.current = null;
+      if (userEmail && selectedDealId) {
+        const dealController = new AbortController();
+        const dealTimeout = setTimeout(() => dealController.abort(), 4000);
+        try {
+          const dealResponse = await fetch(`/api/crm/deal-context?dealId=${encodeURIComponent(selectedDealId)}`, { signal: dealController.signal });
+          if (dealResponse.ok) {
+            const dealData = await dealResponse.json();
+            if (dealData.enabled === true && typeof dealData.dealContext === 'string' && dealData.dealContext) {
+              dynamicVariables.deal_context = dealData.dealContext;
+              activeDealRef.current = selectedDealId;
+            }
+          }
+        } catch (dealError) {
+          console.error("Deal context fetch failed:", dealError);
+        } finally {
+          clearTimeout(dealTimeout);
         }
       }
 
@@ -478,11 +588,20 @@ let boardroomScoreResultId = null;
           };
           pendingSessionSaveRef.current = sessionPayload;
           try {
-            await savePracticeSession(sessionPayload);
+            const savedSession = await savePracticeSession(sessionPayload);
             pendingSessionSaveRef.current = null;
             console.info('[SESSION SAVE] Persisted', {
               path: boardroomScoreResultId ? 'canonical' : 'legacy'
             });
+            // Optional CRM note (server checks the manager switch, deal ownership and
+            // that it is written only once). Never blocks or affects the save.
+            if (activeDealRef.current && savedSession?.id) {
+              fetch('/api/crm/log-practice', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ dealId: activeDealRef.current, sessionId: savedSession.id })
+              }).catch(() => {});
+            }
           } catch (sessionSaveError) {
             console.error('[SESSION SAVE] Persistence failed:', sessionSaveError);
             setSessionSaveFailed(true);
@@ -493,6 +612,7 @@ let boardroomScoreResultId = null;
       }
 
       transcriptRef.current = [];
+      activeDealRef.current = null;
 
     } catch (error) {
       console.error("Scoring Error:", error);
@@ -534,6 +654,63 @@ let boardroomScoreResultId = null;
             </Link>
           </div>
         </header>
+
+        {assignments.length > 0 && (
+          <div className="border border-[#F5A623]/30 bg-[#F5A623]/5 p-6 mb-8">
+            <p className="text-[#F5A623] text-[10px] uppercase tracking-[0.3em] mb-4">Assigned to you</p>
+            <div className="space-y-3">
+              {assignments.map(a => {
+                const agentId = agentForPersona(a.persona);
+                return (
+                  <div key={a.id} className="flex flex-wrap items-center justify-between gap-3 border border-white/10 px-4 py-3">
+                    <div>
+                      <p className="text-white text-xs">{a.title}</p>
+                      <p className="text-zinc-500 text-[10px] mt-1">
+                        {PERSONA_DISPLAY_NAME[agentId] ? `Buyer: ${PERSONA_DISPLAY_NAME[agentId]}` : a.persona}
+                        {a.focus ? ` · Focus: ${a.focus}` : ''}
+                        {a.dueDate ? ` · Due ${a.dueDate}` : ''}
+                        {a.minScore ? ` · Score at least ${a.minScore}` : ''}
+                        {a.status === 'overdue' ? ' · OVERDUE' : ''}
+                        {a.status === 'attempted' && a.bestScore != null ? ` · Your best so far: ${a.bestScore}` : ''}
+                      </p>
+                      {a.note && <p className="text-zinc-400 text-[11px] mt-1">{a.note}</p>}
+                    </div>
+                    {agentId && (
+                      <button
+                        onClick={() => { if (a.focus) setPracticeFocus(String(a.focus).slice(0, 60)); handleSelectPersona(agentId); }}
+                        className="px-4 py-2 border border-[#F5A623]/50 text-[#F5A623] text-[10px] font-bold uppercase tracking-[0.2em] hover:bg-[#F5A623]/10 transition-all"
+                      >
+                        Start
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {CUSTOM_ID && scenarios.length > 0 && (
+          <div className="border border-[#22D3EE]/30 bg-[#22D3EE]/5 p-6 mb-8">
+            <p className="text-[#22D3EE] text-[10px] uppercase tracking-[0.3em] mb-4">Your company&apos;s buyers</p>
+            <div className="space-y-3">
+              {scenarios.map(sc => (
+                <div key={sc.id} className="flex flex-wrap items-center justify-between gap-3 border border-white/10 px-4 py-3">
+                  <div>
+                    <p className="text-white text-xs">{sc.name}</p>
+                    <p className="text-zinc-500 text-[10px] mt-1">{sc.buyerRole}{sc.company ? `, ${sc.company}` : ''} · {sc.personality} · difficulty {sc.difficulty}/5</p>
+                  </div>
+                  <button
+                    onClick={() => { setSelectedScenarioId(sc.id); handleSelectPersona(CUSTOM_ID); }}
+                    className="px-4 py-2 border border-[#22D3EE]/50 text-[#22D3EE] text-[10px] font-bold uppercase tracking-[0.2em] hover:bg-[#22D3EE]/10 transition-all"
+                  >
+                    Start
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           {/* Richard Card */}
@@ -763,6 +940,29 @@ let boardroomScoreResultId = null;
                 </div>
               </div>
             </div>
+
+            {crmDeals.length > 0 && conversation.status !== 'connected' && (
+              <div className="px-6 py-3 border-t border-cyan-500/30 text-[10px] uppercase tracking-[0.2em] text-zinc-400">
+                <label className="block mb-2">Rehearse one of your deals (optional)</label>
+                <select
+                  value={selectedDealId}
+                  onChange={(e) => setSelectedDealId(e.target.value)}
+                  className="w-full bg-black border border-cyan-500/30 text-zinc-200 text-xs p-2 normal-case tracking-normal"
+                >
+                  <option value="">No deal: standard practice</option>
+                  {crmDeals.map(d => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}{d.amount != null ? ` · ${d.amount.toLocaleString()}` : ''}{d.stage ? ` · ${d.stage}` : ''}
+                    </option>
+                  ))}
+                </select>
+                {selectedDealId && (
+                  <p className="mt-2 normal-case tracking-normal text-[11px] text-amber-400">
+                    This deal's name, value, stage, close date and notes will be sent to our voice provider (ElevenLabs) for this call.
+                  </p>
+                )}
+              </div>
+            )}
 
             {practiceFocus && conversation.status !== 'connected' && (
               <div className="px-6 py-3 border-t border-amber-400/30 bg-amber-400/5 text-amber-400 text-[10px] uppercase tracking-[0.2em]">
