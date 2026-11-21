@@ -609,14 +609,6 @@ function calculateNextHostility(currentHostility, dealHealthScore) {
   return { hostility: clamped, hostilityLabel: label }
 }
 
-function getQualificationStatus(hostility, score) {
-  if (hostility < 50) return { status: 'Not Qualified', detail: 'Needs higher hostility pressure', color: 'gray' }
-  if (hostility >= 85 && score >= 70) return { status: 'Elite', detail: 'Ready for Fortune 500 procurement', color: 'gold' }
-  if (hostility >= 70 && score >= 70) return { status: 'Qualified', detail: 'Ready for live calls', color: 'green' }
-  if (hostility >= 50 && score >= 70) return { status: 'In Progress', detail: 'Strong score, needs more pressure', color: 'yellow' }
-  return { status: 'Not Qualified', detail: 'Score needs improvement under pressure', color: 'red' }
-}
-
 // Groups an org's sessions into one row per rep — shared by GET /api/dashboard and
 // GET /api/admin/reps so the two can't silently drift out of sync. Only ever sees
 // reps who have submitted at least one session: there's no separate users
@@ -760,10 +752,7 @@ async function handleRouteInternal(request, { params }) {
           testStatus: 'failed',
           error: {
             name: testError.name || 'UnknownError',
-            message: testError.message || 'No error message',
-            cause: testError.cause ? String(testError.cause) : null,
-            stack: testError.stack || null,
-            fullError: JSON.stringify(testError, Object.getOwnPropertyNames(testError), 2)
+            message: 'Gemini test call failed (details are in the server logs).',
           }
         }))
       }
@@ -814,11 +803,7 @@ const dynamicSystemPrompt = selectedPersona.systemPrompt + hostilityInstruction
         if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
           console.error('[NEGOTIATE] GOOGLE_GENERATIVE_AI_API_KEY is not set')
           return handleCORS(NextResponse.json({
-            ...FALLBACK_RESPONSE,
-            _debug: {
-              error: 'GOOGLE_GENERATIVE_AI_API_KEY environment variable is not set',
-              timestamp: new Date().toISOString()
-            }
+            ...FALLBACK_RESPONSE
           }))
         }
 
@@ -839,12 +824,7 @@ const dynamicSystemPrompt = selectedPersona.systemPrompt + hostilityInstruction
         } catch (schemaError) {
           console.error('[NEGOTIATE] Schema validation failed:', schemaError)
           return handleCORS(NextResponse.json({
-            ...FALLBACK_RESPONSE,
-            _debug: {
-              error: 'Schema validation failed',
-              schemaError: schemaError.message,
-              timestamp: new Date().toISOString()
-            }
+            ...FALLBACK_RESPONSE
           }))
         }
 
@@ -910,8 +890,7 @@ return handleCORS(NextResponse.json({
         console.error('[NEGOTIATE] Full error details:', JSON.stringify(errorDetails, null, 2))
 
         return handleCORS(NextResponse.json({
-          ...FALLBACK_RESPONSE,
-          _debug: errorDetails
+          ...FALLBACK_RESPONSE
         }))
       }
     }
@@ -1011,12 +990,7 @@ Evaluate the sales rep's performance and return JSON with:
           verdict: "Unable to generate scorecard due to an error.",
           strengths: ["Participated in the negotiation", "Showed initiative"],
           improvements: ["Try again for a full evaluation", "Ensure stable connection"],
-          biggest_mistake: "Scorecard generation failed",
-          _debug: {
-            error: apiError.message,
-            name: apiError.name,
-            timestamp: new Date().toISOString()
-          }
+          biggest_mistake: "Scorecard generation failed"
         }))
       }
     }
@@ -1647,7 +1621,7 @@ Evaluate the sales rep's performance and return JSON with:
           { error: "Unable to determine organization from account email" }, { status: 400 }
         ))
         const db = await getDb()
-        const sessions = await db.collection('sessions').find({ orgId }).toArray()
+        const sessions = await db.collection('sessions').find({ orgId }).sort({ createdAt: -1 }).limit(20000).toArray()
         const reps = groupRepsFromSessions(sessions)
 
         // Batch-resolve each rep's current role from Clerk (publicMetadata is the
